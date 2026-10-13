@@ -19,7 +19,7 @@ sealed class Conn {
 }
 
 /**
- * Lo que muestran la app y la Cocina: la biblioteca del PC (o la última leída, sin conexión), los archivos de la
+ * Lo que muestran la app y la web: la biblioteca del PC (o la última leída, sin conexión), los archivos de la
  * tablet y el espacio. La comparación se hace aquí, por ruta (sin distinguir mayúsculas).
  */
 object Repo {
@@ -131,6 +131,32 @@ object Repo {
         val have = localBios.map { it.path.lowercase() }.toHashSet()
         biosMissing = lib?.bios.orEmpty().filter { it.path.lowercase() !in have }
     }
+
+    /** Borra un juego del disco del PC y lo saca de la biblioteca (sin volver a leer todo el disco). */
+    suspend fun deleteFromPc(g: Game): Long {
+        val freed = PcEdit.delete(g)
+        library?.let { lib ->
+            val games = lib.games.filter { it.id != g.id }
+            val systems = games.groupBy { it.system }.map { (id, gs) -> Systems.get(id).copy(count = gs.size, size = gs.sumOf { it.size }) }
+                .sortedBy { it.name.lowercase() }
+            val updated = lib.copy(games = games, systems = systems)
+            library = updated
+            withContext(Dispatchers.IO) { cacheFile.writeText(Json.libraryJson(updated).toString()) }
+        }
+        compare()
+        return freed
+    }
+
+    /** Juegos de la misma plataforma con el mismo título (otra región, otro formato, una versión con mods). */
+    fun versions(g: Game): List<Game> {
+        val key = Group.cleanTitle(g.title).first.lowercase().filter { it.isLetterOrDigit() }
+        return allGames().filter { it.id != g.id && it.system == g.system && it.title.lowercase().filter { c -> c.isLetterOrDigit() } == key }
+    }
+
+    /** Ids de juegos que tienen otra versión en la misma plataforma (filtro "Repetidos"). */
+    fun duplicateIds(): Set<String> = allGames().filter { it.kind != "shortcut" }
+        .groupBy { it.system + "|" + it.title.lowercase().filter { c -> c.isLetterOrDigit() } }
+        .values.filter { it.size > 1 }.flatten().map { it.id }.toSet()
 
     /** Borra un juego de la tablet (solo sus archivos; las partidas se quedan). Devuelve los bytes liberados. */
     suspend fun delete(g: Game): Long {

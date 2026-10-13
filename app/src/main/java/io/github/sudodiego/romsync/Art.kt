@@ -5,7 +5,10 @@ import androidx.compose.runtime.mutableStateMapOf
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import org.json.JSONObject
 import java.io.File
 import java.io.IOException
@@ -15,7 +18,7 @@ import java.net.URLEncoder
 
 /**
  * Carátulas (grid), fondos (hero) y logos de SteamGridDB, guardados en la tablet. También las que se suben a mano
- * desde la web (Cocina). Un juego sin resultado no se vuelve a buscar en 7 días.
+ * desde la web. Un juego sin resultado no se vuelve a buscar en 7 días.
  */
 object Art {
     private const val API = "https://www.steamgriddb.com/api/v2"
@@ -24,7 +27,8 @@ object Art {
     private lateinit var dir: File
     private lateinit var indexFile: File
     private val index = HashMap<String, JSONObject>() // id del juego → {sgdbId, name, checked_<kind>}
-    private val sem = Semaphore(3)
+    // SteamGridDB aguanta bien varias a la vez: con 3 la primera pasada de una biblioteca grande tardaba mucho.
+    private val sem = Semaphore(8)
     private val locks = HashMap<String, kotlinx.coroutines.sync.Mutex>()
 
     /** Versión de cada imagen: cambia al reemplazarla para que Compose la vuelva a cargar. */
@@ -145,6 +149,56 @@ object Art {
         } finally {
             c.disconnect()
         }
+    }
+
+    /** Todas las carátulas (o fondos, logos) de un juego de SteamGridDB: (miniatura, url). */
+    suspend fun options(sgdbId: Int, kind: String = "grid"): List<Pair<String, String>> = withContext(Dispatchers.IO) {
+        val key = Prefs.sgdbKey
+        var path = "/${kinds[kind]}/game/$sgdbId?types=static&nsfw=false&humor=false"
+        if (kind == "grid") path += "&dimensions=600x900,342x482,660x930"
+        val a = getJson(key, path)?.optJSONArray("data") ?: return@withContext emptyList()
+        (0 until a.length()).map { a.getJSONObject(it) }.map { it.optString("thumb").ifBlank { it.optString("url") } to it.optString("url") }
+    }
+
+    /** Usa una imagen elegida a mano (de [options]) para un juego. */
+    suspend fun useUrl(gameId: String, kind: String, url: String) = withContext(Dispatchers.IO) {
+        val tmp = File(dir, "${gameId}_$kind.dl")
+        download(url, tmp)
+        custom(gameId, kind).delete()
+        tmp.renameTo(custom(gameId, kind))
+        versions[gameId] = (versions[gameId] ?: 0) + 1
+    }
+
+    /** Prueba la clave: null si sirve, o el error para mostrar. */
+    suspend fun testKey(key: String): String? = try {
+        search(key, "Mario")
+        null
+    } catch (e: IOException) {
+        if (e.message?.contains("clave") == true) "SteamGridDB rechazó la clave" else "No se pudo conectar con SteamGridDB (${e.message})"
+    }
+
+    // ---- Búsqueda de todas las carátulas de una vez (con barra de avance) ----
+    var bulkDone by androidx.compose.runtime.mutableIntStateOf(0)
+        private set
+    var bulkTotal by androidx.compose.runtime.mutableIntStateOf(0)
+        private set
+    val bulkRunning get() = bulkTotal > 0 && bulkDone < bulkTotal
+
+    private val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.Main)
+
+    /** Igual que [fetchAll] pero sigue aunque se cambie de pantalla. */
+    fun startFetchAll(games: List<Game>) {
+        if (bulkRunning) return
+        scope.launch { fetchAll(games) }
+    }
+
+    /** Busca las carátulas que faltan, varias a la vez. */
+    suspend fun fetchAll(games: List<Game>) = kotlinx.coroutines.coroutineScope {
+        val todo = games.filter { it.kind != "shortcut" && cached(it.id) == null }
+        bulkDone = 0
+        bulkTotal = todo.size
+        todo.map { g -> launch { runCatching { get(g) }; bulkDone++ } }.forEach { it.join() }
+        bulkTotal = 0
     }
 
     /** Fija a mano el juego de SteamGridDB (desde la web) y borra lo descargado. */

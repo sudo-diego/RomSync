@@ -3,6 +3,7 @@ package io.github.sudodiego.romsync
 import android.content.Context
 import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -80,6 +81,8 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
     val sys = Repo.system(g.system)
     val dl = DownloadService.items.firstOrNull { it.id == g.id && it.status != DlStatus.DONE }
     var askDelete by remember { mutableStateOf(false) }
+    var askDeletePc by remember { mutableStateOf(false) }
+    var pickArt by remember { mutableStateOf(false) }
     var noSpace by remember { mutableStateOf<String?>(null) }
     // Switch: qué partes descargar (por defecto, todas las que faltan).
     var selected by remember(g, w) {
@@ -103,7 +106,7 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
             Cover(g, Modifier.width(190.dp))
             Column(Modifier.weight(1f).padding(top = 96.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(g.title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-                Muted(listOfNotNull(sys.name, formatSize(g.size), "${g.files.size} archivo(s)", g.serial.ifBlank { null }).joinToString(" · "))
+                Muted(listOfNotNull(sys.name, Group.ext(g.primary).removePrefix(".").uppercase().ifEmpty { null }, formatSize(g.size), "${g.files.size} archivo(s)", g.serial.ifBlank { null }).joinToString(" · "))
                 if (g.tags.isNotEmpty()) FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     g.tags.forEach { Pill(it, Color(0xFF475569)) }
                 }
@@ -163,8 +166,47 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
                     }
                 }
 
-                Section("Archivos") {
-                    g.files.forEach { f ->
+                val others = remember(g, Repo.library, Repo.tabletOnly) { Repo.versions(g) }
+                if (others.isNotEmpty()) Section("Otras versiones de este juego") {
+                    Muted("Mismo nombre en ${sys.name}: otra región, otro formato o una versión modificada. Quédate con la que uses.")
+                    (listOf(g) + others).forEach { o ->
+                        val ow = Repo.where(o)
+                        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable(enabled = o.id != g.id) { Nav.game = o }
+                            .padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Pill(Group.ext(o.primary).removePrefix(".").uppercase().ifEmpty { "CARPETA" }, Color(0xFF475569))
+                            Column(Modifier.weight(1f)) {
+                                Text(o.name, fontWeight = if (o.id == g.id) FontWeight.Bold else FontWeight.Normal)
+                                Muted(formatSize(o.size) + (if (o.id == g.id) " · este" else ""))
+                            }
+                            when (ow.presence) {
+                                Presence.INSTALLED -> Pill("En la tablet", Palette.ok)
+                                Presence.PARTIAL -> Pill("A medias", Palette.warn)
+                                Presence.TABLET_ONLY -> Pill("Solo tablet", Color(0xFF475569))
+                                Presence.MISSING -> Pill("Solo PC", Color(0xFF334155))
+                            }
+                        }
+                    }
+                }
+
+                Section("Más") {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = { pickArt = true }) { Text("Cambiar carátula") }
+                        if (g.kind == "discs" && w.presence != Presence.TABLET_ONLY) OutlinedButton(onClick = {
+                            scope.launch {
+                                val msg = runCatching { PcEdit.createM3u(g) }.fold({ "Listo: $it. Actualiza la biblioteca para verlo." }, { it.message ?: "Error" })
+                                Toast.makeText(ctx, msg, Toast.LENGTH_LONG).show()
+                                Repo.refresh()
+                            }
+                        }) { Text("Crear .m3u (un solo juego para RetroArch)") }
+                        if (w.presence != Presence.TABLET_ONLY && Prefs.configured) OutlinedButton(onClick = { askDeletePc = true },
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)) { Text("Borrar del PC") }
+                    }
+                    if (g.kind == "shortcut") Muted("Es un acceso directo (no un ROM): lo crea el frontend o GameNative.")
+                }
+
+                Section(if (g.files.size > 40) "Archivos (${g.files.size})" else "Archivos") {
+                    // Una carpeta de Wii U puede tener decenas de miles de archivos: dibujarlos todos cerraba la app.
+                    g.files.take(40).forEach { f ->
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(f.path, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
                             Text(formatSize(f.size), style = MaterialTheme.typography.bodySmall)
@@ -173,6 +215,7 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
                                 .background(if (Repo.has(f.path)) Palette.ok else MaterialTheme.colorScheme.outline))
                         }
                     }
+                    if (g.files.size > 40) Muted("y ${g.files.size - 40} archivos más")
                 }
                 Spacer(Modifier.height(40.dp))
             }
@@ -206,6 +249,38 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
             dismissButton = { TextButton(onClick = { askDelete = false }) { Text("Cancelar") } },
         )
     }
+
+    if (askDeletePc) {
+        var sure by remember { mutableStateOf(false) }
+        AlertDialog(
+            onDismissRequest = { askDeletePc = false },
+            title = { Text("¿Borrar ${g.title} del PC?") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Se borran ${g.files.size} archivo(s) (${formatSize(g.size)}) del disco del PC. No van a la papelera.")
+                    if (w.presence == Presence.INSTALLED || w.presence == Presence.PARTIAL) Muted("La copia de la tablet se queda.")
+                    else Text("No está en la tablet: después no lo vas a tener en ningún lado.", color = MaterialTheme.colorScheme.error)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = sure, onCheckedChange = { sure = it })
+                        Text("Sí, borrarlo del PC")
+                    }
+                }
+            },
+            confirmButton = {
+                Button(enabled = sure, onClick = {
+                    askDeletePc = false
+                    scope.launch {
+                        val msg = runCatching { Repo.deleteFromPc(g) }.fold({ "Borrado del PC · ${formatSize(it)}" }, { it.message ?: "Error" })
+                        Toast.makeText(ctx, msg, Toast.LENGTH_LONG).show()
+                        if (w.presence == Presence.MISSING) onBack()
+                    }
+                }, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) { Text("Borrar del PC") }
+            },
+            dismissButton = { TextButton(onClick = { askDeletePc = false }) { Text("Cancelar") } },
+        )
+    }
+
+    if (pickArt) ArtPicker(g) { pickArt = false }
 
     noSpace?.let { msg ->
         val biggest = remember(Repo.localFiles) {

@@ -167,6 +167,13 @@ class SftpConn private constructor(private val session: Session, val ch: Channel
         }
     }
 
+    /** Borra una carpeta vacía. False si no se pudo (por ejemplo, no está vacía). */
+    fun rmdir(path: String): Boolean = try {
+        ch.rmdir(path); true
+    } catch (e: SftpException) {
+        false
+    }
+
     fun delete(path: String) = try {
         ch.rm(path)
     } catch (e: SftpException) {

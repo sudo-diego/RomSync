@@ -122,6 +122,9 @@ private fun HowToCard() {
             TextButton(onClick = { open = true }) { Text("Ver los pasos") }
             return@Section
         }
+        Text("Lo más fácil: en la pestaña Web enciéndela, abre la dirección en el navegador del PC, ve a Herramientas → «Preparar el PC», " +
+            "descárgalo y ábrelo con doble clic. Hace todo solo y al final te muestra la IP y el usuario.", fontWeight = FontWeight.SemiBold)
+        Muted("O a mano:")
         Text("1. Configuración → Sistema → Características opcionales → Agregar → «Servidor OpenSSH».")
         Text("2. En PowerShell como administrador:")
         Text("Start-Service sshd\nSet-Service -Name sshd -StartupType Automatic", fontFamily = FontFamily.Monospace,
@@ -162,6 +165,26 @@ private fun ArtCard() {
     Section("Carátulas (SteamGridDB)") {
         Muted("Gratis: en steamgriddb.com inicia sesión → Preferencias → API → copia la clave. Las imágenes quedan guardadas en la tablet.")
         Field("Clave de la API", key, { key = it }, Modifier.fillMaxWidth(), password = true)
-        Button(onClick = { Prefs.sgdbKey = key }) { Text("Guardar") }
+        val scope = rememberCoroutineScope()
+        var msg by remember { mutableStateOf<Pair<Boolean, String>?>(null) }
+        var testing by remember { mutableStateOf(false) }
+        SpacedRow {
+            Button(enabled = key.isNotBlank() && !testing, onClick = {
+                testing = true
+                scope.launch {
+                    val e = Art.testKey(key.trim())
+                    testing = false
+                    if (e == null) {
+                        Prefs.sgdbKey = key
+                        msg = true to "Clave guardada y funcionando ✓"
+                    } else msg = false to e
+                }
+            }) { Text("Probar y guardar") }
+            if (testing) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
+            if (Prefs.sgdbKey.isNotBlank()) TextButton(onClick = { Art.startFetchAll(Repo.allGames()); StoreState.coversHidden = false; Nav.tab = Tab.STORE }) {
+                Text("Buscar todas las carátulas")
+            }
+        }
+        msg?.let { (ok, text) -> Text(text, color = if (ok) Palette.ok else MaterialTheme.colorScheme.error) }
     }
 }

@@ -40,3 +40,41 @@ object Pc {
         Library(System.currentTimeMillis(), false, "", systems, games, biosFiles)
     }
 }
+
+/** Cambios en el disco del PC pedidos desde la tablet (borrar un juego, crear un .m3u). */
+object PcEdit {
+    /** Borra los archivos de un juego en el PC y las carpetas que queden vacías (nunca la de la plataforma). */
+    suspend fun delete(g: Game): Long = Pc.io { c ->
+        val root = Prefs.remoteRoms
+        var freed = 0L
+        val dirs = HashSet<String>()
+        for (f in g.files) {
+            val p = SftpConn.join(root, f.path)
+            if (c.stat(p) != null) {
+                c.delete(p)
+                freed += f.size
+                dirs += f.path.substringBeforeLast('/', "")
+            }
+        }
+        // De la más profunda a la menos, sin llegar a la carpeta de la plataforma ("psx").
+        for (d in dirs.sortedByDescending { it.length }) {
+            var cur = d
+            while (cur.contains('/')) {
+                val full = SftpConn.join(root, cur)
+                if (c.list(full).isNotEmpty() || !c.rmdir(full)) break
+                cur = cur.substringBeforeLast('/')
+            }
+        }
+        freed
+    }
+
+    /** Escribe "Juego.m3u" junto a los discos, en el PC (y la tablet lo baja con el juego). */
+    suspend fun createM3u(g: Game): String = Pc.io { c ->
+        val dir = g.primary.substringBeforeLast('/')
+        val name = Group.discOf(Group.stem(g.primary))?.first ?: g.name
+        val rel = "$dir/$name.m3u"
+        val text = g.files.joinToString("\n") { it.path.removePrefix("$dir/") } + "\n"
+        c.upload(SftpConn.join(Prefs.remoteRoms, rel)) { it.write(text.toByteArray()) }
+        rel
+    }
+}

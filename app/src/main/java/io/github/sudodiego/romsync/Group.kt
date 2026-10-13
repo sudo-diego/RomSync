@@ -44,13 +44,44 @@ object Group {
         return if (e.isEmpty()) base else base.dropLast(e.length)
     }
 
+    // Archivos de otras apps que quedan junto a los ROMs: opciones por juego de DraStic/melonDS (.opts), descargas a
+    // medias (.parts, .crdownload), respaldos de partidas con número (".SAV(1)(0)").
+    private val junkExt = setOf(".opts", ".parts", ".crdownload", ".tmp", ".bak", ".cht", ".pch", ".dst", ".nomedia")
+
     fun isIgnored(name: String): Boolean {
         val lower = name.lowercase()
-        if (lower in ignoredNames || lower.startsWith("._")) return true
+        // Archivos ocultos (".8686A2…parts"): siempre de otra app, nunca un juego.
+        if (lower in ignoredNames || lower.startsWith(".")) return true
         val e = ext(lower)
-        if (e in ignoredExt || e.startsWith(".state")) return true
+        if (e in ignoredExt || e in junkExt || e.startsWith(".state")) return true
+        if (e.startsWith(".sav") || e.startsWith(".srm") || e.startsWith(".dsv")) return true
         if (e.startsWith(".ml") && e.length > 3 && e.substring(3).all { it.isDigit() }) return true
         return false
+    }
+
+    // BIOS que a veces quedan en la carpeta de una plataforma (scph5501.bin en psx…): no son juegos.
+    private val reBios = Regex(
+        "^(.*scph[-_ ]?\\d{3,5}.*|ps1_rom|psxonpsp660|ps-\\d{2}[a-z]|ps2-?\\d{4}.*|dc_(boot|flash)|bios\\d?|gba_bios|firmware|" +
+            "syscard\\d|sega_101|mpr-\\d+|neogeo|.*bios.*)\\.(bin|rom|img|pce|zip|nvm|mec|erom|rom0|rom1)$",
+        RegexOption.IGNORE_CASE,
+    )
+
+    fun isBios(name: String) = reBios.matches(name.substringAfterLast('/'))
+
+    /** Plataformas de accesos directos (ES-DE, GameNative): no son ROMs, no se "descargan". */
+    val shortcutSystems = setOf("androidapps", "androidgames", "android", "steam", "epic", "gog", "lutris", "heroic")
+    private val shortcutExt = setOf(".app", ".desktop", ".steam", ".lnk", ".url", ".psvita", ".dpt", ".shortcut")
+
+    fun isShortcut(system: String, path: String, size: Long) =
+        system.lowercase() in shortcutSystems || ext(path) in shortcutExt ||
+            (system.equals("psvita", true) && size < 4096)
+
+    private val reDisc = Regex("\\s*[(\\[](disc|disk|cd)\\s*(\\d+)(\\s*of\\s*\\d+)?[)\\]]", RegexOption.IGNORE_CASE)
+
+    /** "Final Fantasy VII (USA) (Disc 2)" → ("Final Fantasy VII (USA)", 2); sin disco → null. */
+    fun discOf(name: String): Pair<String, Int>? {
+        val m = reDisc.find(name) ?: return null
+        return name.removeRange(m.range).trim() to (m.groupValues[2].toIntOrNull() ?: 0)
     }
 
     fun cleanTitle(name: String): Pair<String, List<String>> {
@@ -169,13 +200,14 @@ object Group {
     fun newGame(system: String, name: String, primary: String, kind: String, files: List<FileEntry>): Game {
         val (title, tags) = cleanTitle(name)
         val sorted = files.sortedBy { it.path }
-        return Game(gameId(system, primary), system, title, name, tags, kind, primary, sorted.sumOf { it.size }, sorted,
+        val k = if (kind == "file" && isShortcut(system, primary, sorted.sumOf { it.size })) "shortcut" else kind
+        return Game(gameId(system, primary), system, title, name, tags, k, primary, sorted.sumOf { it.size }, sorted,
             emptyList(), reVitaId.find(name)?.groupValues?.get(1) ?: "")
     }
 
     /** files: rutas relativas a la carpeta de ROMs, todas dentro de "system/". readText lee un descriptor (o null). */
     fun system(system: String, files: List<FileEntry>, readText: ((String) -> String?)? = null): List<Game> {
-        val c = Ctx(files, readText)
+        val c = Ctx(files.filter { !isBios(it.path) }, readText)
         val prefix = "$system/"
         val games = ArrayList<Game>()
 
@@ -210,7 +242,17 @@ object Group {
             }
         }
 
-        // 3) El resto: un archivo, un juego (Switch: agrupados por TitleID).
+        // 3) Discos sueltos sin .m3u: "Juego (Disc 1).chd", "Juego (Disc 2).chd" → un juego.
+        val discs = c.free().mapNotNull { f -> discOf(stem(f.path))?.let { (base, n) -> Triple(f, "${dirOf(f.path)}/$base|${ext(f.path)}".lowercase(), n) } }
+            .groupBy { it.second }.filter { it.value.size > 1 }
+        for ((_, list) in discs) {
+            val sorted = list.sortedBy { it.third }
+            val first = sorted.first().first
+            sorted.forEach { c.taken += it.first.path.lowercase() }
+            games += newGame(system, discOf(stem(first.path))!!.first, first.path, "discs", sorted.map { it.first })
+        }
+
+        // 4) El resto: un archivo, un juego (Switch: agrupados por TitleID).
         val loose = c.free()
         if (system.equals("switch", true)) games += switch(system, loose)
         else loose.forEach { games += newGame(system, stem(it.path), it.path, "file", listOf(it)) }

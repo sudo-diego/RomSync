@@ -1,7 +1,10 @@
 package io.github.sudodiego.romsync
 
 import android.widget.Toast
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -11,6 +14,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
@@ -154,54 +158,92 @@ private fun RestoreDialog(emu: Emulator, onClose: () -> Unit) {
     val scope = rememberCoroutineScope()
     var list by remember { mutableStateOf<List<SaveBackupInfo>?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
-    var confirm by remember { mutableStateOf<SaveBackupInfo?>(null) }
+    var picked by remember { mutableStateOf<SaveBackupInfo?>(null) }
+    var units by remember { mutableStateOf<List<Saves.Unit>?>(null) }
+    var selected by remember { mutableStateOf(setOf<String>()) }
+    var confirm by remember { mutableStateOf(false) }
     LaunchedEffect(emu) {
         runCatching { Pc.io { Backups.list(it, emu.id) } }.onSuccess { list = it }.onFailure { error = it.message }
     }
-    val c = confirm
-    if (c != null) {
+    LaunchedEffect(picked) {
+        val b = picked ?: return@LaunchedEffect
+        units = null
+        runCatching { Saves.units(ctx, emu, b.id) }.onSuccess { units = it; selected = emptySet() }.onFailure { error = it.message }
+    }
+    val b = picked
+    if (b != null && confirm) {
+        val chosen = units.orEmpty().filter { it.key in selected }
         AlertDialog(
-            onDismissRequest = { confirm = null },
-            title = { Text("¿Restaurar ${emu.name}?") },
+            onDismissRequest = { confirm = false },
+            title = { Text("¿Restaurar ${chosen.size} en ${emu.name}?") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Se copian las partidas del respaldo del ${c.at.take(16).replace('T', ' ')} (${c.files} archivos).")
-                    Text("Antes se respalda lo que hay ahora, por si acaso.", fontWeight = FontWeight.SemiBold)
-                    Muted("Cierra ${emu.name} antes de seguir.")
+                    chosen.take(6).forEach { Text("• ${it.title}") }
+                    if (chosen.size > 6) Muted("y ${chosen.size - 6} más")
+                    Text("Solo se reemplazan esas partidas. Las demás de ${emu.name} no se tocan.", fontWeight = FontWeight.SemiBold)
+                    Muted("Antes se guarda en el PC un respaldo de cómo está todo ahora, por si quieres volver atrás. Cierra ${emu.name} antes de seguir.")
                 }
             },
             confirmButton = {
                 Button(onClick = {
-                    confirm = null
+                    confirm = false
                     onClose()
                     scope.launch {
-                        val e = Saves.restore(ctx, emu, c.id)
-                        Toast.makeText(ctx, e ?: "${emu.name}: partidas restauradas", Toast.LENGTH_LONG).show()
+                        val e = Saves.restore(ctx, emu, b.id, only = selected)
+                        Toast.makeText(ctx, e ?: "${emu.name}: ${selected.size} restaurado(s)", Toast.LENGTH_LONG).show()
                     }
                 }) { Text("Restaurar") }
             },
-            dismissButton = { TextButton(onClick = { confirm = null }) { Text("Cancelar") } },
+            dismissButton = { TextButton(onClick = { confirm = false }) { Text("Cancelar") } },
         )
         return
     }
     AlertDialog(
         onDismissRequest = onClose,
-        title = { Text("Respaldos de ${emu.name}") },
+        title = { Text(if (b == null) "Respaldos de ${emu.name}" else "Respaldo del ${b.at.take(16).replace('T', ' ')}") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            LazyColumn(Modifier.fillMaxWidth().heightIn(max = 460.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 when {
-                    error != null -> Text(error!!, color = MaterialTheme.colorScheme.error)
-                    list == null -> CircularProgressIndicator()
-                    list!!.isEmpty() -> Muted("No hay respaldos en el PC.")
-                    else -> list!!.take(15).forEach { b ->
-                        TextButton(onClick = { confirm = b }, Modifier.fillMaxWidth()) {
-                            Text("${b.at.take(16).replace('T', ' ')} · ${b.files} archivos · ${formatSize(b.size)}" +
-                                (if (b.auto) " · auto" else "") + (if (b.keep) " · conservar" else ""), Modifier.weight(1f))
+                    error != null -> item { Text(error!!, color = MaterialTheme.colorScheme.error) }
+                    b == null && list == null -> item { CircularProgressIndicator() }
+                    b == null && list!!.isEmpty() -> item { Muted("No hay respaldos en el PC.") }
+                    b == null -> {
+                        item { Muted("Elige un respaldo para ver qué juegos trae. Mirar no cambia nada.") }
+                        items(list!!.take(30)) { bk ->
+                            TextButton(onClick = { picked = bk }, Modifier.fillMaxWidth()) {
+                                Text("${bk.at.take(16).replace('T', ' ')} · ${bk.files} archivos · ${formatSize(bk.size)}" +
+                                    (if (bk.auto) " · auto" else "") + (if (bk.keep) " · conservar" else ""), Modifier.weight(1f))
+                            }
+                        }
+                    }
+                    units == null -> item { SpacedRow { CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp); Muted("Abriendo el respaldo…") } }
+                    else -> {
+                        item {
+                            SpacedRow {
+                                Muted("Marca lo que quieres restaurar (${units!!.size} en total).", Modifier.weight(1f))
+                                TextButton(onClick = { selected = if (selected.size == units!!.size) emptySet() else units!!.map { it.key }.toSet() }) {
+                                    Text(if (selected.size == units!!.size) "Ninguno" else "Todos")
+                                }
+                            }
+                        }
+                        items(units!!, key = { it.key }) { u ->
+                            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()
+                                .clickable { selected = if (u.key in selected) selected - u.key else selected + u.key }) {
+                                Checkbox(checked = u.key in selected, onCheckedChange = { selected = if (it) selected + u.key else selected - u.key })
+                                Column(Modifier.weight(1f)) {
+                                    Text(u.title, fontWeight = FontWeight.SemiBold)
+                                    Muted("${u.files} archivo(s) · ${formatSize(u.bytes)} · ${java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.SHORT, java.text.DateFormat.SHORT).format(java.util.Date(u.newest))}")
+                                }
+                            }
                         }
                     }
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onClose) { Text("Cerrar") } },
+        confirmButton = {
+            if (b != null && units != null) Button(enabled = selected.isNotEmpty(), onClick = { confirm = true }) { Text("Restaurar (${selected.size})") }
+            else TextButton(onClick = onClose) { Text("Cerrar") }
+        },
+        dismissButton = { if (b != null) TextButton(onClick = { picked = null; units = null }) { Text("Otro respaldo") } },
     )
 }

@@ -84,6 +84,30 @@ class GroupTest {
         listOf("Game.nds", "Game.chd", "Game.iso", "Game.m3u", "Game.3ds").forEach { assertFalse(it, Group.isIgnored(it)) }
     }
 
+    @Test fun junkFromUserLibrary() {
+        // Lo que apareció en la biblioteca real (oct 2026).
+        listOf(".8686A228806624EF2D1C01D897EFC240DFA384980.parts", "The Legend of Zelda Spirit Tracks.opts",
+            "The Legend of Zelda Spirit Tracks.SAV(1)(0)", "The Legend of Zelda Spirit Tracks.SAV(2)(0)").forEach { assertTrue(it, Group.isIgnored(it)) }
+        val psx = Group.system("psx", listOf(fe("psx/scph5501.bin", 512), fe("psx/SCPH-1001.BIN", 512), fe("psx/PSXONPSP660.BIN", 512),
+            fe("psx/ps-22a.bin", 512), fe("psx/Persona 3 FES.chd", 4000)))
+        assertEquals(listOf("Persona 3 FES"), psx.map { it.title })
+    }
+
+    @Test fun discsWithoutM3u() {
+        val g = Group.system("psx", listOf(fe("psx/Final Fantasy VII (USA) (Disc 1).chd", 10), fe("psx/Final Fantasy VII (USA) (Disc 2).chd", 10),
+            fe("psx/Final Fantasy VII (USA) (Disc 3).chd", 10), fe("psx/Crash (USA).chd", 5)))
+        assertEquals(2, g.size)
+        val ff = g.first { it.title == "Final Fantasy VII" }
+        assertEquals("discs", ff.kind); assertEquals(3, ff.files.size); assertEquals("psx/Final Fantasy VII (USA) (Disc 1).chd", ff.primary)
+    }
+
+    @Test fun shortcuts() {
+        val g = Group.system("androidgames", listOf(fe("androidgames/Genshin.app", 40)))
+        assertEquals("shortcut", g.single().kind)
+        assertEquals("shortcut", Group.system("psvita", listOf(fe("psvita/Gravity Rush.psvita", 9))).single().kind)
+        assertEquals("file", Group.system("atari2600", listOf(fe("atari2600/Pitfall.a26", 4096))).single().kind)
+    }
+
     @Test fun globs() {
         val r = Glob.toRegex("sdmc/Nintendo 3DS/*/*/title/00040000/*/data/**")
         assertTrue(r.matches("sdmc/Nintendo 3DS/abc/def/title/00040000/0012ab00/data/00000001/main"))

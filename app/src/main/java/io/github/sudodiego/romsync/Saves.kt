@@ -131,7 +131,80 @@ object Saves {
      * Restaura un respaldo del PC. Antes respalda lo que hay (por si acaso) y exige que el emulador esté cerrado.
      * Devuelve null si salió bien o el error para mostrar.
      */
-    suspend fun restore(ctx: Context, emu: Emulator, backupId: String, zipFromWeb: File? = null): String? = withContext(Dispatchers.IO) {
+    // ---- Restaurar por juego ----
+
+    /** Un juego (o una tarjeta de memoria, o los perfiles) dentro de un respaldo. */
+    data class Unit(val key: String, val title: String, val detail: String, val files: Int, val bytes: Long, val newest: Long)
+
+    private fun hexAscii(hex: String): String = runCatching {
+        hex.chunked(2).map { it.toInt(16).toChar() }.joinToString("").takeIf { t -> t.all { it.isLetterOrDigit() } } ?: hex
+    }.getOrDefault(hex)
+
+    /** A qué juego pertenece un archivo del respaldo: (clave, nombre para mostrar). */
+    fun unitOf(emu: String, name: String): Pair<String, String> {
+        val rel = name.substringAfter('/')
+        val parts = rel.split('/')
+        val file = parts.last()
+        fun byName(): Pair<String, String> {
+            var base = file
+            val i = base.lowercase().indexOf(".state")
+            base = if (i > 0) base.substring(0, i) else base.substringBeforeLast('.')
+            return "g:" + base.lowercase() to Group.cleanTitle(base).first
+        }
+        return when (emu) {
+            "dolphin" -> when {
+                parts[0] == "Wii" && parts.size > 3 -> "id:" + hexAscii(parts[3]).take(4) to "Wii · " + hexAscii(parts[3])
+                parts[0] == "StateSaves" -> "id:" + file.take(4) to "Estado · " + file.take(6)
+                parts[0] == "GC" -> Regex("^[0-9A-Fa-f]{2}-([A-Z0-9]{4})").find(file)?.let { "id:" + it.groupValues[1] to "GameCube · " + it.groupValues[1] }
+                    ?: ("card:$rel" to "Tarjeta de memoria · " + parts.drop(1).joinToString(" / "))
+                else -> "otros:" + parts[0] to parts[0]
+            }
+            "eden" -> if (rel.contains("/user/save/") && parts.size > 5) "tid:" + parts[5].uppercase() to parts[5].uppercase()
+                else "perfiles" to "Perfiles de usuario"
+            "vita3k" -> if (parts.size > 4 && parts[3] == "savedata") "id:" + parts[4] to parts[4] else "trofeos" to "Trofeos y otros"
+            "armsx2" -> if (parts[0] == "memcards") "card:$file" to "Tarjeta de memoria · $file"
+                else file.substringBefore(" (").substringBefore('.').let { "id:$it" to "Estado · $it" }
+            "azahar" -> {
+                val t = parts.indexOf("title")
+                val e = parts.indexOf("extdata")
+                when {
+                    t >= 0 && parts.size > t + 2 -> "id:" + parts[t + 2].lowercase() to "3DS · " + parts[t + 2].uppercase()
+                    e >= 0 && parts.size > e + 2 -> "ext:" + parts[e + 2].lowercase() to "Datos extra · " + parts[e + 2].uppercase()
+                    else -> byName()
+                }
+            }
+            else -> byName()
+        }
+    }
+
+    /** Nombre del juego en la biblioteca para un TitleID de Switch o un ID de Vita, si se conoce. */
+    private fun titleFor(key: String, fallback: String): String {
+        val id = key.substringAfter(':')
+        val g = Repo.allGames().firstOrNull { it.serial.isNotEmpty() && it.serial.equals(id, true) }
+        return g?.title?.let { "$it · $id" } ?: fallback
+    }
+
+    private fun cachedZip(ctx: Context, emu: Emulator, id: String) = File(ctx.cacheDir, "ver_${emu.id}_${Backups.safe(id)}.zip")
+
+    /** Lo que trae un respaldo, juego por juego (baja el zip una vez y lo deja en caché mientras se elige). */
+    suspend fun units(ctx: Context, emu: Emulator, backupId: String): List<Unit> = withContext(Dispatchers.IO) {
+        val zip = cachedZip(ctx, emu, backupId)
+        if (!zip.isFile) {
+            ctx.cacheDir.listFiles()?.filter { it.name.startsWith("ver_") }?.forEach { it.delete() }
+            val tmp = File(zip.path + ".tmp")
+            Pc.use { Backups.download(it, emu.id, backupId, tmp) }
+            tmp.renameTo(zip)
+        }
+        ZipFile(zip).use { z ->
+            z.entries().asSequence().filter { !it.isDirectory && it.name.contains('/') }
+                .groupBy { unitOf(emu.id, it.name) }
+                .map { (k, es) -> Unit(k.first, titleFor(k.first, k.second), es.first().name.substringAfterLast('/'), es.size,
+                    es.sumOf { it.size }, es.maxOf { it.time }) }
+                .sortedBy { it.title.lowercase() }
+        }
+    }
+
+    suspend fun restore(ctx: Context, emu: Emulator, backupId: String, zipFromWeb: File? = null, only: Set<String>? = null): String? = withContext(Dispatchers.IO) {
         val pkg = Emulators.installedPackage(ctx, emu) ?: return@withContext "${emu.name} no está instalado"
         if (Shell.ready && Shell.isRunning(pkg)) return@withContext "Cierra ${emu.name} antes de restaurar (Recientes → deslizar)."
         val zipFile = File(ctx.cacheDir, "restaurar_${emu.id}.zip")
@@ -141,7 +214,10 @@ object Saves {
                 is Result.Failed -> return@withContext "No se pudo respaldar lo actual antes de restaurar: ${r.message}"
                 else -> {}
             }
-            if (zipFromWeb != null) zipFromWeb.copyTo(zipFile, overwrite = true) else {
+            val cached = cachedZip(ctx, emu, backupId)
+            if (zipFromWeb != null) zipFromWeb.copyTo(zipFile, overwrite = true)
+            else if (backupId.isNotEmpty() && cached.isFile) cached.copyTo(zipFile, overwrite = true)
+            else {
                 busy[emu.id] = "Descargando el respaldo…"
                 Pc.use { Backups.download(it, emu.id, backupId, zipFile) }
             }
@@ -149,6 +225,7 @@ object Saves {
             val sources = Emulators.sources(emu, pkg).associateBy { it.label }
             ZipFile(zipFile).use { zip ->
                 val byLabel = zip.entries().asSequence().filter { !it.isDirectory && it.name.contains('/') }
+                    .filter { only == null || unitOf(emu.id, it.name).first in only }
                     .groupBy { it.name.substringBefore('/') }
                 for ((label, entries) in byLabel) {
                     // La carpeta de hoy para esa etiqueta; si el emulador ya no la tiene, la ruta original del respaldo.

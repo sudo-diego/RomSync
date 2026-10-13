@@ -31,7 +31,7 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
 /**
- * La Cocina: la web de la tablet, como Nonna's Kitchen de Cannoli. Se enciende desde la app, muestra un QR, la
+ * RomSync Web (antes "Cocina"): la web de la tablet, como Nonna's Kitchen de Cannoli. Se enciende desde la app, muestra un QR, la
  * dirección y un PIN de 6 caracteres que cambia cada vez. Desde el navegador del PC (o del teléfono) se administra
  * la tablet: plataformas y juegos, BIOS, partidas y herramientas (archivos e instalar APK).
  */
@@ -203,6 +203,11 @@ object Kitchen {
                 val freed = runBlocking { Repo.delete(g) }
                 ok(JSONObject().put("freed", freed))
             }
+            "delete-pc" -> {
+                val g = Repo.game(bodyJson(s).optString("id")) ?: return err(NanoHTTPD.Response.Status.NOT_FOUND, "No existe")
+                val freed = runBlocking { Repo.deleteFromPc(g) }
+                ok(JSONObject().put("freed", freed))
+            }
             "upload" -> {
                 val bios = param(s, "bios") == "1"
                 val rel = param(s, "path")
@@ -232,7 +237,9 @@ object Kitchen {
         if (path.contains("..")) return err(NanoHTTPD.Response.Status.BAD_REQUEST, "Ruta inválida")
         return try {
             val input = app.assets.open("web/$path")
-            NanoHTTPD.newChunkedResponse(NanoHTTPD.Response.Status.OK, mime(path), input)
+            NanoHTTPD.newChunkedResponse(NanoHTTPD.Response.Status.OK, mime(path), input).apply {
+                if (path.endsWith(".bat")) addHeader("Content-Disposition", "attachment; filename=\"$path\"")
+            }
         } catch (e: IOException) {
             NanoHTTPD.newChunkedResponse(NanoHTTPD.Response.Status.OK, mime("index.html"), app.assets.open("web/index.html"))
         }
@@ -487,14 +494,14 @@ class ApkResultReceiver : android.content.BroadcastReceiver() {
     }
 }
 
-/** Mantiene la Cocina encendida con la pantalla apagada (servicio en primer plano). */
+/** Mantiene la web encendida con la pantalla apagada (servicio en primer plano). */
 class KitchenService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Prefs.init(this)
         val nm = getSystemService(NotificationManager::class.java)
-        nm.createNotificationChannel(NotificationChannel("cocina", "Cocina", NotificationManager.IMPORTANCE_LOW))
+        nm.createNotificationChannel(NotificationChannel("cocina", "RomSync Web", NotificationManager.IMPORTANCE_LOW))
         runCatching { Kitchen.startServer(this) }.onFailure {
             stopSelf()
             return START_NOT_STICKY
@@ -503,7 +510,7 @@ class KitchenService : Service() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val n = Notification.Builder(this, "cocina")
             .setSmallIcon(android.R.drawable.stat_sys_upload)
-            .setContentTitle("Cocina encendida · PIN ${Kitchen.pin}")
+            .setContentTitle("Web encendida · PIN ${Kitchen.pin}")
             .setContentText(Kitchen.url)
             .setContentIntent(open)
             .setOngoing(true)

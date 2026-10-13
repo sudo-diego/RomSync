@@ -69,6 +69,6 @@ object Backups {
         c.delete("${dir(c, emu)}/${safe(id)}.json")
     }
 
-    /** Sube un zip que viene de la web (Cocina) como respaldo nuevo; devuelve su id. */
+    /** Sube un zip que viene de la web como respaldo nuevo; devuelve su id. */
     fun importZip(c: SftpConn, emu: String, zip: File): SaveBackupInfo = upload(c, emu, zip, "importado-${zip.length()}", 0, false)
 }

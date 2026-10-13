@@ -1,6 +1,6 @@
 "use strict";
 
-// La Cocina de RomSync: la tablet sirve esta página (estilo Nonna's Kitchen de Cannoli).
+// RomSync Web: la tablet sirve esta página (estilo Nonna's Kitchen de Cannoli).
 const S = {
   state: null,      // /api/state
   games: [],        // /api/games: tablet + PC, con "presence"
@@ -171,7 +171,7 @@ function renderGrid() {
       b.className = "card";
       b.dataset.id = g.id;
       b.innerHTML = coverHTML(g, `${badge(g)}<span class="sys-tag">${esc(sysInfo(g.system).short)}</span>`) +
-        `<p class="t">${esc(g.title)}</p><p class="s">${fmtSize(g.size)}${g.parts?.length > 1 ? ` · ${g.parts.length} partes` : ""}</p>`;
+        `<p class="t">${esc(g.title)}</p><p class="s">${esc(subtitle(g))}</p>`;
       frag.appendChild(b);
     }
     grid.appendChild(frag);
@@ -179,6 +179,18 @@ function renderGrid() {
   };
   step();
 }
+// Formato y región: distinguen las versiones repetidas (RVZ/ISO, USA/Europa, la con mods).
+function extOf(p) { const m = /\.([^./]+)$/.exec(p || ""); return m ? m[1].toUpperCase() : ""; }
+function subtitle(g) {
+  const bits = [];
+  if (g.kind === "shortcut") bits.push("Acceso directo"); else if (extOf(g.primary)) bits.push(extOf(g.primary));
+  if (g.tags?.length) bits.push(g.tags[0]);
+  bits.push(fmtSize(g.size));
+  if (g.parts?.length > 1) bits.push(`${g.parts.length} partes`);
+  if (g.kind === "discs") bits.push(`${g.files.length} discos`);
+  return bits.join(" · ");
+}
+
 function pcLine() {
   const st = S.state;
   if (!st?.pcConfigured) return " · PC sin configurar";
@@ -239,6 +251,7 @@ function openGame(id) {
           ${canInstall ? `<button class="primary" id="installBtn">Instalar en la tablet · ${fmtSize(g.presence === "PARTIAL" ? missingSize : g.size)}</button>` : ""}
           ${dl ? `<button class="ghost" id="dlToggle">${dl.status === "PAUSED" || dl.status === "FAILED" ? "Seguir" : "Pausar"}</button><button class="ghost" id="dlCancel">Cancelar</button>` : ""}
           ${canDelete ? `<button class="danger-btn" id="deleteBtn">Borrar de la tablet</button>` : ""}
+          ${g.presence !== "TABLET_ONLY" && S.state?.pcConfigured ? `<button class="danger-btn" id="deletePcBtn">Borrar del PC</button>` : ""}
         </div>
         <p class="muted small">${canInstall ? "La tablet lo copia desde el disco del PC (SFTP); puedes cerrar esta página." : canDelete ? "Borrar quita solo los archivos del juego: las partidas se quedan." : ""}</p>
         ${parts}${files}
@@ -278,6 +291,17 @@ function openGame(id) {
     try {
       const r = await post("/api/delete", { id });
       toast(`Borrado · ${fmtSize(r.freed)} libres`);
+      closeModal();
+      await loadGames();
+    } catch (e) { toast(e.message); }
+  });
+  $("#deletePcBtn")?.addEventListener("click", async () => {
+    const extra = g.presence === "MISSING" ? "\n\nNo está en la tablet: después no lo vas a tener en ningún lado." : "\n\nLa copia de la tablet se queda.";
+    if (!confirm(`¿Borrar «${g.title}» del disco del PC?\n\nSe borran ${g.files.length} archivo(s), ${fmtSize(g.size)}. No van a la papelera.${extra}`)) return;
+    if (!confirm("¿Seguro? Esto no se puede deshacer.")) return;
+    try {
+      const r = await post("/api/delete-pc", { id });
+      toast(`Borrado del PC · ${fmtSize(r.freed)}`);
       closeModal();
       await loadGames();
     } catch (e) { toast(e.message); }
@@ -416,7 +440,7 @@ async function loadSaves() {
         <div class="row"><h2 style="flex:1">${esc(e.name)}</h2>
           ${e.installed && e.supported ? `<a class="ghost" href="/api/emulators/${e.id}/export">Bajar partidas (zip)</a>
           <button class="ghost" data-backup="${e.id}">Respaldar en el PC</button>
-          <label class="ghost">Restaurar desde zip<input type="file" accept=".zip" data-restore="${e.id}" hidden></label>` : ""}</div>
+          <label class="ghost" title="Restaura TODO el zip; para elegir juego por juego usa la app">Restaurar desde zip<input type="file" accept=".zip" data-restore="${e.id}" hidden></label>` : ""}</div>
         <p class="muted small">${esc(e.what)}${e.installed && e.supported ? ` · ${e.error ? esc(e.error) : `${e.files} archivos, ${fmtSize(e.bytes)}`} · último respaldo ${ago(e.lastBackup)}` : !e.installed ? " · no instalado" : ""}</p>
         ${e.note ? `<p class="muted small">${esc(e.note)}</p>` : ""}
         ${list.length ? `<table><tr><th>Respaldo en el PC</th><th>Archivos</th><th>Tamaño</th><th></th></tr>${list.map((b) => `<tr>
@@ -463,6 +487,8 @@ async function renderTools(path) {
   try { r = await api("/api/files?path=" + encodeURIComponent(path)); } catch (e) { el.innerHTML = `<div class="box"><p class="err">${esc(e.message)}</p></div>`; return; }
   const crumbs = ["", ...r.path.split("/").filter(Boolean)];
   el.innerHTML = `
+    <div class="box"><div class="row"><h2 style="flex:1">Preparar el PC</h2><a class="primary" href="/Preparar-PC-RomSync.bat" download>Descargar</a></div>
+      <p class="muted small">Activa en Windows el acceso SFTP que usa RomSync para leer tu disco. Ábrelo en el PC con doble clic y acepta el aviso de administrador: al final muestra la IP y el usuario para escribir en la app.</p></div>
     <div class="box"><div class="row"><h2 style="flex:1">Instalar APK</h2><label class="primary">Elegir APK<input type="file" id="apk" accept=".apk" hidden></label></div>
       <p class="muted small">La tablet pide confirmar la instalación en pantalla.</p></div>
     <div class="box">

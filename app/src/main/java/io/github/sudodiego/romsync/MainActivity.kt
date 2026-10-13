@@ -59,7 +59,7 @@ enum class Tab(val label: String, val icon: ImageVector) {
     STORE("Tienda", Icons.Rounded.Storefront),
     DOWNLOADS("Descargas", Icons.Rounded.Download),
     SAVES("Partidas", Icons.Rounded.CloudSync),
-    KITCHEN("Cocina", Icons.Rounded.Language),
+    KITCHEN("Web", Icons.Rounded.Language),
     SETTINGS("Ajustes", Icons.Rounded.Settings),
 }
 

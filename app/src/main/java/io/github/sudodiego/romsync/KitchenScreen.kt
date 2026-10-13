@@ -38,7 +38,7 @@ fun KitchenScreen() {
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item {
             Column {
-                Text("Cocina", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                Text("RomSync Web", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
                 Muted("Administra la tablet desde el navegador del PC o del teléfono: juegos, BIOS, carátulas, partidas y archivos.")
             }
         }
@@ -46,7 +46,7 @@ fun KitchenScreen() {
             Section("") {
                 if (!Kitchen.running) {
                     Muted("Enciéndela y abre la dirección en un equipo de la misma red WiFi. El PIN cambia cada vez.")
-                    Button(onClick = { Kitchen.start(ctx) }) { Text("Encender la Cocina") }
+                    Button(onClick = { Kitchen.start(ctx) }) { Text("Encender la web") }
                 } else {
                     Row(horizontalArrangement = Arrangement.spacedBy(28.dp), verticalAlignment = Alignment.CenterVertically) {
                         Box(Modifier.clip(RoundedCornerShape(16.dp)).background(Color.White).padding(14.dp)) {

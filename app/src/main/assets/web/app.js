@@ -159,6 +159,8 @@ function renderGrid() {
   const empty = $("#empty");
   const total = games.reduce((a, g) => a + g.size, 0);
   $("#summary").textContent = `${games.length} juegos · ${fmtSize(total)}` + pcLine();
+  const banner = $("#connectBanner");
+  if (banner) banner.innerHTML = S.state && !S.state.pcConfigured ? connectBox() : "";
   empty.hidden = games.length > 0;
   if (!games.length) empty.textContent = S.filter === "pc" && !S.state?.pcConfigured ? "Configura el PC en la app (Ajustes) para ver su biblioteca." : "No hay juegos con este filtro.";
   grid.innerHTML = "";
@@ -496,8 +498,7 @@ async function renderTools(path) {
   try { r = await api("/api/files?path=" + encodeURIComponent(path)); } catch (e) { el.innerHTML = `<div class="box"><p class="err">${esc(e.message)}</p></div>`; return; }
   const crumbs = ["", ...r.path.split("/").filter(Boolean)];
   el.innerHTML = `
-    <div class="box"><div class="row"><h2 style="flex:1">Preparar el PC</h2><a class="primary" href="/Preparar-PC-RomSync.bat" download>Descargar</a></div>
-      <p class="muted small">Activa en Windows el acceso SFTP que usa RomSync para leer tu disco. Ábrelo en el PC con doble clic y acepta el aviso de administrador: al final muestra la IP y el usuario para escribir en la app.</p></div>
+    ${connectBox()}
     <div class="box"><div class="row"><h2 style="flex:1">Instalar APK</h2><label class="primary">Elegir APK<input type="file" id="apk" accept=".apk" hidden></label></div>
       <p class="muted small">La tablet pide confirmar la instalación en pantalla.</p></div>
     <div class="box">
@@ -547,6 +548,14 @@ async function loadGames() {
   renderSystems();
   renderGrid();
 }
+// Conectar el PC: un .bat que activa SFTP, busca la carpeta de ROMs y le pasa todo a la tablet.
+function connectBox() {
+  const ok = S.state?.pcConfigured;
+  return `<div class="box"><div class="row"><h2 style="flex:1">${ok ? "PC conectado" : "Conectar este PC"}</h2>
+    <a class="primary" href="/api/connector" download>${ok ? "Volver a conectar" : "Descargar el conector"}</a></div>
+    <p class="muted small">Ábrelo en este PC con doble clic y acepta el aviso de administrador. Activa SFTP, busca tu carpeta de ROMs y solo te pide la contraseña de Windows. En la tablet no hay que escribir nada.</p></div>`;
+}
+
 function renderPill() {
   const st = S.state;
   if (!st) return;

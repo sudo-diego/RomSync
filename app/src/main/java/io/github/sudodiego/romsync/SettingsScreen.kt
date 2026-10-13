@@ -35,7 +35,6 @@ fun SettingsScreen() {
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item { Text("Ajustes", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold) }
         item { PcCard() }
-        item { HowToCard() }
         item { TabletCard() }
         item { ArtCard() }
         item { ShizukuCard() }
@@ -59,19 +58,33 @@ private fun Field(label: String, value: String, onChange: (String) -> Unit, modi
 @Composable
 private fun PcCard() {
     val scope = rememberCoroutineScope()
-    var host by remember { mutableStateOf(Prefs.host) }
-    var port by remember { mutableStateOf(Prefs.port.toString()) }
-    var user by remember { mutableStateOf(Prefs.user) }
-    var pass by remember { mutableStateOf(Prefs.password) }
-    var roms by remember { mutableStateOf(Prefs.pcRoms) }
-    var bios by remember { mutableStateOf(Prefs.pcBios) }
-    var backups by remember { mutableStateOf(Prefs.pcBackups) }
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    // Si el conector del PC deja todo listo, los campos se vuelven a leer.
+    val paired = Kitchen.pairCount
+    var host by remember(paired) { mutableStateOf(Prefs.host) }
+    var port by remember(paired) { mutableStateOf(Prefs.port.toString()) }
+    var user by remember(paired) { mutableStateOf(Prefs.user) }
+    var pass by remember(paired) { mutableStateOf(Prefs.password) }
+    var roms by remember(paired) { mutableStateOf(Prefs.pcRoms) }
+    var bios by remember(paired) { mutableStateOf(Prefs.pcBios) }
+    var backups by remember(paired) { mutableStateOf(Prefs.pcBackups) }
+    var manual by remember { mutableStateOf(false) }
     var testing by remember { mutableStateOf(false) }
     var result by remember { mutableStateOf<String?>(null) }
     var ok by remember { mutableStateOf(false) }
 
-    Section("PC (SFTP)") {
-        Muted("La tablet entra al disco del PC con el servidor OpenSSH de Windows, con tu usuario y contraseña de Windows. No hay que instalar nada más en el PC.")
+    Section("PC") {
+        if (Prefs.configured) Text("Conectado a ${Prefs.host} · ${Prefs.pcRoms}", color = Palette.ok, fontWeight = FontWeight.SemiBold)
+        Text("Lo fácil: toca «Conectar el PC», abre en el PC la dirección que aparece y baja el conector. Hace todo solo y " +
+            "solo te pide la contraseña de Windows.")
+        SpacedRow {
+            Button(onClick = { if (!Kitchen.running) Kitchen.start(ctx); Nav.tab = Tab.KITCHEN }) {
+                Text(if (Prefs.configured) "Volver a conectar" else "Conectar el PC")
+            }
+            TextButton(onClick = { manual = !manual }) { Text(if (manual) "Ocultar" else "Escribir los datos a mano") }
+        }
+        if (!manual) return@Section
+        Muted("La tablet entra al disco del PC con el servidor OpenSSH de Windows, con tu usuario y contraseña de Windows.")
         SpacedRow {
             Field("IP del PC", host, { host = it }, Modifier.weight(1f), hint = "192.168.1.10")
             Field("Puerto", port, { port = it.filter(Char::isDigit) }, Modifier.width(110.dp), number = true)
@@ -111,27 +124,6 @@ private fun PcCard() {
             }
         }
         result?.let { Text(it, color = if (ok) Palette.ok else MaterialTheme.colorScheme.error) }
-    }
-}
-
-@Composable
-private fun HowToCard() {
-    var open by remember { mutableStateOf(!Prefs.configured) }
-    Section("Cómo activar SFTP en Windows (una vez)") {
-        if (!open) {
-            TextButton(onClick = { open = true }) { Text("Ver los pasos") }
-            return@Section
-        }
-        Text("Lo más fácil: en la pestaña Web enciéndela, abre la dirección en el navegador del PC, ve a Herramientas → «Preparar el PC», " +
-            "descárgalo y ábrelo con doble clic. Hace todo solo y al final te muestra la IP y el usuario.", fontWeight = FontWeight.SemiBold)
-        Muted("O a mano:")
-        Text("1. Configuración → Sistema → Características opcionales → Agregar → «Servidor OpenSSH».")
-        Text("2. En PowerShell como administrador:")
-        Text("Start-Service sshd\nSet-Service -Name sshd -StartupType Automatic", fontFamily = FontFamily.Monospace,
-            style = MaterialTheme.typography.bodySmall)
-        Text("3. La IP del PC sale con «ipconfig» (Dirección IPv4). Conviene fijarla en el router.")
-        Text("4. Usuario: el de Windows (si usas cuenta de Microsoft, el correo o el nombre de la carpeta en C:\\Users). Contraseña: la de la cuenta (no el PIN).")
-        Muted("Es lo mismo que usaba Nixel. Todo queda dentro de tu red.")
     }
 }
 

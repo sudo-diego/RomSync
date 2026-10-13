@@ -43,6 +43,13 @@ object Kitchen {
         private set
     var url by mutableStateOf("")
         private set
+    /** Sube cada vez que el conector del PC deja la conexión lista (Ajustes vuelve a leer los datos). */
+    var pairCount by mutableStateOf(0)
+        private set
+    var pairMessage by mutableStateOf("")
+        private set
+    /** Código del conector de esta sesión (va dentro del .bat; cambia con cada encendido). */
+    private var pairToken = ""
 
     private var server: Server? = null
     private val sessions = HashSet<String>()
@@ -63,6 +70,7 @@ object Kitchen {
         // Sin letras ni números que se confundan (0/O, 1/I).
         val alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
         pin = (1..6).map { alphabet[rnd.nextInt(alphabet.length)] }.joinToString("")
+        pairToken = (1..24).map { "0123456789abcdef"[rnd.nextInt(16)] }.joinToString("")
         synchronized(sessions) { sessions.clear() }
         val s = Server()
         s.start(NanoHTTPD.SOCKET_READ_TIMEOUT, true)
@@ -179,6 +187,7 @@ object Kitchen {
         val uri = s.uri
         val m = s.method
         if (!uri.startsWith("/api/")) return asset(uri)
+        if (uri == "/api/pair") return pair(s)
         if (uri == "/api/login") {
             val got = bodyJson(s).optString("pin").trim().uppercase()
             if (got != pin) return err(NanoHTTPD.Response.Status.UNAUTHORIZED, "PIN incorrecto")
@@ -202,6 +211,16 @@ object Kitchen {
                 val g = Repo.game(bodyJson(s).optString("id")) ?: return err(NanoHTTPD.Response.Status.NOT_FOUND, "No existe")
                 val freed = runBlocking { Repo.delete(g) }
                 ok(JSONObject().put("freed", freed))
+            }
+            "connector" -> {
+                // El conector para el PC, con la dirección de esta tablet y el código de esta sesión.
+                val host = s.headers["host"]?.takeIf { it.isNotBlank() } ?: url.removePrefix("http://")
+                val text = app.assets.open("web/conector.bat.txt").bufferedReader().readText()
+                    .replace("__TABLET__", host).replace("__TOKEN__", pairToken)
+                    .replace("\r\n", "\n").replace("\n", "\r\n")
+                NanoHTTPD.newFixedLengthResponse(NanoHTTPD.Response.Status.OK, "application/octet-stream", text).apply {
+                    addHeader("Content-Disposition", "attachment; filename=\"Conectar-RomSync.bat\"")
+                }
             }
             "rename" -> {
                 val b = bodyJson(s)
@@ -236,6 +255,33 @@ object Kitchen {
             "apk" -> apk(s)
             else -> err(NanoHTTPD.Response.Status.NOT_FOUND, "No existe")
         }
+    }
+
+    /** El conector del PC manda la IP, el usuario, la contraseña y la carpeta de ROMs: se prueban y se guardan. */
+    private fun pair(s: NanoHTTPD.IHTTPSession): NanoHTTPD.Response {
+        if (pairToken.isEmpty() || param(s, "t") != pairToken) return err(NanoHTTPD.Response.Status.UNAUTHORIZED, "Código vencido: descarga de nuevo el conector")
+        val b = bodyJson(s)
+        val cfg = SftpConfig(b.optString("host"), b.optInt("port", 22), b.optString("user"), b.optString("password"))
+        val roms = b.optString("roms")
+        if (cfg.host.isBlank() || cfg.user.isBlank() || roms.isBlank()) return err(NanoHTTPD.Response.Status.BAD_REQUEST, "Faltan datos")
+        val result = runCatching {
+            SftpConn.connect(cfg).use { c ->
+                val dir = SftpConn.remotePath(roms)
+                if (c.stat(dir)?.isDir != true) error("Conectado, pero no se ve la carpeta $roms")
+                c.fingerprint to c.list(dir).count { it.isDir }
+            }
+        }
+        return result.fold({ (fp, n) ->
+            Prefs.host = cfg.host; Prefs.port = cfg.port; Prefs.user = cfg.user; Prefs.password = cfg.password
+            Prefs.pcRoms = roms; Prefs.fingerprint = fp
+            pairMessage = "PC conectado · $n carpetas de plataformas"
+            pairCount++
+            Thread { runBlocking { runCatching { Repo.refresh() } } }.start()
+            ok(JSONObject().put("ok", true).put("message", "la tablet ya ve tu PC ($n carpetas de plataformas)"))
+        }, { e ->
+            val m = e.message ?: "Error"
+            err(NanoHTTPD.Response.Status.BAD_REQUEST, if (m.contains("Usuario o contraseña")) "Usuario o contraseña incorrectos" else m)
+        })
     }
 
     private fun asset(uri: String): NanoHTTPD.Response {

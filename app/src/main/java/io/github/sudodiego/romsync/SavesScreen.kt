@@ -38,7 +38,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun SavesScreen() {
     val ctx = LocalContext.current
-    val scope = rememberCoroutineScope()
+    val scope = appScope
     var allBusy by remember { mutableStateOf(false) }
     var auto by remember { mutableStateOf(Prefs.autoBackup) }
     var restoreFor by remember { mutableStateOf<Emulator?>(null) }
@@ -104,10 +104,12 @@ fun ShizukuCard() {
 @Composable
 private fun EmulatorCard(emu: Emulator, onRestore: () -> Unit) {
     val ctx = LocalContext.current
-    val scope = rememberCoroutineScope()
+    val scope = appScope
     val st = Saves.statuses[emu.id]
     val busy = Saves.busy[emu.id]
     var editPath by remember { mutableStateOf(false) }
+    var pickOne by remember { mutableStateOf(false) }
+    var askTransfer by remember { mutableStateOf(false) }
     var path by remember { mutableStateOf(Prefs.emuPath(emu.id)) }
     Section("") {
         SpacedRow {
@@ -138,6 +140,7 @@ private fun EmulatorCard(emu: Emulator, onRestore: () -> Unit) {
                     }
                 }) { Text("Respaldar") }
                 FilledTonalButton(enabled = busy == null && Prefs.configured, onClick = onRestore) { Text("Restaurar…") }
+                TextButton(enabled = busy == null && Prefs.configured && st.error == null, onClick = { pickOne = true }) { Text("Respaldar un juego…") }
                 TextButton(onClick = { editPath = !editPath }) { Text("Carpeta") }
             }
             if (editPath) {
@@ -148,14 +151,41 @@ private fun EmulatorCard(emu: Emulator, onRestore: () -> Unit) {
             }
         }
         if (emu.note.isNotEmpty()) Muted(emu.note)
+        if (emu.id == "nethersx2" && st?.installed == true && Saves.statuses["armsx2"]?.installed == true) {
+            Button(enabled = busy == null, onClick = { askTransfer = true }) { Text("Pasar tarjetas a ARMSX2") }
+        }
         if (st?.installed == true && st.needsShell && Shell.state != Shell.State.READY) Muted("Sin Shizuku: ${emu.exportHint}")
     }
+    if (pickOne) BackupOneDialog(emu) { pickOne = false }
+    if (askTransfer) AlertDialog(
+        onDismissRequest = { askTransfer = false },
+        title = { Text("Pasar tus partidas de NetherSX2 a ARMSX2") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Se copian tus tarjetas de memoria (Mcd001.ps2…) de NetherSX2 a ARMSX2. Son el mismo formato.")
+                Text("Antes se guarda una copia de las tarjetas de los dos emuladores en la tablet (RomSync/antes-del-traspaso)" +
+                    if (Prefs.configured) " y un respaldo en el PC." else ".", fontWeight = FontWeight.SemiBold)
+                Text("Los estados guardados (save states) no sirven entre emuladores: si estabas usando uno, guarda dentro del juego en NetherSX2 antes.")
+                Muted("NetherSX2 no se toca. Cierra los dos emuladores antes de seguir.")
+            }
+        },
+        confirmButton = {
+            Button(onClick = {
+                askTransfer = false
+                scope.launch {
+                    val e = Saves.transferToArmsx2(ctx)
+                    Toast.makeText(ctx, e ?: "Listo: tus tarjetas ya están en ARMSX2", Toast.LENGTH_LONG).show()
+                }
+            }) { Text("Pasar") }
+        },
+        dismissButton = { TextButton(onClick = { askTransfer = false }) { Text("Cancelar") } },
+    )
 }
 
 @Composable
 private fun RestoreDialog(emu: Emulator, onClose: () -> Unit) {
     val ctx = LocalContext.current
-    val scope = rememberCoroutineScope()
+    val scope = appScope
     var list by remember { mutableStateOf<List<SaveBackupInfo>?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var picked by remember { mutableStateOf<SaveBackupInfo?>(null) }
@@ -245,5 +275,53 @@ private fun RestoreDialog(emu: Emulator, onClose: () -> Unit) {
             else TextButton(onClick = onClose) { Text("Cerrar") }
         },
         dismissButton = { if (b != null) TextButton(onClick = { picked = null; units = null }) { Text("Otro respaldo") } },
+    )
+}
+
+/** Respaldar en el PC solo algunos juegos (por ejemplo antes de probar algo). */
+@Composable
+private fun BackupOneDialog(emu: Emulator, onClose: () -> Unit) {
+    val ctx = LocalContext.current
+    var units by remember { mutableStateOf<List<Saves.Unit>?>(null) }
+    var selected by remember { mutableStateOf(setOf<String>()) }
+    var error by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(emu) { runCatching { Saves.currentUnits(ctx, emu) }.onSuccess { units = it }.onFailure { error = it.message } }
+    AlertDialog(
+        onDismissRequest = onClose,
+        title = { Text("Respaldar en ${emu.name}") },
+        text = {
+            LazyColumn(Modifier.fillMaxWidth().heightIn(max = 460.dp)) {
+                when {
+                    error != null -> item { Text(error!!, color = MaterialTheme.colorScheme.error) }
+                    units == null -> item { CircularProgressIndicator() }
+                    units!!.isEmpty() -> item { Muted("No hay partidas.") }
+                    else -> items(units!!, key = { it.key }) { u ->
+                        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()
+                            .clickable { selected = if (u.key in selected) selected - u.key else selected + u.key }) {
+                            Checkbox(checked = u.key in selected, onCheckedChange = { selected = if (it) selected + u.key else selected - u.key })
+                            Column(Modifier.weight(1f)) {
+                                Text(u.title, fontWeight = FontWeight.SemiBold)
+                                Muted("${u.files} archivo(s) · ${formatSize(u.bytes)}")
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(enabled = selected.isNotEmpty(), onClick = {
+                val only = selected
+                onClose()
+                appScope.launch {
+                    val msg = when (val r = Saves.backup(ctx, emu, auto = false, force = true, only = only)) {
+                        is Saves.Result.Done -> "${emu.name}: respaldado (${r.files} archivos)"
+                        Saves.Result.Unchanged, Saves.Result.Empty -> "${emu.name}: no había nada que respaldar"
+                        is Saves.Result.Failed -> "${emu.name}: ${r.message}"
+                    }
+                    Toast.makeText(ctx, msg, Toast.LENGTH_LONG).show()
+                }
+            }) { Text("Respaldar (${selected.size})") }
+        },
+        dismissButton = { TextButton(onClick = onClose) { Text("Cancelar") } },
     )
 }

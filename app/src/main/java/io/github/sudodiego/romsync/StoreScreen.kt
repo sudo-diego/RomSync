@@ -68,7 +68,7 @@ object StoreState {
 @Composable
 fun StoreScreen() {
     val ctx = LocalContext.current
-    val scope = rememberCoroutineScope()
+    val scope = appScope
     val lib = Repo.library
     val all = remember(lib, Repo.tabletOnly) { Repo.allGames() }
     val localFiles = Repo.localFiles
@@ -87,7 +87,16 @@ fun StoreScreen() {
                 StoreFilter.TABLET_ONLY -> p == Presence.TABLET_ONLY
                 StoreFilter.DUPLICATES -> g.id in dupes
             }
+        }.let { list ->
+            // Una tarjeta por juego: las versiones (región, formato, con mods) van juntas y se eligen adentro.
+            // Se muestra la que está en la tablet o, si no, la de mejor formato.
+            list.groupBy { if (it.kind == "shortcut") it.id else Repo.versionKey(it) }.values.map { vs ->
+                vs.maxWith(compareBy<Game>({ Repo.where(it).presence != Presence.MISSING }, { Advice.format(it).first }))
+            }
         }.let { list -> if (StoreState.bySize) list.sortedByDescending { it.size } else list.sortedBy { it.title.lowercase() } }
+    }
+    val versionCount = remember(all) {
+        all.filter { it.kind != "shortcut" }.groupingBy { Repo.versionKey(it) }.eachCount()
     }
     val systems = remember(all) { all.map { it.system }.distinct().map { Repo.system(it) }.sortedBy { it.name.lowercase() } }
     val wide = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp >= 840
@@ -114,7 +123,7 @@ fun StoreScreen() {
         if (games.isEmpty()) {
             item(span = { GridItemSpan(maxLineSpan) }) { EmptyState() }
         }
-        items(games, key = { it.id }) { g -> GameCard(g) }
+        items(games, key = { it.id }) { g -> GameCard(g, if (g.kind == "shortcut") 1 else versionCount[Repo.versionKey(g)] ?: 1) }
     }
     }
     if (Art.bulkRunning && !StoreState.coversHidden) CoversDialog()
@@ -180,13 +189,13 @@ private fun Header(onRefresh: () -> Unit) {
             val conn = Repo.conn
             Muted(when (conn) {
                 is Conn.Online -> "PC leído ${formatAgo(conn.at)} · ${Repo.library?.games?.size ?: 0} juegos"
-                Conn.Connecting -> "Leyendo el disco del PC…"
+                Conn.Connecting -> Repo.scanStatus.ifEmpty { "Conectando con el PC…" }
                 is Conn.Offline -> "Sin conexión con el PC · ${conn.message}"
                 Conn.Idle -> "Conecta tu PC en Ajustes"
             })
         }
         val missingArt = remember(Repo.library, Repo.tabletOnly, Art.versions.size, Art.bulkTotal) {
-            Repo.allGames().count { it.kind != "shortcut" && Art.cached(it.id) == null }
+            Repo.allGames().count { it.kind != "shortcut" && Art.cached(it.id) == null && !Art.notFound(it.id) }
         }
         if (Prefs.sgdbKey.isNotBlank() && missingArt > 0 && !Art.bulkRunning) TextButton(onClick = {
             StoreState.coversHidden = false
@@ -283,7 +292,7 @@ private fun EmptyState() {
 }
 
 @Composable
-private fun GameCard(g: Game) {
+private fun GameCard(g: Game, versions: Int = 1) {
     val w = Repo.where(g)
     val dl = DownloadService.items.firstOrNull { it.id == g.id && it.status != DlStatus.DONE }
     Column(Modifier.clip(RoundedCornerShape(14.dp)).clickable { Nav.game = g }) {
@@ -300,7 +309,7 @@ private fun GameCard(g: Game) {
                 Pill(Repo.system(g.system).short, Color(0xCC0D1220), Modifier.align(Alignment.TopEnd))
             }
         }
-        Text(g.title, Modifier.padding(top = 8.dp, start = 2.dp, end = 2.dp), fontWeight = FontWeight.SemiBold,
+        Text(if (versions > 1) Group.cleanTitle(g.name).first else g.title, Modifier.padding(top = 8.dp, start = 2.dp, end = 2.dp), fontWeight = FontWeight.SemiBold,
             maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium)
         Text(buildString {
             // El formato y la región distinguen las versiones repetidas (RVZ/ISO, USA/Europa, la con mods).
@@ -310,6 +319,7 @@ private fun GameCard(g: Game) {
             append(formatSize(g.size))
             if (g.parts.size > 1) append(" · ${g.parts.size} partes")
             if (g.kind == "discs") append(" · ${g.files.size} discos")
+            if (versions > 1) append(" · $versions versiones")
         }, Modifier.padding(horizontal = 2.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

@@ -70,7 +70,6 @@ object Group {
             lower == ".nomedia" || lower in ignoredNames -> null
             e == ".parts" || e == ".crdownload" || e == ".tmp" || e == ".part" -> "Descarga a medias"
             lower.startsWith(".") -> "Archivo oculto de otra app"
-            e == ".opts" || e == ".cht" || e == ".pch" -> "Opciones o trucos del emulador"
             reSaveCopy.matches(e) || isSaveCopy(name) || e == ".bak" -> "Copia vieja de una partida"
             else -> null
         }
@@ -114,6 +113,8 @@ object Group {
         return isBios(name) || reBiosVersion.matches(name) ||
             (e in ps2BiosExt) ||
             (sys == "ps2" && e == ".bin" && size == 4L * 1024 * 1024) ||
+            // Un juego de PS2 nunca pesa tan poco: un .bin/.rom chico en ps2 es parte de una BIOS.
+            (sys == "ps2" && e in setOf(".bin", ".rom", ".img") && size < 32L * 1024 * 1024) ||
             (sys == "psx" && e == ".bin" && size == 512L * 1024)
     }
 

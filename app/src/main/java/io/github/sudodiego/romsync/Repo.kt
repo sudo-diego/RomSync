@@ -41,6 +41,9 @@ object Repo {
         private set
     var scanningPc by mutableStateOf(false)
         private set
+    /** Qué está haciendo la lectura del PC ahora (para que no parezca pegada). */
+    var scanStatus by mutableStateOf("")
+        private set
 
     private var localIndex: Map<String, Long> = emptyMap()
     private var tabletOnlyIds: Set<String> = emptySet()
@@ -94,7 +97,7 @@ object Repo {
                 conn = Conn.Connecting
                 scanningPc = true
                 try {
-                    val lib = Pc.scan()
+                    val lib = Pc.scan { msg -> scanStatus = msg }
                     library = lib
                     withContext(Dispatchers.IO) { cacheFile.writeText(Json.libraryJson(lib).toString()) }
                     conn = Conn.Online(System.currentTimeMillis())
@@ -102,6 +105,7 @@ object Repo {
                     conn = Conn.Offline(e.message ?: "Sin conexión")
                 } finally {
                     scanningPc = false
+                    scanStatus = ""
                 }
             } else if (!Prefs.configured) {
                 conn = Conn.Idle
@@ -225,16 +229,23 @@ object Repo {
         return moved
     }
 
-    /** Juegos de la misma plataforma con el mismo título (otra región, otro formato, una versión con mods). */
+    /**
+     * Clave para juntar versiones del mismo juego: la plataforma y el título que sale del NOMBRE DEL ARCHIVO (no el
+     * nombre propio). Así, ponerle "Wind Waker HD Plus" a la versión con mods no la separa de Wind Waker.
+     */
+    fun versionKey(g: Game): String =
+        g.system.lowercase() + "|" + Group.cleanTitle(g.name).first.lowercase().filter { it.isLetterOrDigit() }
+
+    /** Otras versiones del mismo juego (otra región, otro formato, una con mods). */
     fun versions(g: Game): List<Game> {
-        val key = Group.cleanTitle(g.title).first.lowercase().filter { it.isLetterOrDigit() }
-        return allGames().filter { it.id != g.id && it.system == g.system && it.title.lowercase().filter { c -> c.isLetterOrDigit() } == key }
+        if (g.kind == "shortcut") return emptyList()
+        val key = versionKey(g)
+        return allGames().filter { it.id != g.id && it.kind != "shortcut" && versionKey(it) == key }
     }
 
     /** Ids de juegos que tienen otra versión en la misma plataforma (filtro "Repetidos"). */
     fun duplicateIds(): Set<String> = allGames().filter { it.kind != "shortcut" }
-        .groupBy { it.system + "|" + it.title.lowercase().filter { c -> c.isLetterOrDigit() } }
-        .values.filter { it.size > 1 }.flatten().map { it.id }.toSet()
+        .groupBy { versionKey(it) }.values.filter { it.size > 1 }.flatten().map { it.id }.toSet()
 
     /** Borra un juego de la tablet (solo sus archivos; las partidas se quedan). Devuelve los bytes liberados. */
     suspend fun delete(g: Game): Long {

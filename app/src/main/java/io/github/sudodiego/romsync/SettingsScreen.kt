@@ -60,7 +60,7 @@ private fun Field(label: String, value: String, onChange: (String) -> Unit, modi
 
 @Composable
 private fun PcCard() {
-    val scope = rememberCoroutineScope()
+    val scope = appScope
     var host by remember { mutableStateOf(Prefs.host) }
     var user by remember { mutableStateOf(Prefs.user) }
     var pass by remember { mutableStateOf(Prefs.password) }
@@ -122,7 +122,7 @@ private fun PcCard() {
                 color = MaterialTheme.colorScheme.error)
             list.forEach { f ->
                 TextButton(onClick = { host = f.ip }) {
-                    Text((if (f.ip == host) "✓ " else "") + f.ip + (if (f.windows) " · Windows" else " · " + f.banner.take(30)))
+                    Text((if (f.ip == host) "✓ " else "") + f.ip + (if (f.windows) " · Windows (tu PC)" else " · otro aparato (router, NAS…): no es el PC"))
                 }
             }
         }
@@ -248,7 +248,7 @@ private fun TabletCard() {
     var bios by remember { mutableStateOf(Prefs.biosDir) }
     var name by remember { mutableStateOf(Prefs.deviceName) }
     var reserve by remember { mutableStateOf(Prefs.reserveGb.toFloat()) }
-    val scope = rememberCoroutineScope()
+    val scope = appScope
     Section("Tablet") {
         Field("Carpeta de ROMs", roms, { roms = it }, Modifier.fillMaxWidth())
         Field("Carpeta de BIOS", bios, { bios = it }, Modifier.fillMaxWidth())
@@ -272,7 +272,7 @@ private fun ArtCard() {
     Section("Carátulas (SteamGridDB)") {
         Muted("Gratis: en steamgriddb.com inicia sesión → Preferencias → API → copia la clave. Las imágenes quedan guardadas en la tablet.")
         Field("Clave de la API", key, { key = it }, Modifier.fillMaxWidth(), password = true)
-        val scope = rememberCoroutineScope()
+        val scope = appScope
         var msg by remember { mutableStateOf<Pair<Boolean, String>?>(null) }
         var testing by remember { mutableStateOf(false) }
         SpacedRow {

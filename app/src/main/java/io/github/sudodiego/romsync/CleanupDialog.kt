@@ -35,7 +35,6 @@ private data class Junk(val file: FileEntry, val onPc: Boolean, val kind: String
 private val explain = mapOf(
     "Descarga a medias" to "Quedó de una descarga que no terminó (de otra app). Se puede borrar.",
     "Archivo oculto de otra app" to "Archivos que empiezan con punto: los deja otra app y no son juegos.",
-    "Opciones o trucos del emulador" to "Ajustes por juego de DraStic/melonDS. Si los borras, el juego vuelve a las opciones de siempre.",
     "Copia vieja de una partida" to "Copias que hizo el emulador (\".SAV(1)\"). La partida de verdad es el .sav sin número: esa no aparece aquí.",
 )
 
@@ -60,7 +59,7 @@ fun CleanupCard() {
 @Composable
 private fun CleanupDialog(onClose: () -> Unit) {
     val ctx = LocalContext.current
-    val scope = rememberCoroutineScope()
+    val scope = appScope
     val all = remember(Repo.localJunk, Repo.library) {
         Repo.localJunk.map { Junk(it, false, Group.junkKind(it.path.substringAfterLast('/')) ?: "") } +
             Repo.library?.junk.orEmpty().map { Junk(it, true, Group.junkKind(it.path.substringAfterLast('/')) ?: "") }
@@ -154,7 +153,7 @@ fun StrayBiosCard() {
 @Composable
 private fun StrayBiosDialog(tablet: List<FileEntry>, pc: List<FileEntry>, onClose: () -> Unit) {
     val ctx = LocalContext.current
-    val scope = rememberCoroutineScope()
+    val scope = appScope
     val all = remember(tablet, pc) { tablet.map { Junk(it, false, "") } + pc.map { Junk(it, true, "") } }
     var selected by remember(all) { mutableStateOf(all.toSet()) }
     var busy by remember { mutableStateOf(false) }

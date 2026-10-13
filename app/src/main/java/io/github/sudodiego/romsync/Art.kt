@@ -57,6 +57,13 @@ object Art {
     fun cached(id: String, kind: String = "grid"): File? =
         custom(id, kind).takeIf { it.isFile } ?: file(id, kind).takeIf { it.isFile && it.length() > 0 }
 
+    /** Ya se buscó hace poco y SteamGridDB no tiene nada: no cuenta como "falta buscar" (hay que ponerla a mano). */
+    fun notFound(id: String, kind: String = "grid"): Boolean {
+        if (cached(id, kind) != null) return false
+        val t = synchronized(index) { index[id]?.optLong("checked_$kind") } ?: return false
+        return t > 0 && System.currentTimeMillis() - t < 7L * 24 * 3600 * 1000
+    }
+
     /** Busca y baja la imagen si hace falta. Null si no hay (o no hay clave / internet). */
     suspend fun get(g: Game, kind: String = "grid"): File? {
         cached(g.id, kind)?.let { return it }
@@ -194,7 +201,7 @@ object Art {
 
     /** Busca las carátulas que faltan, varias a la vez. */
     suspend fun fetchAll(games: List<Game>) = kotlinx.coroutines.coroutineScope {
-        val todo = games.filter { it.kind != "shortcut" && cached(it.id) == null }
+        val todo = games.filter { it.kind != "shortcut" && cached(it.id) == null && !notFound(it.id) }
         bulkDone = 0
         bulkTotal = todo.size
         todo.map { g -> launch { runCatching { get(g) }; bulkDone++ } }.forEach { it.join() }

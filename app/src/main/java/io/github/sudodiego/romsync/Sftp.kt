@@ -89,6 +89,32 @@ class SftpConn private constructor(private val session: Session, val ch: Channel
         runCatching { session.disconnect() }
     }
 
+    /** Corre un comando en el PC (por SSH, con el mismo usuario) y devuelve su salida, o null si falla. */
+    fun exec(command: String, timeoutMs: Long = 120_000): String? {
+        val chan = session.openChannel("exec") as com.jcraft.jsch.ChannelExec
+        return try {
+            chan.setCommand(command)
+            chan.inputStream.let { input ->
+                chan.connect(8000)
+                val out = java.io.ByteArrayOutputStream()
+                val buf = ByteArray(1 shl 16)
+                val deadline = System.currentTimeMillis() + timeoutMs
+                while (true) {
+                    val n = input.read(buf)
+                    if (n < 0) break
+                    out.write(buf, 0, n)
+                    if (System.currentTimeMillis() > deadline) return null
+                }
+                while (!chan.isClosed && System.currentTimeMillis() < deadline) Thread.sleep(20)
+                if (chan.exitStatus != 0) null else out.toString("UTF-8")
+            }
+        } catch (e: Exception) {
+            null
+        } finally {
+            chan.disconnect()
+        }
+    }
+
     fun exists(path: String): Boolean = stat(path) != null
 
     fun stat(path: String): SftpATTRS? = try {

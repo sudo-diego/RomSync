@@ -30,7 +30,7 @@ object Saves {
         val dataSize: Long? = null,
     ) {
         val installed get() = pkg != null
-        val supported get() = emu.id != "gamenative"
+        val supported get() = true
     }
 
     /** Lo último que se sabe de cada emulador (para la UI y el reporte al PC). */
@@ -52,7 +52,7 @@ object Saves {
 
     suspend fun inspect(ctx: Context, emu: Emulator, withSize: Boolean = false): Status {
         val pkg = Emulators.installedPackage(ctx, emu)
-        if (pkg == null || emu.id == "gamenative") return Status(emu, pkg).also { statuses[emu.id] = it }
+        if (pkg == null) return Status(emu, pkg).also { statuses[emu.id] = it }
         val st = try {
             val (sources, entries) = collect(emu, pkg)
             val dataSize = if (withSize && Shell.ready) Storage.sizeOf("${Emulators.DATA}/$pkg") else null
@@ -75,15 +75,27 @@ object Saves {
     }
 
     /** Respalda un emulador en el PC. Si no cambió nada desde el último respaldo (mismo hash) no sube nada. */
-    suspend fun backup(ctx: Context, emu: Emulator, auto: Boolean, force: Boolean = false): Result = withContext(Dispatchers.IO) {
+    /** Las partidas que hay ahora en la tablet, juego por juego (para respaldar solo uno). */
+    suspend fun currentUnits(ctx: Context, emu: Emulator): List<Unit> = withContext(Dispatchers.IO) {
+        val pkg = Emulators.installedPackage(ctx, emu) ?: return@withContext emptyList()
+        val (_, entries) = collect(emu, pkg)
+        entries.groupBy { (s, f) -> unitOf(emu.id, "${s.label}/${f.rel}") }
+            .map { (k, es) -> Unit(k.first, titleFor(k.first, k.second), es.first().second.rel.substringAfterLast('/'), es.size,
+                es.sumOf { it.second.size }, es.maxOf { it.second.mtime } * 1000) }
+            .sortedBy { it.title.lowercase() }
+    }
+
+    suspend fun backup(ctx: Context, emu: Emulator, auto: Boolean, force: Boolean = false, only: Set<String>? = null): Result = withContext(Dispatchers.IO) {
         val pkg = Emulators.installedPackage(ctx, emu) ?: return@withContext Result.Failed("${emu.name} no está instalado")
         busy[emu.id] = "Leyendo partidas…"
         val zip = File(ctx.cacheDir, "respaldo_${emu.id}.zip")
         try {
-            val (sources, entries) = collect(emu, pkg)
+            val (sources, all) = collect(emu, pkg)
+            // Respaldo de un juego (o algunos): solo sus archivos.
+            val entries = if (only == null) all else all.filter { (s, f) -> unitOf(emu.id, "${s.label}/${f.rel}").first in only }
             if (entries.isEmpty()) return@withContext Result.Empty
             val hash = hashOf(entries)
-            if (!force) {
+            if (!force && only == null) {
                 val remote = runCatching { Pc.use { Backups.latestHash(it, emu.id) } }.getOrDefault("")
                 if (remote == hash) {
                     Prefs.setLastBackup(emu.id, hash, System.currentTimeMillis())
@@ -162,7 +174,7 @@ object Saves {
             "eden" -> if (rel.contains("/user/save/") && parts.size > 5) "tid:" + parts[5].uppercase() to parts[5].uppercase()
                 else "perfiles" to "Perfiles de usuario"
             "vita3k" -> if (parts.size > 4 && parts[3] == "savedata") "id:" + parts[4] to parts[4] else "trofeos" to "Trofeos y otros"
-            "armsx2" -> if (parts[0] == "memcards") "card:$file" to "Tarjeta de memoria · $file"
+            "armsx2", "nethersx2" -> if (parts[0] == "memcards") "card:$file" to "Tarjeta de memoria · $file"
                 else file.substringBefore(" (").substringBefore('.').let { "id:$it" to "Estado · $it" }
             "azahar" -> {
                 val t = parts.indexOf("title")
@@ -253,13 +265,66 @@ object Saves {
         (0 until arr.length()).map { arr.getJSONObject(it) }.firstOrNull { it.getString("label") == label }?.getString("root")
     }.getOrNull()
 
+    /**
+     * NetherSX2 → ARMSX2: copia las tarjetas de memoria (.ps2, mismo formato). Antes guarda una copia de las tarjetas de
+     * los DOS emuladores en la tablet (RomSync/antes-del-traspaso) y, si el PC está conectado, un respaldo en el PC.
+     * Devuelve null si salió bien o el error.
+     */
+    suspend fun transferToArmsx2(ctx: Context): String? = withContext(Dispatchers.IO) {
+        val nether = Emulators.byId("nethersx2")!!
+        val arm = Emulators.byId("armsx2")!!
+        val npkg = Emulators.installedPackage(ctx, nether) ?: return@withContext "NetherSX2 no está instalado"
+        val apkg = Emulators.installedPackage(ctx, arm) ?: return@withContext "ARMSX2 no está instalado"
+        if (Shell.ready && (Shell.isRunning(npkg) || Shell.isRunning(apkg))) return@withContext "Cierra NetherSX2 y ARMSX2 antes de seguir."
+        busy["nethersx2"] = "Guardando una copia de las tarjetas…"
+        try {
+            val from = Emulators.sources(nether, npkg).first()
+            val to = Emulators.sources(arm, apkg).first()
+            val cards = Storage.list(from.copy(include = listOf("memcards/**")))
+            if (cards.isEmpty()) return@withContext "NetherSX2 no tiene tarjetas de memoria"
+            // Copia de seguridad local de los dos lados, sin depender del PC.
+            val safe = File(Prefs.storageRoot, "RomSync/antes-del-traspaso/" +
+                java.text.SimpleDateFormat("yyyy-MM-dd_HHmmss", java.util.Locale.ROOT).format(java.util.Date()))
+            for ((src, name) in listOf(from to "NetherSX2", to to "ARMSX2")) {
+                val list = Storage.list(src.copy(include = listOf("memcards/**")))
+                Storage.read(src.copy(include = listOf("memcards/**")), list) { rel, _, input ->
+                    val f = File(safe, "$name/$rel").apply { parentFile?.mkdirs() }
+                    f.outputStream().use { input.copyTo(it) }
+                }
+            }
+            if (Prefs.configured) {
+                busy["nethersx2"] = "Respaldando en el PC…"
+                backup(ctx, nether, auto = false, force = true)
+                backup(ctx, arm, auto = false, force = true)
+            }
+            busy["nethersx2"] = "Copiando ${cards.size} tarjeta(s) a ARMSX2…"
+            val tmp = File(ctx.cacheDir, "traspaso").apply { deleteRecursively(); mkdirs() }
+            Storage.read(from.copy(include = listOf("memcards/**")), cards) { rel, _, input ->
+                File(tmp, rel).apply { parentFile?.mkdirs() }.outputStream().use { input.copyTo(it) }
+            }
+            Storage.write(to.root, cards.asSequence().map { c ->
+                val f = File(tmp, c.rel)
+                Triple(c.rel, f.length(), { f.inputStream() as java.io.InputStream })
+            })
+            tmp.deleteRecursively()
+            inspect(ctx, arm)
+            null
+        } catch (e: Storage.NeedsShizuku) {
+            "Necesita Shizuku"
+        } catch (e: Exception) {
+            e.message ?: e.javaClass.simpleName
+        } finally {
+            busy.remove("nethersx2")
+        }
+    }
+
     /** Respalda todos los emuladores instalados a los que se puede llegar. Devuelve un resumen corto. */
     suspend fun backupAll(ctx: Context, auto: Boolean): String {
         var done = 0
         var same = 0
         val failed = mutableListOf<String>()
         for (emu in Emulators.all) {
-            if (emu.id == "gamenative" || Emulators.installedPackage(ctx, emu) == null) continue
+            if (Emulators.installedPackage(ctx, emu) == null) continue
             when (val r = backup(ctx, emu, auto)) {
                 is Result.Done -> done++
                 Result.Unchanged -> same++

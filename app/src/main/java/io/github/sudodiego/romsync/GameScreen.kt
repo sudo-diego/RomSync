@@ -75,7 +75,7 @@ private val partNames = mapOf("base" to "Juego base", "update" to "Actualizació
 @Composable
 fun GameScreen(g: Game, onBack: () -> Unit) {
     val ctx = LocalContext.current
-    val scope = rememberCoroutineScope()
+    val scope = appScope
     // Se vuelve a calcular cuando cambian los archivos de la tablet (al terminar una descarga o al borrar).
     val w = remember(Repo.localFiles, g) { Repo.where(g) }
     val sys = Repo.system(g.system)
@@ -108,6 +108,18 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
             Column(Modifier.weight(1f).padding(top = 96.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(g.title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
                 Muted(listOfNotNull(sys.name, Group.ext(g.primary).removePrefix(".").uppercase().ifEmpty { null }, formatSize(g.size), "${g.files.size} archivo(s)", g.serial.ifBlank { null }).joinToString(" · "))
+                val versionList = remember(g, Repo.library, Repo.tabletOnly) { listOf(g) + Repo.versions(g) }
+                if (versionList.size > 1) {
+                    Muted("Versiones de este juego:")
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        versionList.sortedBy { it.name }.forEach { v ->
+                            androidx.compose.material3.FilterChip(selected = v.id == g.id, onClick = { Nav.game = v }, label = {
+                                Text(listOfNotNull(Group.ext(v.primary).removePrefix(".").uppercase().ifEmpty { "Carpeta" },
+                                    v.tags.firstOrNull(), Names.get(v.id)).joinToString(" · "))
+                            })
+                        }
+                    }
+                }
                 if (g.tags.isNotEmpty()) FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     g.tags.forEach { Pill(it, Color(0xFF475569)) }
                 }
@@ -169,7 +181,13 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
 
                 val others = remember(g, Repo.library, Repo.tabletOnly) { Repo.versions(g) }
                 if (others.isNotEmpty()) Section("Otras versiones de este juego") {
-                    Muted("Mismo nombre en ${sys.name}: otra región, otro formato o una versión modificada. Quédate con la que uses.")
+                    val advice = remember(g, others) { Advice.pick(listOf(g) + others) }
+                    if (advice != null) {
+                        val (best, why) = advice
+                        Text("Conviene quedarse con el ${Group.ext(best.primary).removePrefix(".").uppercase().ifEmpty { "de carpeta" }}" +
+                            (if (best.id == g.id) " (este)" else "") + ": $why. Los otros los puedes borrar.",
+                            color = Palette.ok, fontWeight = FontWeight.SemiBold)
+                    } else Muted("Mismo nombre en ${sys.name}: otra región o una versión modificada. Quédate con la que uses.")
                     (listOf(g) + others).forEach { o ->
                         val ow = Repo.where(o)
                         Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable(enabled = o.id != g.id) { Nav.game = o }

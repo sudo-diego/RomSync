@@ -72,10 +72,11 @@ object Emulators {
             note = "No se respaldan los juegos, actualizaciones ni DLC instalados en sdmc, solo las partidas.",
         ),
         Emulator(
-            "gamenative", "GameNative", listOf("app.gamenative"),
-            "Usa la nube de Steam",
-            "Las partidas de Steam se sincronizan solas con Steam Cloud.",
-            note = "No hace falta respaldar: GameNative sube las partidas a Steam Cloud.",
+            "nethersx2", "NetherSX2", listOf("xyz.aethersx2.android"),
+            "Tarjetas de memoria (memcards) y estados (sstates)",
+            "NetherSX2 → Ajustes → Transfer Data → Export (solo pasa las tarjetas de memoria).",
+            note = "Para pasarte a ARMSX2: «Pasar tarjetas a ARMSX2» copia tus tarjetas de memoria (el mismo formato .ps2). " +
+                "Los estados guardados no sirven entre emuladores: guarda dentro del juego antes.",
         ),
     )
 
@@ -99,7 +100,7 @@ object Emulators {
                 }
                 listOf(SaveSource("user", root, listOf("GC/**", "Wii/title/*/*/data/**", "StateSaves/**")))
             }
-            "armsx2" -> {
+            "armsx2", "nethersx2" -> {
                 val root = custom.ifBlank {
                     listOf("$SDCARD/ARMSX2", "$SDCARD/armsx2").firstOrNull { File("$it/memcards").isDirectory } ?: files
                 }

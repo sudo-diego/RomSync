@@ -132,7 +132,8 @@ class GroupTest {
     @Test fun junkKinds() {
         assertEquals("Descarga a medias", Group.junkKind(".8686A228806624EF2D1C01D897EFC240DFA384980.parts"))
         assertEquals("Copia vieja de una partida", Group.junkKind("Spirit Tracks.SAV(1)(0)"))
-        assertEquals("Opciones o trucos del emulador", Group.junkKind("Spirit Tracks.opts"))
+        assertEquals(null, Group.junkKind("Spirit Tracks.opts")) // opciones del emulador: no se ofrecen borrar
+        assertTrue(Group.isIgnored("Spirit Tracks.opts"))
         assertEquals(null, Group.junkKind("Spirit Tracks.sav"))
         assertEquals(null, Group.junkKind("gamelist.xml"))
         // Las BIOS de PS2 nunca son "basura" (se marcaban en la limpieza).

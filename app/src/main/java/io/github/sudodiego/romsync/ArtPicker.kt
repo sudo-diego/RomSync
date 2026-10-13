@@ -33,7 +33,7 @@ import kotlinx.coroutines.launch
 /** Elegir la carátula a mano: buscar el juego en SteamGridDB y tocar la imagen que guste. */
 @Composable
 fun ArtPicker(g: Game, onClose: () -> Unit) {
-    val scope = rememberCoroutineScope()
+    val scope = appScope
     var q by remember { mutableStateOf(g.title) }
     var games by remember { mutableStateOf<List<Pair<Int, String>>?>(null) }
     var chosen by remember { mutableStateOf<Pair<Int, String>?>(null) }

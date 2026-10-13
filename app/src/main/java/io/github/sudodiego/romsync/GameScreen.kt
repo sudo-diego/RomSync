@@ -83,6 +83,7 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
     var askDelete by remember { mutableStateOf(false) }
     var askDeletePc by remember { mutableStateOf(false) }
     var pickArt by remember { mutableStateOf(false) }
+    var renaming by remember { mutableStateOf(false) }
     var noSpace by remember { mutableStateOf<String?>(null) }
     // Switch: qué partes descargar (por defecto, todas las que faltan).
     var selected by remember(g, w) {
@@ -190,6 +191,7 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
 
                 Section("Más") {
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = { renaming = true }) { Text("Cambiar nombre") }
                         OutlinedButton(onClick = { pickArt = true }) { Text("Cambiar carátula") }
                         if (g.kind == "discs" && w.presence != Presence.TABLET_ONLY) OutlinedButton(onClick = {
                             scope.launch {
@@ -281,6 +283,35 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
     }
 
     if (pickArt) ArtPicker(g) { pickArt = false }
+
+    if (renaming) {
+        var name by remember { mutableStateOf(Names.get(g.id) ?: g.title) }
+        AlertDialog(
+            onDismissRequest = { renaming = false },
+            title = { Text("Nombre del juego") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    androidx.compose.material3.OutlinedTextField(value = name, onValueChange = { name = it }, singleLine = true,
+                        modifier = Modifier.fillMaxWidth())
+                    Muted("Solo cambia cómo se ve en RomSync (y con qué nombre se busca la carátula). El archivo sigue igual: ${g.name}")
+                }
+            },
+            confirmButton = {
+                Button(onClick = {
+                    Repo.rename(g, name)
+                    renaming = false
+                    Nav.game = Repo.game(g.id) ?: g
+                }) { Text("Guardar") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    Repo.rename(g, "")
+                    renaming = false
+                    Nav.game = Repo.game(g.id) ?: g
+                }) { Text("Usar el del archivo") }
+            },
+        )
+    }
 
     noSpace?.let { msg ->
         val biggest = remember(Repo.localFiles) {

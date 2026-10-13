@@ -203,6 +203,12 @@ object Kitchen {
                 val freed = runBlocking { Repo.delete(g) }
                 ok(JSONObject().put("freed", freed))
             }
+            "rename" -> {
+                val b = bodyJson(s)
+                val g = Repo.game(b.optString("id")) ?: return err(NanoHTTPD.Response.Status.NOT_FOUND, "No existe")
+                Repo.rename(g, b.optString("name"))
+                ok()
+            }
             "delete-pc" -> {
                 val g = Repo.game(bodyJson(s).optString("id")) ?: return err(NanoHTTPD.Response.Status.NOT_FOUND, "No existe")
                 val freed = runBlocking { Repo.deleteFromPc(g) }

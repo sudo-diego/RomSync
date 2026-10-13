@@ -104,6 +104,10 @@ object Prefs {
     fun setLastBackup(emu: String, hash: String, at: Long) =
         sp.edit().putString("last_hash_$emu", hash).putLong("last_at_$emu", at).apply()
 
+    // TitleID leído de cada .nsp sin código en el nombre ("ruta|tamaño" → id; "" = no se pudo).
+    fun switchId(key: String): String? = sp.getString("tid:$key", null)
+    fun setSwitchId(key: String, id: String) = sp.edit().putString("tid:$key", id).apply()
+
     var welcomeDone: Boolean
         get() = sp.getBoolean("welcome_done", false)
         set(v) = sp.edit().putBoolean("welcome_done", v).apply()

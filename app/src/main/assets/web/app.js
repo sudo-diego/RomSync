@@ -257,6 +257,7 @@ function openGame(id) {
         ${parts}${files}
         <h3>Carátula</h3>
         <div class="actions">
+          <button class="ghost" id="renameBtn">Cambiar nombre</button>
           <button class="ghost" id="artSearch">Buscar en SteamGridDB</button>
           <label class="ghost">Subir imagen<input type="file" id="artFile" accept="image/*" hidden></label>
           <button class="ghost" id="artClear">Quitar</button>
@@ -305,6 +306,14 @@ function openGame(id) {
       closeModal();
       await loadGames();
     } catch (e) { toast(e.message); }
+  });
+  $("#renameBtn").addEventListener("click", async () => {
+    const n = prompt("Nombre del juego (vacío = el del archivo). También se usa para buscar la carátula.", g.title);
+    if (n === null) return;
+    await post("/api/rename", { id, name: n });
+    S.artV[g.id] = Date.now();
+    await loadGames();
+    openGame(id);
   });
   $("#artSearch").addEventListener("click", () => artPicker(g));
   $("#artClear").addEventListener("click", async () => {

@@ -48,6 +48,25 @@ object Group {
     // medias (.parts, .crdownload), respaldos de partidas con número (".SAV(1)(0)").
     private val junkExt = setOf(".opts", ".parts", ".crdownload", ".tmp", ".bak", ".cht", ".pch", ".dst", ".nomedia")
 
+    private val reSaveCopy = Regex("^\\.(sav|srm|dsv)[^a-z].*")
+
+    /**
+     * Si un archivo ignorado es "basura" que vale la pena mostrar para limpiar, qué es. Null para lo normal
+     * (partidas, carátulas, textos de ES-DE): eso no se toca.
+     */
+    fun junkKind(name: String): String? {
+        val lower = name.lowercase()
+        val e = ext(lower)
+        return when {
+            lower == ".nomedia" || lower in ignoredNames -> null
+            e == ".parts" || e == ".crdownload" || e == ".tmp" || e == ".part" -> "Descarga a medias"
+            lower.startsWith(".") -> "Archivo oculto de otra app"
+            e == ".opts" || e == ".cht" || e == ".pch" -> "Opciones o trucos del emulador"
+            reSaveCopy.matches(e) || e == ".bak" -> "Copia vieja de una partida"
+            else -> null
+        }
+    }
+
     fun isIgnored(name: String): Boolean {
         val lower = name.lowercase()
         // Archivos ocultos (".8686A2…parts"): siempre de otra app, nunca un juego.
@@ -206,7 +225,8 @@ object Group {
     }
 
     /** files: rutas relativas a la carpeta de ROMs, todas dentro de "system/". readText lee un descriptor (o null). */
-    fun system(system: String, files: List<FileEntry>, readText: ((String) -> String?)? = null): List<Game> {
+    fun system(system: String, files: List<FileEntry>, switchIds: Map<String, String> = emptyMap(),
+               readText: ((String) -> String?)? = null): List<Game> {
         val c = Ctx(files.filter { !isBios(it.path) }, readText)
         val prefix = "$system/"
         val games = ArrayList<Game>()
@@ -254,7 +274,7 @@ object Group {
 
         // 4) El resto: un archivo, un juego (Switch: agrupados por TitleID).
         val loose = c.free()
-        if (system.equals("switch", true)) games += switch(system, loose)
+        if (system.equals("switch", true)) games += switch(system, loose, switchIds)
         else loose.forEach { games += newGame(system, stem(it.path), it.path, "file", listOf(it)) }
         return games.sortedBy { it.title.lowercase() }
     }
@@ -269,12 +289,15 @@ object Group {
         }
     }
 
-    private fun switch(system: String, files: List<FileEntry>): List<Game> {
+    /** Archivos de Switch sin [TitleID] en el nombre: lo trae el propio archivo (ver [SwitchId]). */
+    fun needsSwitchId(f: FileEntry) = reSwitchTid.find(stem(f.path)) == null && ext(f.path) in setOf(".nsp", ".nsz")
+
+    private fun switch(system: String, files: List<FileEntry>, ids: Map<String, String>): List<Game> {
         val buckets = LinkedHashMap<Long, MutableList<Part>>()
         val out = ArrayList<Game>()
         for (f in files) {
             val name = stem(f.path)
-            val tid = reSwitchTid.find(name)?.groupValues?.get(1)?.toLongOrNull(16)
+            val tid = (reSwitchTid.find(name)?.groupValues?.get(1) ?: ids[f.path])?.toLongOrNull(16)
             if (tid == null) {
                 out += newGame(system, name, f.path, "file", listOf(f))
                 continue
@@ -296,7 +319,7 @@ object Group {
     }
 
     /** Agrupa todo un listado (rutas relativas a la carpeta de ROMs) por plataforma. */
-    fun all(files: List<FileEntry>, readText: ((String) -> String?)? = null): List<Game> =
+    fun all(files: List<FileEntry>, switchIds: Map<String, String> = emptyMap(), readText: ((String) -> String?)? = null): List<Game> =
         files.filter { it.path.contains('/') }.groupBy { it.path.substringBefore('/') }
-            .flatMap { (sys, fs) -> system(sys, fs, readText) }
+            .flatMap { (sys, fs) -> system(sys, fs, switchIds, readText) }
 }

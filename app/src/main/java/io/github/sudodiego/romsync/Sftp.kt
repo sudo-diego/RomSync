@@ -114,16 +114,32 @@ class SftpConn private constructor(private val session: Session, val ch: Channel
     }
 
     /** Todos los archivos bajo [dir], con rutas relativas a [root]; sin carpetas de medios ni archivos que no son juegos. */
-    fun walk(root: String, dir: String = root, skipMedia: Boolean = true, out: MutableList<FileEntry> = ArrayList()): MutableList<FileEntry> {
+    fun walk(root: String, dir: String = root, skipMedia: Boolean = true, out: MutableList<FileEntry> = ArrayList(),
+             junk: MutableList<FileEntry>? = null): MutableList<FileEntry> {
         for (e in list(dir)) {
             val full = join(dir, e.name)
+            val rel = full.removePrefix(root.trimEnd('/') + "/")
             if (e.isDir) {
-                if (!skipMedia || e.name.lowercase() !in Group.ignoredDirs) walk(root, full, skipMedia, out)
+                if (!skipMedia || e.name.lowercase() !in Group.ignoredDirs) walk(root, full, skipMedia, out, junk)
             } else if (!Group.isIgnored(e.name)) {
-                out += FileEntry(full.removePrefix(root.trimEnd('/') + "/"), e.size)
+                out += FileEntry(rel, e.size)
+            } else if (junk != null && Group.junkKind(e.name) != null) {
+                junk += FileEntry(rel, e.size)
             }
         }
         return out
+    }
+
+    /** Los primeros [n] bytes de un archivo (para leer cabeceras). */
+    fun head(path: String, n: Int): ByteArray = open(path).use { input ->
+        val buf = java.io.ByteArrayOutputStream()
+        val b = ByteArray(8192)
+        while (buf.size() < n) {
+            val r = input.read(b, 0, minOf(b.size, n - buf.size()))
+            if (r < 0) break
+            buf.write(b, 0, r)
+        }
+        buf.toByteArray()
     }
 
     fun readText(path: String, max: Int = 1 shl 20): String? = try {

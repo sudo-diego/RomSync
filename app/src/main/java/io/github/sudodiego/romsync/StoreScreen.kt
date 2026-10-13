@@ -106,6 +106,7 @@ fun StoreScreen() {
             Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 Header(onRefresh = { scope.launch { Repo.refresh() } })
                 StorageCard()
+                CleanupCard()
                 Toolbar(systems, showSystems = !wide)
             }
         }

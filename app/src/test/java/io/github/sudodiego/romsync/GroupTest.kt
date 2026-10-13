@@ -108,6 +108,35 @@ class GroupTest {
         assertEquals("file", Group.system("atari2600", listOf(fe("atari2600/Pitfall.a26", 4096))).single().kind)
     }
 
+    /** Un PFS0 mínimo con estos nombres, como el comienzo de un .nsp. */
+    private fun pfs0(vararg names: String): ByteArray {
+        val strings = java.io.ByteArrayOutputStream()
+        val offsets = names.map { n -> strings.size().also { strings.write(n.toByteArray()); strings.write(0) } }
+        val b = java.nio.ByteBuffer.allocate(16 + names.size * 24 + strings.size()).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+        b.put("PFS0".toByteArray()).putInt(names.size).putInt(strings.size()).putInt(0)
+        offsets.forEach { b.putLong(0).putLong(0).putInt(it).putInt(0) }
+        b.put(strings.toByteArray())
+        return b.array()
+    }
+
+    @Test fun switchIdFromNsp() {
+        val head = pfs0("abc.cnmt.nca", "0100F2C0115B68000000000000000008.tik", "0100F2C0115B68000000000000000008.cert", "x.nca")
+        assertEquals("0100F2C0115B6800", SwitchId.fromHeader(head))
+        assertEquals(null, SwitchId.fromHeader("NCA3 no es un pfs0".toByteArray()))
+        // Sin [TitleID] en el nombre, con el id leído del archivo: se agrupa igual.
+        val g = Group.system("switch", listOf(fe("switch/Zelda TOTK.nsp", 100), fe("switch/Zelda update 1.2.1.nsp", 10)),
+            switchIds = mapOf("switch/Zelda TOTK.nsp" to "0100F2C0115B6000", "switch/Zelda update 1.2.1.nsp" to "0100F2C0115B6800"))
+        assertEquals(1, g.size); assertEquals(listOf("base", "update"), g[0].parts.map { it.kind })
+    }
+
+    @Test fun junkKinds() {
+        assertEquals("Descarga a medias", Group.junkKind(".8686A228806624EF2D1C01D897EFC240DFA384980.parts"))
+        assertEquals("Copia vieja de una partida", Group.junkKind("Spirit Tracks.SAV(1)(0)"))
+        assertEquals("Opciones o trucos del emulador", Group.junkKind("Spirit Tracks.opts"))
+        assertEquals(null, Group.junkKind("Spirit Tracks.sav"))
+        assertEquals(null, Group.junkKind("gamelist.xml"))
+    }
+
     @Test fun globs() {
         val r = Glob.toRegex("sdmc/Nintendo 3DS/*/*/title/00040000/*/data/**")
         assertTrue(r.matches("sdmc/Nintendo 3DS/abc/def/title/00040000/0012ab00/data/00000001/main"))

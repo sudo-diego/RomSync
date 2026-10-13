@@ -76,6 +76,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         Prefs.init(this)
         Shell.init(this)
+        Names.init(this)
         Repo.init(this)
         Art.init(this)
         DownloadService.load(this)

@@ -50,7 +50,7 @@ object Repo {
     fun init(ctx: Context) {
         if (::cacheFile.isInitialized) return
         cacheFile = File(ctx.filesDir, "library.json")
-        runCatching { library = Json.library(JSONObject(cacheFile.readText())) }
+        runCatching { Json.library(JSONObject(cacheFile.readText())).let { library = it.copy(games = Names.apply(it.games)) } }
     }
 
     fun system(id: String): SystemInfo = library?.systems?.firstOrNull { it.id == id } ?: Systems.get(id)
@@ -117,6 +117,7 @@ object Repo {
         localIndex = files.associate { it.path.lowercase() to it.size }
         localFiles = files
         localBios = Local.scanBios()
+        localJunk = Local.scanJunk()
         space = Local.space()
         compare()
     }
@@ -125,7 +126,16 @@ object Repo {
     private fun compare() {
         val lib = library
         val known = lib?.games?.flatMap { g -> g.files.map { it.path.lowercase() } }?.toHashSet() ?: hashSetOf()
-        val only = Group.all(localFiles.filter { it.path.lowercase() !in known })
+        val leftovers = localFiles.filter { it.path.lowercase() !in known }
+        // Switch solo en la tablet sin [TitleID]: se lee del archivo, igual que en el PC.
+        val ids = leftovers.filter { it.path.startsWith("switch/", true) && Group.needsSwitchId(it) }.mapNotNull { f ->
+            val key = "local:${f.path}|${f.size}"
+            val id = Prefs.switchId(key) ?: runCatching {
+                Local.romFile(f.path).inputStream().use { i -> SwitchId.fromHeader(SwitchId.head(i)) }
+            }.getOrNull().orEmpty().also { Prefs.setSwitchId(key, it) }
+            if (id.isEmpty()) null else f.path to id
+        }.toMap()
+        val only = Names.apply(Group.all(leftovers, ids))
         tabletOnlyIds = only.map { it.id }.toSet()
         tabletOnly = only
         val have = localBios.map { it.path.lowercase() }.toHashSet()
@@ -144,6 +154,32 @@ object Repo {
             withContext(Dispatchers.IO) { cacheFile.writeText(Json.libraryJson(updated).toString()) }
         }
         compare()
+        return freed
+    }
+
+    /** Pone un nombre propio a un juego (vacío = el del archivo) y vuelve a buscar su carátula con ese nombre. */
+    fun rename(g: Game, name: String) {
+        Names.set(g.id, name)
+        library = library?.let { it.copy(games = Names.apply(it.games)) }
+        tabletOnly = Names.apply(tabletOnly)
+        Art.forget(g.id)
+    }
+
+    /** Archivos que sobran en la tablet (descargas a medias, copias de partidas): ver Limpieza. */
+    var localJunk by mutableStateOf<List<FileEntry>>(emptyList())
+        private set
+
+    /** Borra archivos sobrantes (Limpieza). Devuelve los bytes liberados. */
+    suspend fun deleteJunk(tablet: List<FileEntry>, pc: List<FileEntry>): Long {
+        var freed = withContext(Dispatchers.IO) {
+            tablet.sumOf { f -> Local.romFile(f.path).let { if (it.isFile && it.delete()) f.size else 0L } }
+        }
+        if (pc.isNotEmpty()) {
+            freed += Pc.io { c -> pc.sumOf { f -> c.delete(SftpConn.join(Prefs.remoteRoms, f.path)); f.size } }
+            library = library?.let { lib -> lib.copy(junk = lib.junk - pc.toSet()) }
+            library?.let { lib -> withContext(Dispatchers.IO) { cacheFile.writeText(Json.libraryJson(lib).toString()) } }
+        }
+        rescanLocal()
         return freed
     }
 

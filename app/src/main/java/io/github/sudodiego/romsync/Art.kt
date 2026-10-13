@@ -209,6 +209,14 @@ object Art {
         versions[gameId] = (versions[gameId] ?: 0) + 1
     }
 
+    /** Olvida lo encontrado para un juego (no las imágenes elegidas a mano): se vuelve a buscar con su nombre actual. */
+    fun forget(gameId: String) {
+        synchronized(index) { index.remove(gameId) }
+        kinds.keys.forEach { file(gameId, it).delete() }
+        saveIndex()
+        versions[gameId] = (versions[gameId] ?: 0) + 1
+    }
+
     /** Imagen subida desde la web (gana sobre SteamGridDB). */
     fun setCustom(gameId: String, kind: String, bytes: ByteArray) {
         custom(gameId, kind).writeBytes(bytes)

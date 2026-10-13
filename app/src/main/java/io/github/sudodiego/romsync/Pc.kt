@@ -24,20 +24,31 @@ object Pc {
         if (c.stat(root)?.isDir != true) throw java.io.IOException("No existe la carpeta $root en el PC")
         val bios = Prefs.remoteBios
         val files = ArrayList<FileEntry>()
+        val junk = ArrayList<FileEntry>()
         for (e in c.list(root)) {
             if (!e.isDir || e.name.startsWith(".") || e.name.lowercase() in Group.ignoredDirs) continue
             val dir = SftpConn.join(root, e.name)
             if (dir.equals(bios, ignoreCase = true)) continue
-            c.walk(root, dir, out = files)
+            c.walk(root, dir, out = files, junk = junk)
         }
-        val games = Group.all(files) { p ->
+        // Switch sin [TitleID] en el nombre: se lee del propio archivo (una vez; queda guardado).
+        val ids = HashMap<String, String>()
+        for (f in files) {
+            if (!f.path.startsWith("switch/", true) || !Group.needsSwitchId(f)) continue
+            val key = "${f.path}|${f.size}"
+            val known = Prefs.switchId(key)
+            val id = known ?: runCatching { SwitchId.fromHeader(c.head(SftpConn.join(root, f.path), SwitchId.HEADER_BYTES)) }.getOrNull().orEmpty()
+            if (known == null) Prefs.setSwitchId(key, id)
+            if (id.isNotEmpty()) ids[f.path] = id
+        }
+        val games = Group.all(files, ids) { p ->
             if (Group.ext(p) in descriptors) c.readText(SftpConn.join(root, p), 256 * 1024) else null
         }
         val biosFiles = if (c.stat(bios)?.isDir == true) c.walk(bios, skipMedia = false) else emptyList()
         val systems = games.groupBy { it.system }.map { (id, gs) ->
             Systems.get(id).copy(count = gs.size, size = gs.sumOf { it.size })
         }.sortedBy { it.name.lowercase() }
-        Library(System.currentTimeMillis(), false, "", systems, games, biosFiles)
+        Library(System.currentTimeMillis(), false, "", systems, Names.apply(games), biosFiles, junk)
     }
 }
 

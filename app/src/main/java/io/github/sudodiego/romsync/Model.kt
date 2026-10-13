@@ -47,6 +47,8 @@ data class Library(
     val systems: List<SystemInfo>,
     val games: List<Game>,
     val bios: List<FileEntry>,
+    /** Archivos que sobran en la carpeta de ROMs del PC (descargas a medias, copias de partidas): ver Limpieza. */
+    val junk: List<FileEntry> = emptyList(),
 )
 
 data class SaveBackupInfo(
@@ -111,6 +113,7 @@ object Json {
         systems = o.optJSONArray("systems").objects().map { system(it) },
         games = o.optJSONArray("games").objects().map(::game),
         bios = files(o.optJSONArray("bios")),
+        junk = files(o.optJSONArray("junk")),
     )
 
     fun backups(a: JSONArray) = a.objects().map {
@@ -139,6 +142,7 @@ object Json {
         })
         .put("games", JSONArray().apply { l.games.forEach { put(gameJson(it)) } })
         .put("bios", filesJson(l.bios))
+        .put("junk", filesJson(l.junk))
 
     fun filesJson(files: List<FileEntry>) = JSONArray().apply {
         files.forEach { put(JSONObject().put("path", it.path).put("size", it.size)) }

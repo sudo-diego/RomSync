@@ -24,6 +24,14 @@ object Local {
         return out
     }
 
+    /** Lo que sobra en la carpeta de ROMs (ver [Group.junkKind]): descargas a medias, opciones, copias de partidas. */
+    fun scanJunk(romsDir: String = Prefs.romsDir): List<FileEntry> {
+        val root = File(romsDir)
+        return root.walkTopDown().onEnter { it == root || it.name.lowercase() !in ignoredDirs }
+            .filter { it.isFile && Group.junkKind(it.name) != null }
+            .map { FileEntry(it.relativeTo(root).path.replace('\\', '/'), it.length()) }.toList()
+    }
+
     fun scanBios(biosDir: String = Prefs.biosDir): List<FileEntry> {
         val root = File(biosDir)
         if (!root.isDirectory) return emptyList()

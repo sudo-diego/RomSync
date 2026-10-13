@@ -1,0 +1,18 @@
+# Android / Gradle
+.gradle/
+build/
+local.properties
+keystore.properties
+*.jks
+*.keystore
+.idea/
+*.iml
+captures/
+.kotlin/
+
+# Servidor
+server/romsync.json
+server/romsync-data/
+server/respaldos/
+server/dist/
+*.exe

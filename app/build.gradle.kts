@@ -22,6 +22,14 @@ android {
     val keyProps = rootProject.file("keystore.properties").takeIf { it.exists() }
         ?.let { f -> Properties().apply { f.inputStream().use { load(it) } } }
     signingConfigs {
+        // Clave fija para las APK de GitHub Actions: sin ella cada compilación salía firmada con otra clave de
+        // depuración y Android obligaba a desinstalar (y se perdían los ajustes). No es secreta: es una app personal.
+        create("shared") {
+            storeFile = file("romsync-shared.keystore")
+            storePassword = "romsync"
+            keyAlias = "romsync"
+            keyPassword = "romsync"
+        }
         if (keyProps != null) create("release") {
             storeFile = file(keyProps.getProperty("storeFile"))
             storePassword = keyProps.getProperty("storePassword")
@@ -31,11 +39,12 @@ android {
     }
 
     buildTypes {
+        debug { signingConfig = signingConfigs.getByName("shared") }
         release {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("shared")
         }
     }
     compileOptions {

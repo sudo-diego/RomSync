@@ -16,3 +16,4 @@ server/romsync-data/
 server/respaldos/
 server/dist/
 *.exe
+!app/romsync-shared.keystore

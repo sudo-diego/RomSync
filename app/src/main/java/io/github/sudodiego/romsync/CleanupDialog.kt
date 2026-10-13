@@ -113,6 +113,25 @@ private fun CleanupDialog(onClose: () -> Unit) {
     )
 }
 
+/**
+ * Para qué sirve cada archivo de un volcado de BIOS de PS2 (PCSX2/ARMSX2 solo necesitan el .bin de 4 MB; con uno
+ * de cualquier región se juegan todos los juegos; los demás son opcionales).
+ */
+fun biosRole(name: String, size: Long): String = when (Group.ext(name)) {
+    ".bin" -> if (size == 4L * 1024 * 1024) "BIOS principal (la que usa el emulador)" else "BIOS"
+    ".rom1", ".rom2", ".erom" -> "Reproductor de DVD (opcional)"
+    ".nvm" -> "Ajustes de la consola (opcional, se crea sola)"
+    ".mec" -> "Versión del lector (opcional, se crea sola)"
+    else -> "BIOS"
+}
+
+/** Región por el nombre ("USA v01.60(07-02-2002).bin" → USA); null si el nombre no lo dice. */
+fun biosRegion(name: String): String? {
+    val n = name.lowercase()
+    return listOf("usa" to "USA", "europe" to "Europa", "japan" to "Japón", "asia" to "Asia", "china" to "China")
+        .firstOrNull { it.first in n }?.second
+}
+
 /** BIOS que quedaron en la carpeta de una plataforma: se ofrecen mover a "bios". */
 @Composable
 fun StrayBiosCard() {
@@ -139,14 +158,35 @@ private fun StrayBiosDialog(tablet: List<FileEntry>, pc: List<FileEntry>, onClos
     val all = remember(tablet, pc) { tablet.map { Junk(it, false, "") } + pc.map { Junk(it, true, "") } }
     var selected by remember(all) { mutableStateOf(all.toSet()) }
     var busy by remember { mutableStateOf(false) }
+    // BIOS principales repetidas en la tablet: mismo contenido con otro nombre.
+    val sameAs by androidx.compose.runtime.produceState(emptyMap<String, String>(), tablet) {
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val seen = HashMap<String, String>()
+            val out = HashMap<String, String>()
+            for (f in tablet.filter { it.size == 4L * 1024 * 1024 }) {
+                val md5 = runCatching {
+                    val md = java.security.MessageDigest.getInstance("MD5")
+                    Local.romFile(f.path).inputStream().use { i -> val b = ByteArray(1 shl 16); while (true) { val n = i.read(b); if (n < 0) break; md.update(b, 0, n) } }
+                    md.digest().joinToString("") { "%02x".format(it) }
+                }.getOrNull() ?: continue
+                seen[md5]?.let { out[f.path] = it } ?: run { seen[md5] = f.path }
+            }
+            out
+        }
+    }
     AlertDialog(
         onDismissRequest = onClose,
         title = { Text("Mover BIOS a su carpeta") },
         text = {
             LazyColumn(Modifier.fillMaxWidth().heightIn(max = 480.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 item {
-                    Muted("Van a «bios» (tablet: ${Prefs.biosDir}; PC: ${Prefs.remoteBios}). Si un emulador estaba configurado " +
-                        "para buscarlas en la carpeta de juegos (por ejemplo ARMSX2 en ps2), después elige la carpeta bios en sus ajustes.")
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Muted("Van a «bios» (tablet: ${Prefs.biosDir}; PC: ${Prefs.remoteBios}). Si un emulador estaba configurado " +
+                            "para buscarlas en la carpeta de juegos (por ejemplo ARMSX2 en ps2), después elige la carpeta bios en sus ajustes.")
+                        Text("PS2: el emulador solo necesita el .bin de 4 MB, y con uno de cualquier región se juegan todos los juegos " +
+                            "(conviene el de tu región, por el idioma del menú). .ROM1/.ROM2/.EROM son el reproductor de DVD; .NVM y .MEC se crean solos.",
+                            style = MaterialTheme.typography.bodySmall)
+                    }
                 }
                 items(all, key = { (if (it.onPc) "pc:" else "t:") + it.file.path }) { j ->
                     Row(Modifier.fillMaxWidth().clickable { selected = if (j in selected) selected - j else selected + j },
@@ -154,7 +194,11 @@ private fun StrayBiosDialog(tablet: List<FileEntry>, pc: List<FileEntry>, onClos
                         Checkbox(checked = j in selected, onCheckedChange = { selected = if (it) selected + j else selected - j })
                         Column(Modifier.weight(1f)) {
                             Text(j.file.path, style = MaterialTheme.typography.bodySmall)
-                            Muted((if (j.onPc) "En el PC" else "En la tablet") + " · " + formatSize(j.file.size))
+                            val name = j.file.path.substringAfterLast('/')
+                            Muted(listOfNotNull(if (j.onPc) "En el PC" else "En la tablet", formatSize(j.file.size), biosRole(name, j.file.size),
+                                biosRegion(name)).joinToString(" · "))
+                            sameAs[j.file.path]?.let { Text("Repetida: igual a ${it.substringAfterLast('/')}", color = Palette.warn,
+                                style = MaterialTheme.typography.bodySmall) }
                         }
                     }
                 }

@@ -112,3 +112,67 @@ private fun CleanupDialog(onClose: () -> Unit) {
         dismissButton = { TextButton(onClick = onClose) { Text("Cerrar") } },
     )
 }
+
+/** BIOS que quedaron en la carpeta de una plataforma: se ofrecen mover a "bios". */
+@Composable
+fun StrayBiosCard() {
+    var open by remember { mutableStateOf(false) }
+    val tablet = Repo.localStrayBios
+    val pc = Repo.library?.strayBios.orEmpty()
+    if (tablet.isEmpty() && pc.isEmpty()) return
+    Section("") {
+        SpacedRow {
+            Column(Modifier.weight(1f)) {
+                Text("BIOS fuera de su carpeta: ${tablet.size + pc.size}", fontWeight = FontWeight.Bold)
+                Muted("Están junto a los juegos (por ejemplo en ps2). No salen como juegos; puedes moverlas a la carpeta bios.")
+            }
+            TextButton(onClick = { open = true }) { Text("Ordenar") }
+        }
+    }
+    if (open) StrayBiosDialog(tablet, pc) { open = false }
+}
+
+@Composable
+private fun StrayBiosDialog(tablet: List<FileEntry>, pc: List<FileEntry>, onClose: () -> Unit) {
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val all = remember(tablet, pc) { tablet.map { Junk(it, false, "") } + pc.map { Junk(it, true, "") } }
+    var selected by remember(all) { mutableStateOf(all.toSet()) }
+    var busy by remember { mutableStateOf(false) }
+    AlertDialog(
+        onDismissRequest = onClose,
+        title = { Text("Mover BIOS a su carpeta") },
+        text = {
+            LazyColumn(Modifier.fillMaxWidth().heightIn(max = 480.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                item {
+                    Muted("Van a «bios» (tablet: ${Prefs.biosDir}; PC: ${Prefs.remoteBios}). Si un emulador estaba configurado " +
+                        "para buscarlas en la carpeta de juegos (por ejemplo ARMSX2 en ps2), después elige la carpeta bios en sus ajustes.")
+                }
+                items(all, key = { (if (it.onPc) "pc:" else "t:") + it.file.path }) { j ->
+                    Row(Modifier.fillMaxWidth().clickable { selected = if (j in selected) selected - j else selected + j },
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = j in selected, onCheckedChange = { selected = if (it) selected + j else selected - j })
+                        Column(Modifier.weight(1f)) {
+                            Text(j.file.path, style = MaterialTheme.typography.bodySmall)
+                            Muted((if (j.onPc) "En el PC" else "En la tablet") + " · " + formatSize(j.file.size))
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(enabled = selected.isNotEmpty() && !busy, onClick = {
+                busy = true
+                scope.launch {
+                    val msg = runCatching {
+                        Repo.moveBios(selected.filter { !it.onPc }.map { it.file }, selected.filter { it.onPc }.map { it.file })
+                    }.fold({ "$it BIOS movida(s) a bios" }, { it.message ?: "Error" })
+                    busy = false
+                    Toast.makeText(ctx, msg, Toast.LENGTH_LONG).show()
+                    onClose()
+                }
+            }) { Text("Mover ${selected.size}") }
+        },
+        dismissButton = { TextButton(onClick = onClose) { Text("Cancelar") } },
+    )
+}

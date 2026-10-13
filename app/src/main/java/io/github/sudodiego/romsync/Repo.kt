@@ -183,6 +183,48 @@ object Repo {
         return freed
     }
 
+    /** BIOS de la tablet que están en la carpeta de una plataforma ("ps2/USA v01.60….bin"). */
+    val localStrayBios: List<FileEntry> get() = localFiles.filter { Group.isBiosFile(it.path, it.size) }
+
+    /**
+     * Mueve BIOS a la carpeta de BIOS (en la tablet y/o en el PC). Si ya hay una igual (mismo nombre y tamaño), borra
+     * la de más; si hay una distinta con el mismo nombre, la deja donde está. Devuelve cuántas movió.
+     */
+    suspend fun moveBios(tablet: List<FileEntry>, pc: List<FileEntry>): Int {
+        var moved = 0
+        withContext(Dispatchers.IO) {
+            val dir = File(Prefs.biosDir).apply { mkdirs() }
+            for (f in tablet) {
+                val src = Local.romFile(f.path)
+                val dest = File(dir, f.path.substringAfterLast('/'))
+                when {
+                    !dest.exists() -> if (src.renameTo(dest) || runCatching { src.copyTo(dest); src.delete() }.isSuccess) moved++
+                    dest.length() == src.length() -> { src.delete(); moved++ }
+                }
+            }
+        }
+        if (pc.isNotEmpty()) {
+            moved += Pc.io { c ->
+                var n = 0
+                for (f in pc) {
+                    val src = SftpConn.join(Prefs.remoteRoms, f.path)
+                    val dest = SftpConn.join(Prefs.remoteBios, f.path.substringAfterLast('/'))
+                    val there = c.stat(dest)
+                    when {
+                        there == null -> { c.rename(src, dest); n++ }
+                        there.size == f.size -> { c.delete(src); n++ }
+                    }
+                }
+                n
+            }
+            library = library?.let { lib -> lib.copy(strayBios = lib.strayBios - pc.toSet(),
+                bios = lib.bios + pc.map { FileEntry(it.path.substringAfterLast('/'), it.size) }) }
+            library?.let { lib -> withContext(Dispatchers.IO) { cacheFile.writeText(Json.libraryJson(lib).toString()) } }
+        }
+        rescanLocal()
+        return moved
+    }
+
     /** Juegos de la misma plataforma con el mismo título (otra región, otro formato, una versión con mods). */
     fun versions(g: Game): List<Game> {
         val key = Group.cleanTitle(g.title).first.lowercase().filter { it.isLetterOrDigit() }

@@ -107,6 +107,7 @@ fun StoreScreen() {
                 Header(onRefresh = { scope.launch { Repo.refresh() } })
                 StorageCard()
                 CleanupCard()
+                StrayBiosCard()
                 Toolbar(systems, showSystems = !wide)
             }
         }

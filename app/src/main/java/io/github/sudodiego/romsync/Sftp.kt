@@ -183,6 +183,13 @@ class SftpConn private constructor(private val session: Session, val ch: Channel
         }
     }
 
+    fun rename(from: String, to: String) = try {
+        mkdirs(to.substringBeforeLast('/'))
+        ch.rename(from, to)
+    } catch (e: SftpException) {
+        throw IOException("No se pudo mover $from: ${e.message}", e)
+    }
+
     /** Borra una carpeta vacía. False si no se pudo (por ejemplo, no está vacía). */
     fun rmdir(path: String): Boolean = try {
         ch.rmdir(path); true

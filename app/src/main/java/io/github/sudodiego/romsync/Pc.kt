@@ -48,7 +48,8 @@ object Pc {
         val systems = games.groupBy { it.system }.map { (id, gs) ->
             Systems.get(id).copy(count = gs.size, size = gs.sumOf { it.size })
         }.sortedBy { it.name.lowercase() }
-        Library(System.currentTimeMillis(), false, "", systems, Names.apply(games), biosFiles, junk)
+        Library(System.currentTimeMillis(), false, "", systems, Names.apply(games), biosFiles, junk,
+            files.filter { Group.isBiosFile(it.path, it.size) })
     }
 }
 

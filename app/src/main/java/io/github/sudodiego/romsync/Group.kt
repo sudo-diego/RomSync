@@ -64,19 +64,26 @@ object Group {
         val e = ext(lower)
         // Nunca una BIOS, aunque tenga un nombre raro u oculto (las de PS2 traen .mec, .nvm, .rom1…).
         val bare = lower.trimStart('.')
-        if (isBios(bare) || isBios(bare.substringBeforeLast('.')) || e in biosExt || "bios" in lower || "scph" in lower) return null
+        if (isBios(bare) || isBios(bare.substringBeforeLast('.')) || e in biosExt || "bios" in lower || "scph" in lower ||
+            reBiosVersion.matches(bare)) return null
         return when {
             lower == ".nomedia" || lower in ignoredNames -> null
             e == ".parts" || e == ".crdownload" || e == ".tmp" || e == ".part" -> "Descarga a medias"
             lower.startsWith(".") -> "Archivo oculto de otra app"
             e == ".opts" || e == ".cht" || e == ".pch" -> "Opciones o trucos del emulador"
-            reSaveCopy.matches(e) || e == ".bak" -> "Copia vieja de una partida"
+            reSaveCopy.matches(e) || isSaveCopy(name) || e == ".bak" -> "Copia vieja de una partida"
             else -> null
         }
     }
 
+    private val reSaveCopyName = Regex(".*\\.(sav|srm|dsv)\\s*(\\(\\d+\\)\\s*)+$", RegexOption.IGNORE_CASE)
+
+    /** "Juego.sav (1)", "Juego.SAV(1)(0)": copias que dejan el emulador o Windows al copiar. */
+    fun isSaveCopy(name: String) = reSaveCopyName.matches(name)
+
     fun isIgnored(name: String): Boolean {
         val lower = name.lowercase()
+        if (isSaveCopy(name)) return true
         // Archivos ocultos (".8686A2…parts"): siempre de otra app, nunca un juego.
         if (lower in ignoredNames || lower.startsWith(".")) return true
         val e = ext(lower)
@@ -94,6 +101,21 @@ object Group {
     )
 
     fun isBios(name: String) = reBios.matches(name.substringAfterLast('/'))
+
+    // Volcados de BIOS de PS2 con nombre de región y versión ("USA v01.60(07-02-2002).bin") y sus compañeros.
+    private val reBiosVersion = Regex(".*\\bv\\d{1,2}\\.\\d{2}\\s*\\(\\d{2}-\\d{2}-\\d{4}\\).*", RegexOption.IGNORE_CASE)
+    private val ps2BiosExt = setOf(".mec", ".nvm", ".rom0", ".rom1", ".rom2", ".erom")
+
+    /** BIOS por nombre o por tamaño (PS2: 4 MB exactos; PS1: 512 KB) aunque esté en la carpeta de la plataforma. */
+    fun isBiosFile(path: String, size: Long): Boolean {
+        val name = path.substringAfterLast('/')
+        val e = ext(name)
+        val sys = path.substringBefore('/').lowercase()
+        return isBios(name) || reBiosVersion.matches(name) ||
+            (e in ps2BiosExt) ||
+            (sys == "ps2" && e == ".bin" && size == 4L * 1024 * 1024) ||
+            (sys == "psx" && e == ".bin" && size == 512L * 1024)
+    }
 
     /** Plataformas de accesos directos (ES-DE, GameNative): no son ROMs, no se "descargan". */
     val shortcutSystems = setOf("androidapps", "androidgames", "android", "steam", "epic", "gog", "lutris", "heroic")
@@ -235,7 +257,7 @@ object Group {
     /** files: rutas relativas a la carpeta de ROMs, todas dentro de "system/". readText lee un descriptor (o null). */
     fun system(system: String, files: List<FileEntry>, switchIds: Map<String, String> = emptyMap(),
                readText: ((String) -> String?)? = null): List<Game> {
-        val c = Ctx(files.filter { !isBios(it.path) }, readText)
+        val c = Ctx(files.filter { !isBiosFile(it.path, it.size) }, readText)
         val prefix = "$system/"
         val games = ArrayList<Game>()
 

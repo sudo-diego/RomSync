@@ -139,6 +139,13 @@ class GroupTest {
         listOf("SCPH-70012.bin", "SCPH-70012.MEC", "SCPH-70012.NVM", "SCPH-70012.rom1", "ps2-0230a-20080220.bin", ".scph39001.bin", "bios.bak")
             .forEach { assertEquals(it, null, Group.junkKind(it)) }
         assertTrue(Group.inBiosDir("ps2/bios/SCPH-70012.bin"))
+        // Copias con espacio ("x.sav (1)") tampoco son juegos.
+        assertTrue(Group.isIgnored("The Legend of Zelda Spirit Tracks.sav (1)"))
+        assertEquals("Copia vieja de una partida", Group.junkKind("The Legend of Zelda Spirit Tracks.SAV (2) (0)"))
+        // BIOS de PS2 en la carpeta ps2, con nombre de región y versión o por tamaño.
+        val ps2 = Group.system("ps2", listOf(fe("ps2/USA v01.60(07-02-2002).bin", 4194304), fe("ps2/USA v01.60(07-02-2002).MEC", 4),
+            fe("ps2/Europe.bin", 4194304), fe("ps2/God of War (USA).iso", 4000000000)))
+        assertEquals(listOf("God of War"), ps2.map { it.title })
     }
 
     @Test fun globs() {

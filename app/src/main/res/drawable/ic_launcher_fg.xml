@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <!-- Cartucho con una flecha de descarga. -->
+    <path android:fillColor="#FFFFFF" android:pathData="M36,34h22a4,4 0 0 1 4,4v32a4,4 0 0 1 -4,4h-22a4,4 0 0 1 -4,-4v-32a4,4 0 0 1 4,-4z" />
+    <path android:fillColor="#3A55C8" android:pathData="M40,39h14a1.5,1.5 0 0 1 1.5,1.5v3a1.5,1.5 0 0 1 -1.5,1.5h-14a1.5,1.5 0 0 1 -1.5,-1.5v-3a1.5,1.5 0 0 1 1.5,-1.5z" />
+    <path android:strokeColor="#5CC8FF" android:strokeWidth="4" android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:pathData="M72,46v24 M65,63l7,8 7,-8" />
+</vector>

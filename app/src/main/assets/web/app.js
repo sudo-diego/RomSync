@@ -551,9 +551,11 @@ async function loadGames() {
 // Conectar el PC: un .bat que activa SFTP, busca la carpeta de ROMs y le pasa todo a la tablet.
 function connectBox() {
   const ok = S.state?.pcConfigured;
-  return `<div class="box"><div class="row"><h2 style="flex:1">${ok ? "PC conectado" : "Conectar este PC"}</h2>
-    <a class="primary" href="/api/connector" download>${ok ? "Volver a conectar" : "Descargar el conector"}</a></div>
-    <p class="muted small">Ábrelo en este PC con doble clic y acepta el aviso de administrador. Activa SFTP, busca tu carpeta de ROMs y solo te pide la contraseña de Windows. En la tablet no hay que escribir nada.</p></div>`;
+  const ip = S.state?.clientIp;
+  return `<div class="box"><h2>${ok ? "PC conectado" : "Conectar este PC"}</h2>
+    <p class="muted small">${ok ? `La tablet lee tus juegos de ${esc(S.state.pcRoms)}.` :
+      `En la tablet: RomSync → Ajustes → PC. Ahí están los pasos (activar «Servidor OpenSSH» en Windows) y el botón «Buscar mi PC».` +
+      (ip ? ` Este equipo es <b>${esc(ip)}</b>: la tablet ya lo anotó.` : "")}</p></div>`;
 }
 
 function renderPill() {

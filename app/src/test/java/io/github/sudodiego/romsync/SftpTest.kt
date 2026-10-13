@@ -64,6 +64,22 @@ class SftpTest {
         assertTrue(runCatching { SftpConn.connect(cfg(fp = "otra")) }.exceptionOrNull() is HostKeyChanged)
     }
 
+    @Test fun findPcAndRoms() {
+        File(root, "ROMs/snes").mkdirs()
+        File(root, "Juegos/Emulacion/ROMs/ps2").mkdirs()
+        File(root, "Juegos/Emulacion/ROMs/switch").mkdirs()
+        File(root, "Juegos/Otra/fotos").mkdirs()
+        val found = PcFinder.probe("127.0.0.1", server.port)
+        assertTrue(found != null && found.banner.startsWith("SSH-"))
+        assertEquals(null, PcFinder.probe("127.0.0.1", 1, 200))
+        SftpConn.connect(cfg()).use { c ->
+            val dirs = PcFinder.findRoms(c, roots = listOf("/"))
+            assertEquals(setOf("/ROMs", "/Juegos/Emulacion/ROMs"), dirs.map { it.path }.toSet())
+            assertTrue(dirs.none { it.path.contains("Otra") })
+        }
+        assertEquals("D:\\Emulacion\\ROMs", PcFinder.windowsPath("/D:/Emulacion/ROMs"))
+    }
+
     @Test fun windowsPaths() {
         assertEquals("/D:/Emulacion/ROMs", SftpConn.remotePath("D:\\Emulacion\\ROMs\\"))
         assertEquals("/D:/", SftpConn.remotePath("D:"))

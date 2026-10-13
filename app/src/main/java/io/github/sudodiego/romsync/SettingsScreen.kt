@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -28,7 +29,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 fun SettingsScreen() {
@@ -58,73 +61,185 @@ private fun Field(label: String, value: String, onChange: (String) -> Unit, modi
 @Composable
 private fun PcCard() {
     val scope = rememberCoroutineScope()
-    val ctx = androidx.compose.ui.platform.LocalContext.current
-    // Si el conector del PC deja todo listo, los campos se vuelven a leer.
-    val paired = Kitchen.pairCount
-    var host by remember(paired) { mutableStateOf(Prefs.host) }
-    var port by remember(paired) { mutableStateOf(Prefs.port.toString()) }
-    var user by remember(paired) { mutableStateOf(Prefs.user) }
-    var pass by remember(paired) { mutableStateOf(Prefs.password) }
-    var roms by remember(paired) { mutableStateOf(Prefs.pcRoms) }
-    var bios by remember(paired) { mutableStateOf(Prefs.pcBios) }
-    var backups by remember(paired) { mutableStateOf(Prefs.pcBackups) }
+    var host by remember { mutableStateOf(Prefs.host) }
+    var user by remember { mutableStateOf(Prefs.user) }
+    var pass by remember { mutableStateOf(Prefs.password) }
+    var found by remember { mutableStateOf<List<PcFinder.Found>?>(null) }
+    var searching by remember { mutableStateOf(false) }
+    var connecting by remember { mutableStateOf(false) }
+    var message by remember { mutableStateOf<Pair<Boolean, String>?>(null) }
+    var romsChoices by remember { mutableStateOf<List<PcFinder.RomsDir>?>(null) }
+    var browse by remember { mutableStateOf(false) }
+    var showSteps by remember { mutableStateOf(!Prefs.configured) }
     var manual by remember { mutableStateOf(false) }
-    var testing by remember { mutableStateOf(false) }
-    var result by remember { mutableStateOf<String?>(null) }
-    var ok by remember { mutableStateOf(false) }
+
+    fun cfg() = SftpConfig(host.trim(), Prefs.port, user.trim(), pass, if (host.trim() == Prefs.host) Prefs.fingerprint else "")
+
+    fun saveRoms(path: String) {
+        Prefs.host = host; Prefs.user = user; Prefs.password = pass
+        Prefs.pcRoms = PcFinder.windowsPath(path)
+        romsChoices = null
+        message = true to "Listo: la tablet ya ve tu carpeta de ROMs"
+        scope.launch { Repo.refresh() }
+    }
 
     Section("PC") {
         if (Prefs.configured) Text("Conectado a ${Prefs.host} · ${Prefs.pcRoms}", color = Palette.ok, fontWeight = FontWeight.SemiBold)
-        Text("Lo fácil: toca «Conectar el PC», abre en el PC la dirección que aparece y baja el conector. Hace todo solo y " +
-            "solo te pide la contraseña de Windows.")
+
+        // Paso 1: activar SFTP en Windows, solo con herramientas de Windows.
         SpacedRow {
-            Button(onClick = { if (!Kitchen.running) Kitchen.start(ctx); Nav.tab = Tab.KITCHEN }) {
-                Text(if (Prefs.configured) "Volver a conectar" else "Conectar el PC")
+            Text("1. Activar SFTP en Windows (una vez)", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+            TextButton(onClick = { showSteps = !showSteps }) { Text(if (showSteps) "Ocultar" else "Ver cómo") }
+        }
+        if (showSteps) Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("• Configuración → Sistema → Características opcionales → Ver características → busca «Servidor OpenSSH» → Agregar.")
+            Text("• Abre la app «Servicios» (búscala en Inicio) → «OpenSSH SSH Server» → Tipo de inicio: Automático → Iniciar → Aceptar.")
+            Muted("Todo con herramientas de Windows; no hay que bajar nada. El firewall se configura solo al agregarlo.")
+        }
+
+        // Paso 2: encontrar el PC en la red.
+        Text("2. Buscar el PC", fontWeight = FontWeight.Bold)
+        SpacedRow {
+            Button(enabled = !searching, onClick = {
+                searching = true
+                found = null
+                scope.launch {
+                    val me = Kitchen.lanAddress()
+                    found = if (me == null) emptyList() else runCatching { PcFinder.scan(me) }.getOrDefault(emptyList())
+                    // El equipo que abrió la web de la tablet suele ser el PC.
+                    if (Kitchen.lastClientIp.isNotEmpty() && found!!.none { it.ip == Kitchen.lastClientIp }) {
+                        withContext(Dispatchers.IO) { PcFinder.probe(Kitchen.lastClientIp) }?.let { found = listOf(it) + found!! }
+                    }
+                    if (found!!.size == 1) host = found!![0].ip
+                    searching = false
+                }
+            }) { Text("Buscar mi PC") }
+            if (searching) { CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp); Muted("Buscando en tu WiFi…") }
+            else if (host.isNotBlank()) Muted("PC elegido: $host")
+        }
+        found?.let { list ->
+            if (list.isEmpty()) Text("No apareció ningún PC con SFTP. Revisa el paso 1 y que el PC esté en la misma WiFi.",
+                color = MaterialTheme.colorScheme.error)
+            list.forEach { f ->
+                TextButton(onClick = { host = f.ip }) {
+                    Text((if (f.ip == host) "✓ " else "") + f.ip + (if (f.windows) " · Windows" else " · " + f.banner.take(30)))
+                }
             }
-            TextButton(onClick = { manual = !manual }) { Text(if (manual) "Ocultar" else "Escribir los datos a mano") }
         }
-        if (!manual) return@Section
-        Muted("La tablet entra al disco del PC con el servidor OpenSSH de Windows, con tu usuario y contraseña de Windows.")
+
+        // Paso 3: usuario y contraseña; después la carpeta de ROMs se busca sola.
+        Text("3. Tu cuenta de Windows", fontWeight = FontWeight.Bold)
         SpacedRow {
-            Field("IP del PC", host, { host = it }, Modifier.weight(1f), hint = "192.168.1.10")
-            Field("Puerto", port, { port = it.filter(Char::isDigit) }, Modifier.width(110.dp), number = true)
-        }
-        SpacedRow {
-            Field("Usuario de Windows", user, { user = it }, Modifier.weight(1f))
+            Field("Usuario", user, { user = it }, Modifier.weight(1f), hint = "el de C:\\Users\\…")
             Field("Contraseña", pass, { pass = it }, Modifier.weight(1f), password = true)
         }
-        Field("Carpeta de ROMs en el PC", roms, { roms = it }, Modifier.fillMaxWidth(), hint = "D:\\Emulación\\ROMs")
-        Field("Carpeta de BIOS (opcional)", bios, { bios = it }, Modifier.fillMaxWidth(), hint = "vacío = «bios» dentro de ROMs")
-        Field("Respaldos de partidas (opcional)", backups, { backups = it }, Modifier.fillMaxWidth(), hint = "vacío = «RomSync» junto a ROMs")
+        Muted("La contraseña de la cuenta (no el PIN). Con cuenta de Microsoft, es la de esa cuenta; el usuario es el nombre de tu carpeta en C:\\Users.")
         SpacedRow {
-            Button(enabled = !testing && host.isNotBlank() && user.isNotBlank() && roms.isNotBlank(), onClick = {
-                testing = true
-                result = null
+            Button(enabled = !connecting && host.isNotBlank() && user.isNotBlank(), onClick = {
+                connecting = true
+                message = null
+                romsChoices = null
                 scope.launch {
-                    val changedHost = host.trim() != Prefs.host
-                    Prefs.host = host; Prefs.port = port.toIntOrNull() ?: 22; Prefs.user = user; Prefs.password = pass
-                    Prefs.pcRoms = roms; Prefs.pcBios = bios; Prefs.pcBackups = backups
-                    if (changedHost) Prefs.fingerprint = ""
                     val r = runCatching {
-                        Pc.io { c ->
-                            val st = c.stat(Prefs.remoteRoms)
-                            if (st?.isDir != true) error("Conectado, pero no existe ${Prefs.remoteRoms}")
-                            c.list(Prefs.remoteRoms).count { it.isDir }
+                        withContext(Dispatchers.IO) {
+                            SftpConn.connect(cfg()).use { c ->
+                                Prefs.fingerprint = c.fingerprint
+                                PcFinder.findRoms(c)
+                            }
                         }
                     }
-                    testing = false
-                    ok = r.isSuccess
-                    result = r.fold({ "Conectado · $it carpetas de plataformas" }, { it.message ?: "Error" })
-                    if (r.isSuccess) Repo.refresh()
+                    connecting = false
+                    r.onSuccess { dirs ->
+                        Prefs.host = host; Prefs.user = user; Prefs.password = pass
+                        when {
+                            dirs.size == 1 -> saveRoms(dirs[0].path)
+                            dirs.isEmpty() -> { message = true to "Conectado. No encontré la carpeta de ROMs: elígela."; browse = true }
+                            else -> { romsChoices = dirs; message = true to "Conectado. ¿Cuál es tu carpeta de ROMs?" }
+                        }
+                    }.onFailure { message = false to (it.message ?: "Error") }
                 }
-            }) { Text("Probar y guardar") }
-            if (testing) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
-            if (Prefs.fingerprint.isNotEmpty()) TextButton(onClick = { Prefs.fingerprint = ""; result = "Se aceptará la identidad del PC la próxima vez" }) {
-                Text("Olvidar identidad del PC")
+            }) { Text("Conectar") }
+            if (connecting) { CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp); Muted("Conectando y buscando tu carpeta de ROMs…") }
+        }
+        message?.let { (good, text) -> Text(text, color = if (good) Palette.ok else MaterialTheme.colorScheme.error) }
+        romsChoices?.let { list ->
+            list.forEach { d ->
+                TextButton(onClick = { saveRoms(d.path) }) { Text("${PcFinder.windowsPath(d.path)}  ·  ${d.platforms} plataformas") }
+            }
+            TextButton(onClick = { browse = true }) { Text("Otra carpeta…") }
+        }
+        if (Prefs.configured && romsChoices == null) TextButton(onClick = { browse = true }) { Text("Cambiar la carpeta de ROMs") }
+
+        TextButton(onClick = { manual = !manual }) { Text(if (manual) "Ocultar opciones" else "Más opciones (puerto, BIOS, respaldos)") }
+        if (manual) ManualPc()
+    }
+    if (browse) FolderPicker(cfg(), onPick = { browse = false; saveRoms(it) }, onClose = { browse = false })
+}
+
+/** Datos que casi nunca hay que tocar: puerto, carpeta de BIOS y de respaldos en el PC. */
+@Composable
+private fun ManualPc() {
+    var port by remember { mutableStateOf(Prefs.port.toString()) }
+    var roms by remember { mutableStateOf(Prefs.pcRoms) }
+    var bios by remember { mutableStateOf(Prefs.pcBios) }
+    var backups by remember { mutableStateOf(Prefs.pcBackups) }
+    Field("Puerto", port, { port = it.filter(Char::isDigit) }, Modifier.width(140.dp), number = true)
+    Field("Carpeta de ROMs en el PC", roms, { roms = it }, Modifier.fillMaxWidth(), hint = "D:\\Emulación\\ROMs")
+    Field("Carpeta de BIOS (opcional)", bios, { bios = it }, Modifier.fillMaxWidth(), hint = "vacío = «bios» dentro de ROMs")
+    Field("Respaldos de partidas (opcional)", backups, { backups = it }, Modifier.fillMaxWidth(), hint = "vacío = «RomSync» junto a ROMs")
+    TextButton(onClick = {
+        Prefs.port = port.toIntOrNull() ?: 22; Prefs.pcRoms = roms; Prefs.pcBios = bios; Prefs.pcBackups = backups
+    }) { Text("Guardar") }
+    if (Prefs.fingerprint.isNotEmpty()) TextButton(onClick = { Prefs.fingerprint = "" }) { Text("Olvidar la identidad del PC") }
+}
+
+/** Navegar las carpetas del PC por SFTP y elegir una (sin escribir rutas). */
+@Composable
+private fun FolderPicker(cfg: SftpConfig, onPick: (String) -> Unit, onClose: () -> Unit) {
+    var dir by remember { mutableStateOf<String?>(null) }
+    var entries by remember { mutableStateOf<List<String>?>(null) }
+    var platforms by remember { mutableStateOf(0) }
+    var error by remember { mutableStateOf<String?>(null) }
+    androidx.compose.runtime.LaunchedEffect(dir) {
+        entries = null
+        val r = runCatching {
+            withContext(Dispatchers.IO) {
+                SftpConn.connect(cfg).use { c ->
+                    val d = dir
+                    if (d == null) PcFinder.drives(c) to 0
+                    else c.list(d).filter { it.isDir && !it.name.startsWith(".") && !it.name.startsWith("$") }.map { SftpConn.join(d, it.name) }
+                        .sortedBy { it.lowercase() } to PcFinder.platformCount(c, d)
+                }
             }
         }
-        result?.let { Text(it, color = if (ok) Palette.ok else MaterialTheme.colorScheme.error) }
+        r.onSuccess { entries = it.first; platforms = it.second }.onFailure { error = it.message }
     }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onClose,
+        title = { Text(dir?.let { PcFinder.windowsPath(it) } ?: "Discos del PC") },
+        text = {
+            androidx.compose.foundation.lazy.LazyColumn(Modifier.fillMaxWidth().heightIn(max = 420.dp)) {
+                if (error != null) item { Text(error!!, color = MaterialTheme.colorScheme.error) }
+                if (dir != null) item {
+                    TextButton(onClick = { dir = dir!!.substringBeforeLast('/').takeIf { it.length > 1 && it.count { c -> c == '/' } >= 1 && !Regex("^/?$").matches(it) } }) { Text("↑ Subir") }
+                }
+                if (entries == null && error == null) item { CircularProgressIndicator() }
+                entries?.let { list ->
+                    items(list.size) { i ->
+                        TextButton(onClick = { dir = list[i] }, Modifier.fillMaxWidth()) {
+                            Text("📁 " + list[i].substringAfterLast('/').ifEmpty { list[i] }, Modifier.weight(1f))
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            if (dir != null) Button(onClick = { onPick(dir!!) }) {
+                Text(if (platforms > 0) "Usar esta ($platforms plataformas)" else "Usar esta carpeta")
+            }
+        },
+        dismissButton = { TextButton(onClick = onClose) { Text("Cancelar") } },
+    )
 }
 
 @Composable

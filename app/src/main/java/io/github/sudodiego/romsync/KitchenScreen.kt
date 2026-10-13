@@ -58,9 +58,6 @@ fun KitchenScreen() {
                             Muted("y escribe el PIN")
                             Text(Kitchen.pin, fontFamily = FontFamily.Monospace, fontSize = 44.sp, letterSpacing = 8.sp,
                                 fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                            if (!Prefs.configured) Text("Para conectar el PC: entra desde el PC y descarga el conector (aparece arriba).",
-                                color = MaterialTheme.colorScheme.secondary)
-                            if (Kitchen.pairMessage.isNotEmpty()) Text(Kitchen.pairMessage, color = Palette.ok, fontWeight = FontWeight.SemiBold)
                             Button(onClick = { Kitchen.stop(ctx) },
                                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) { Text("Apagar") }
                         }

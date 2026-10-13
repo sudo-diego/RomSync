@@ -123,7 +123,7 @@ class SftpConn private constructor(private val session: Session, val ch: Channel
                 if (!skipMedia || e.name.lowercase() !in Group.ignoredDirs) walk(root, full, skipMedia, out, junk)
             } else if (!Group.isIgnored(e.name)) {
                 out += FileEntry(rel, e.size)
-            } else if (junk != null && Group.junkKind(e.name) != null) {
+            } else if (junk != null && Group.junkKind(e.name) != null && !Group.inBiosDir(rel)) {
                 junk += FileEntry(rel, e.size)
             }
         }

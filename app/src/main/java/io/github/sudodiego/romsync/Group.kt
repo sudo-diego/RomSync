@@ -54,9 +54,17 @@ object Group {
      * Si un archivo ignorado es "basura" que vale la pena mostrar para limpiar, qué es. Null para lo normal
      * (partidas, carátulas, textos de ES-DE): eso no se toca.
      */
+    private val biosExt = setOf(".bin", ".rom", ".rom0", ".rom1", ".rom2", ".erom", ".mec", ".nvm", ".nvram", ".img")
+
+    /** La limpieza nunca entra a carpetas de BIOS. */
+    fun inBiosDir(path: String) = path.split('/', '\\').dropLast(1).any { it.equals("bios", true) }
+
     fun junkKind(name: String): String? {
         val lower = name.lowercase()
         val e = ext(lower)
+        // Nunca una BIOS, aunque tenga un nombre raro u oculto (las de PS2 traen .mec, .nvm, .rom1…).
+        val bare = lower.trimStart('.')
+        if (isBios(bare) || isBios(bare.substringBeforeLast('.')) || e in biosExt || "bios" in lower || "scph" in lower) return null
         return when {
             lower == ".nomedia" || lower in ignoredNames -> null
             e == ".parts" || e == ".crdownload" || e == ".tmp" || e == ".part" -> "Descarga a medias"

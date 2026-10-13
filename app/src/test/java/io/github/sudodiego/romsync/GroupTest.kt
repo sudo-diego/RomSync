@@ -135,6 +135,10 @@ class GroupTest {
         assertEquals("Opciones o trucos del emulador", Group.junkKind("Spirit Tracks.opts"))
         assertEquals(null, Group.junkKind("Spirit Tracks.sav"))
         assertEquals(null, Group.junkKind("gamelist.xml"))
+        // Las BIOS de PS2 nunca son "basura" (se marcaban en la limpieza).
+        listOf("SCPH-70012.bin", "SCPH-70012.MEC", "SCPH-70012.NVM", "SCPH-70012.rom1", "ps2-0230a-20080220.bin", ".scph39001.bin", "bios.bak")
+            .forEach { assertEquals(it, null, Group.junkKind(it)) }
+        assertTrue(Group.inBiosDir("ps2/bios/SCPH-70012.bin"))
     }
 
     @Test fun globs() {

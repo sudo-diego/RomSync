@@ -65,9 +65,9 @@ private fun CleanupDialog(onClose: () -> Unit) {
         Repo.localJunk.map { Junk(it, false, Group.junkKind(it.path.substringAfterLast('/')) ?: "") } +
             Repo.library?.junk.orEmpty().map { Junk(it, true, Group.junkKind(it.path.substringAfterLast('/')) ?: "") }
     }
-    // Por defecto solo lo que seguro sobra; las copias de partidas y las opciones las marcas tú.
+    // Por defecto solo las descargas a medias; lo demás lo marcas tú.
     var selected by remember(all) {
-        mutableStateOf(all.filter { it.kind == "Descarga a medias" || it.kind == "Archivo oculto de otra app" }.toSet())
+        mutableStateOf(all.filter { it.kind == "Descarga a medias" }.toSet())
     }
     var busy by remember { mutableStateOf(false) }
     AlertDialog(

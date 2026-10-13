@@ -44,6 +44,8 @@ android {
     }
     kotlinOptions { jvmTarget = "17" }
     buildFeatures { compose = true }
+    packaging { resources.excludes += setOf("META-INF/versions/9/OSGI-INF/MANIFEST.MF", "META-INF/DEPENDENCIES") }
+    testOptions { unitTests.isReturnDefaultValues = true }
 }
 
 dependencies {
@@ -58,9 +60,20 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     // Carátulas desde el PC.
     implementation("io.coil-kt:coil-compose:2.7.0")
+    // PC por SFTP (el OpenSSH de Windows), como Nixel.
+    implementation("com.github.mwiede:jsch:0.2.21")
+    // La Cocina: servidor web en la tablet (estilo Nonna's Kitchen de Cannoli) y su código QR.
+    implementation("org.nanohttpd:nanohttpd:2.3.1")
+    implementation("com.google.zxing:core:3.5.3")
     // Respaldo automático de partidas.
     implementation("androidx.work:work-runtime-ktx:2.9.1")
     // Shizuku: leer y escribir las partidas que los emuladores guardan en Android/data.
     implementation("dev.rikka.shizuku:api:13.1.5")
     implementation("dev.rikka.shizuku:provider:13.1.5")
+
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
+    testImplementation("org.apache.sshd:sshd-core:2.14.0")
+    testImplementation("org.apache.sshd:sshd-sftp:2.14.0")
+    testImplementation("org.slf4j:slf4j-nop:2.0.16")
 }

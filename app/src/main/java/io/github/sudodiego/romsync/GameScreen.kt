@@ -1,0 +1,256 @@
+package io.github.sudodiego.romsync
+
+import android.content.Context
+import android.widget.Toast
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.Pause
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
+
+/**
+ * Pone a descargar archivos de un juego. Antes revisa el espacio (lo que falta, lo que ya está en cola y la reserva).
+ * Devuelve null si quedó en cola o el motivo por el que no.
+ */
+fun startDownload(ctx: Context, g: Game, files: List<FileEntry>): String? {
+    if (!Prefs.configured) return "Falta conectar el PC (Ajustes)"
+    val need = files.sumOf { it.size - java.io.File(Local.romFile(it.path).path + ".part").length().coerceAtMost(it.size) }
+    val free = Repo.space.free - Prefs.reserveGb * 1_000_000_000L - DownloadService.pendingBytes()
+    if (need > free) return "No hay espacio: faltan ${formatSize(need - free)}"
+    DownloadService.enqueue(ctx, Download(g.id, g.title, g.system, files))
+    return null
+}
+
+private val partNames = mapOf("base" to "Juego base", "update" to "Actualización", "dlc" to "DLC")
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun GameScreen(g: Game, onBack: () -> Unit) {
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    // Se vuelve a calcular cuando cambian los archivos de la tablet (al terminar una descarga o al borrar).
+    val w = remember(Repo.localFiles, g) { Repo.where(g) }
+    val sys = Repo.system(g.system)
+    val dl = DownloadService.items.firstOrNull { it.id == g.id && it.status != DlStatus.DONE }
+    var askDelete by remember { mutableStateOf(false) }
+    var noSpace by remember { mutableStateOf<String?>(null) }
+    // Switch: qué partes descargar (por defecto, todas las que faltan).
+    var selected by remember(g, w) {
+        mutableStateOf(g.parts.filter { p -> p.files.any { !Repo.has(it.path) } }.map { it.titleId }.toSet())
+    }
+    val toDownload = if (g.parts.isNotEmpty()) g.parts.filter { it.titleId in selected }.flatMap { it.files }.filter { !Repo.has(it.path) }
+    else w.missing
+    val downloadSize = toDownload.sumOf { it.size }
+
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+        // Fondo (hero) con degradado hacia el color de la página.
+        Box(Modifier.fillMaxWidth().height(260.dp).background(Brush.linearGradient(listOf(Color(sys.color), Color(0xFF0D1220))))) {
+            ArtImage(g, "hero", Modifier.fillMaxSize())
+            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, MaterialTheme.colorScheme.background))))
+            ArtImage(g, "logo", Modifier.align(Alignment.BottomEnd).padding(24.dp).height(90.dp).width(260.dp), ContentScale.Fit)
+            IconButton(onClick = onBack, Modifier.padding(12.dp).clip(RoundedCornerShape(99.dp)).background(Color(0x66000000))) {
+                Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Volver", tint = Color.White)
+            }
+        }
+        Row(Modifier.padding(horizontal = 24.dp).offset(y = (-90).dp), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+            Cover(g, Modifier.width(190.dp))
+            Column(Modifier.weight(1f).padding(top = 96.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(g.title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                Muted(listOfNotNull(sys.name, formatSize(g.size), "${g.files.size} archivo(s)", g.serial.ifBlank { null }).joinToString(" · "))
+                if (g.tags.isNotEmpty()) FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    g.tags.forEach { Pill(it, Color(0xFF475569)) }
+                }
+
+                StateCard(g, w, downloadSize)
+
+                // Acciones, como en la eShop: el tamaño en el botón.
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    when {
+                        dl != null && dl.status != DlStatus.FAILED -> {
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                LinearProgressIndicator(progress = { dl.done.toFloat() / dl.total.coerceAtLeast(1) }, Modifier.fillMaxWidth())
+                                Muted("${formatSize(dl.done)} de ${formatSize(dl.total)}  ${formatSpeed(dl.speed)}  ${formatEta(dl.total - dl.done, dl.speed)}")
+                            }
+                            if (dl.status == DlStatus.PAUSED) FilledTonalButton(onClick = { DownloadService.resume(ctx, dl) }) {
+                                Icon(Icons.Rounded.PlayArrow, null); Spacer(Modifier.width(6.dp)); Text("Seguir")
+                            } else FilledTonalButton(onClick = { DownloadService.pause(dl) }) {
+                                Icon(Icons.Rounded.Pause, null); Spacer(Modifier.width(6.dp)); Text("Pausar")
+                            }
+                            TextButton(onClick = { DownloadService.cancel(dl) }) { Text("Cancelar") }
+                        }
+                        w.presence != Presence.INSTALLED && w.presence != Presence.TABLET_ONLY && toDownload.isNotEmpty() -> {
+                            Button(onClick = {
+                                noSpace = startDownload(ctx, g, toDownload)
+                            }) {
+                                Icon(Icons.Rounded.Download, null); Spacer(Modifier.width(8.dp))
+                                Text(if (w.presence == Presence.PARTIAL) "Descargar lo que falta · ${formatSize(downloadSize)}" else "Descargar · ${formatSize(downloadSize)}")
+                            }
+                        }
+                    }
+                    if (w.presence != Presence.MISSING && dl?.status != DlStatus.RUNNING) {
+                        OutlinedButton(onClick = { askDelete = true },
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)) {
+                            Icon(Icons.Rounded.Delete, null); Spacer(Modifier.width(6.dp)); Text("Borrar de la tablet")
+                        }
+                    }
+                }
+                dl?.takeIf { it.status == DlStatus.FAILED }?.let { Text("La descarga falló: ${it.error}", color = MaterialTheme.colorScheme.error) }
+
+                if (g.parts.size > 1 || g.parts.any { it.kind != "base" }) {
+                    Section("Contenido") {
+                        g.parts.forEach { p ->
+                            val have = p.files.all { Repo.has(it.path) }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(checked = have || p.titleId in selected, enabled = !have,
+                                    onCheckedChange = { selected = if (it) selected + p.titleId else selected - p.titleId })
+                                Column(Modifier.weight(1f)) {
+                                    Text(partNames[p.kind] + (if (p.version > 0) " v${p.version}" else ""), fontWeight = FontWeight.SemiBold)
+                                    Muted(p.titleId)
+                                }
+                                Text(formatSize(p.size))
+                                Spacer(Modifier.width(12.dp))
+                                if (have) Pill("En la tablet", Palette.ok)
+                            }
+                        }
+                        Muted("En Eden, deja las actualizaciones y DLC en la carpeta de contenido externo (Ajustes → Carpetas de juegos) para no instalarlas en la NAND.")
+                    }
+                }
+
+                Section("Archivos") {
+                    g.files.forEach { f ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(f.path, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                            Text(formatSize(f.size), style = MaterialTheme.typography.bodySmall)
+                            Spacer(Modifier.width(10.dp))
+                            Box(Modifier.size(10.dp).clip(RoundedCornerShape(99.dp))
+                                .background(if (Repo.has(f.path)) Palette.ok else MaterialTheme.colorScheme.outline))
+                        }
+                    }
+                }
+                Spacer(Modifier.height(40.dp))
+            }
+        }
+    }
+
+    if (askDelete) {
+        val onPc = w.presence != Presence.TABLET_ONLY
+        AlertDialog(
+            onDismissRequest = { askDelete = false },
+            title = { Text("¿Borrar ${g.title}?") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Se liberan ${formatSize(w.localSize)} en la tablet.")
+                    Text("Tus partidas guardadas no se borran.", fontWeight = FontWeight.SemiBold)
+                    if (onPc) Muted("Lo puedes volver a descargar desde el PC cuando quieras.")
+                    else Text("Este juego no está en el PC: si lo borras, no lo vas a poder volver a descargar con RomSync.",
+                        color = MaterialTheme.colorScheme.error)
+                }
+            },
+            confirmButton = {
+                Button(onClick = {
+                    askDelete = false
+                    scope.launch {
+                        val freed = Repo.delete(g)
+                        Toast.makeText(ctx, "Borrado · ${formatSize(freed)} libres", Toast.LENGTH_SHORT).show()
+                        if (!onPc) onBack()
+                    }
+                }, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) { Text("Borrar") }
+            },
+            dismissButton = { TextButton(onClick = { askDelete = false }) { Text("Cancelar") } },
+        )
+    }
+
+    noSpace?.let { msg ->
+        val biggest = remember(Repo.localFiles) {
+            Repo.allGames().filter { it.id != g.id && Repo.where(it).presence != Presence.MISSING }
+                .sortedByDescending { Repo.where(it).localSize }.take(5)
+        }
+        AlertDialog(
+            onDismissRequest = { noSpace = null },
+            title = { Text("No se puede descargar") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(msg)
+                    if (msg.startsWith("No hay espacio") && biggest.isNotEmpty()) {
+                        Muted("Los que más ocupan en la tablet:")
+                        biggest.forEach { b ->
+                            TextButton(onClick = { noSpace = null; Nav.game = b }) {
+                                Text("${b.title} · ${formatSize(Repo.where(b).localSize)}", Modifier.weight(1f))
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { noSpace = null }) { Text("Entendido") } },
+        )
+    }
+}
+
+@Composable
+private fun StateCard(g: Game, w: Repo.Where, downloadSize: Long) {
+    val (text, color) = when (w.presence) {
+        Presence.INSTALLED -> (if (w.differs) "En la tablet · algún archivo es distinto al del PC" else "En la tablet") to Palette.ok
+        Presence.PARTIAL -> "A medias en la tablet · faltan ${w.missing.size} archivo(s)" to Palette.warn
+        Presence.MISSING -> "No está en la tablet" to MaterialTheme.colorScheme.onSurfaceVariant
+        Presence.TABLET_ONLY -> "Solo en la tablet (no está en el PC)" to Color(0xFF94A3B8)
+    }
+    Section("") {
+        Text(text, color = color, fontWeight = FontWeight.Bold)
+        if (w.presence == Presence.MISSING || w.presence == Presence.PARTIAL) {
+            val free = Repo.space.free
+            val after = free - downloadSize
+            Muted("Ocupa ${formatSize(downloadSize)} · libres ahora ${formatSize(free)} · después ${formatSize(after.coerceAtLeast(0))}")
+            if (Repo.space.total > 0) UsageBar(listOf(
+                (Repo.space.total - free).toFloat() / Repo.space.total to MaterialTheme.colorScheme.primary,
+                downloadSize.toFloat() / Repo.space.total to if (after < Prefs.reserveGb * 1_000_000_000L) Palette.danger else Palette.sky,
+            ))
+        }
+    }
+}

@@ -7,7 +7,7 @@ on:
 
 jobs:
   android:
-    name: App Android (APK)
+    name: App Android
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -16,30 +16,11 @@ jobs:
           distribution: temurin
           java-version: 17
       - uses: gradle/actions/setup-gradle@v4
-      - name: Compilar APK
+      - name: Pruebas y APK
         run: |
           chmod +x gradlew
-          ./gradlew --no-daemon assembleRelease
+          ./gradlew --no-daemon testReleaseUnitTest assembleRelease
       - uses: actions/upload-artifact@v4
         with:
           name: RomSync-apk
           path: app/build/outputs/apk/release/*.apk
-
-  server:
-    name: Servidor del PC (Windows)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: "1.22"
-      - name: Pruebas
-        working-directory: server
-        run: go vet ./... && go test ./...
-      - name: Compilar romsync.exe
-        working-directory: server
-        run: GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o dist/RomSync.exe .
-      - uses: actions/upload-artifact@v4
-        with:
-          name: RomSync-servidor-windows
-          path: server/dist/RomSync.exe

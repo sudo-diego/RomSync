@@ -198,3 +198,23 @@ th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: upp
   .sysbars .r { grid-template-columns: 100px 1fr 70px; }
   .page { padding: 16px 16px 40px; }
 }
+
+/* Cocina */
+.brand small { font-weight: 500; color: var(--muted); margin-left: 4px; }
+label.ghost, a.ghost, label.primary { display: inline-flex; align-items: center; cursor: pointer; text-decoration: none; color: inherit; }
+label.primary { color: #fff; }
+.ghost.small, button.small { padding: 4px 10px; font-size: 12px; }
+.drop {
+  border: 2px dashed var(--accent); border-radius: var(--radius); padding: 28px; text-align: center; margin-bottom: 16px;
+  background: color-mix(in srgb, var(--accent) 8%, transparent); font-size: 16px;
+}
+.drop[hidden] { display: none; }
+.transfers {
+  position: fixed; right: 16px; bottom: 16px; z-index: 25; width: min(420px, calc(100vw - 32px)); max-height: 50vh; overflow: auto;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px; box-shadow: var(--shadow);
+}
+.transfers[hidden] { display: none; }
+.transfers .tr { display: grid; grid-template-columns: 1fr 90px 80px; gap: 8px; align-items: center; font-size: 12px; margin-top: 8px; }
+.transfers .tr span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.files li a { white-space: nowrap; }
+.files label input { vertical-align: middle; }

@@ -224,8 +224,39 @@ nada se borró de verdad. Las partidas de DS reemplazadas también quedaron en `
   Probado con eventos de teclas por adb (no con un control físico).
 - Ojo con el monkey: puede iniciar descargas y, ahora, borrados de un toque + confirmación. No usarlo sin cuidado.
 
+## Ordenar juegos (14-10-2026)
+
+Organizar → "Juegos por ordenar" (`Tidy.kt`, `Rar5.kt`). Revisa ROMs (cualquier carpeta salvo bios/ignoradas) y
+Descargas, y propone un plan (todo marcado, con "Desmarcar todo"); no cambia nada hasta tocar "Ordenar":
+- RAR5 guardados sin comprimir (los de Tendoku): se saca el NSP copiando bytes, se verifica tamaño + CRC del RAR y
+  recién ahí se borra el RAR (inmediatamente, para no necesitar el doble de espacio). RAR comprimido/cifrado/partido →
+  solo aviso. Los ~200 MB extra de esos RAR son el registro de recuperación, no contenido.
+- ZIP con ROMs fuera de su carpeta: se descomprime; si ya existe idéntico (CRC completo) se borra el zip. Solo entradas
+  ≥32 KB (el zip de melonDS traía .md y casi los toma como ROMs de Genesis; .md quitado de la lista).
+- Switch: TitleID por el nombre, por el ticket o descifrando la cabecera del NCA con header_key de bios/prod.keys
+  (`SwitchId.identify`, para NSP sin ticket, ej. "Anyar Ledeng U" = NSMBU Deluxe, "Pikimin ZIIIAA" = Pokémon Legends Z-A).
+  Nombre oficial de api.nlib.cc/nx/<TID> (cacheado). Base → `switch/Nombre [TID].nsp`; update/DLC →
+  `switch/Actualizaciones y DLC/Nombre [UPD] [TID][vN].nsp` / `Nombre [DLC] etiqueta [TID].nsp`. Partidas de Switch van
+  por TitleID: renombrar no las afecta.
+- Otras plataformas: solo se arregla carpeta equivocada, la marca de la página o que esté en Descargas. NO se renombran
+  nombres viejos tipo "(U)(Venom)": las partidas, imágenes de Cocoon/ES-DE y listas de emuladores usan ese nombre.
+  Al mover: partidas con el mismo nombre (junto al ROM y RetroArch) se renombran; imágenes de Cocoon/ES-DE se COPIAN.
+- Repetidos: muestra por tamaño + 3 trozos de 1 MB; al ejecutar, antes de borrar, comprueba que la copia buena existe
+  (donde estaba o ya movida) y compara byte a byte completo. Nunca pisa un archivo existente.
+- Servidor: si el archivo también está en el PC, se renombra allá igual (SFTP rename); lo que solo está en el PC con
+  nombre raro también se ofrece.
+- Consejos de formato (solo aviso): GC/Wii → RVZ (Dolphin), discos PS1/PS2/etc → CHD (app CHDroid en Android),
+  3DS .cia → .3ds, Wii U carpeta → WUA (Cemu).
+- Verificado a mano: las 3 copias de Pokémon Violet en la tablet tienen el mismo MD5; los zips de Perla/HeartGold son
+  idénticos a los .nds; prueba real con copia idéntica y copia alterada de un GBA: solo se borró la idéntica.
+
 ## Pendiente
 
 - Switch: mostrar en la ficha lo instalado en Eden y, con titledb (blawar/titledb: versions.json, cnmts.json), la
   última versión y los DLC que existen. Propuesto al usuario.
 - Vaciar las papeleras cuando el usuario confirme que todo anda bien.
+- Pedidos del usuario aún por hacer: navegación con control (salir del buscador, sonido y foco en Descargar/Borrar),
+  botón de descargar grande estilo eShop, jingle + aviso arriba a la derecha con imagen al terminar una descarga,
+  más seguridad al cancelar descargas, vista de íconos estilo menú de Wii U, lag de ondas/burbujas y del banner,
+  peso de la app (~750 MB entre app+datos+caché), espacio de apps elegidas (GameNative, DroiDeck…) en Organizar
+  con acceso a cada una, y explicar cada cuánto se actualiza el almacenamiento.

@@ -1,5 +1,10 @@
 package io.github.sudodiego.romsync
 
+import androidx.compose.material.icons.rounded.DriveFileRenameOutline
+import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.Unarchive
+import androidx.compose.material3.Button
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -16,6 +21,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AutoFixHigh
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.CloudUpload
 import androidx.compose.material.icons.rounded.ContentCopy
@@ -59,6 +65,9 @@ fun OrganizeScreen() {
         Repo.allGames().filter { it.kind != "shortcut" && Repo.where(it).presence == Presence.PARTIAL }
     }
     val biosMissing = Repo.biosMissing
+    // El plan de "Ordenar juegos" se arma solo al entrar (lee cabeceras; no cambia nada).
+    androidx.compose.runtime.LaunchedEffect(Unit) { if (Tidy.plan == null) Tidy.scan() }
+    val tidy = Tidy.plan.orEmpty().filter { it.kind != Tidy.Kind.INFO }
     val noArt = remember(Repo.library, Repo.tabletOnly, Art.versions.size, Art.bulkTotal) { Repo.allGames().count { Art.needsFetch(it) } }
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -66,11 +75,17 @@ fun OrganizeScreen() {
         item { StorageCard() }
         item {
             Section("Por revisar") {
-                val any = junk + stray + dups.size + only.size + partial.size + biosMissing.size + noArt > 0
+                val any = junk + stray + dups.size + only.size + partial.size + biosMissing.size + noArt + tidy.size > 0
+                if (Tidy.scanning) SpacedRow {
+                    androidx.compose.material3.CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                    Muted(Tidy.progress.ifEmpty { "Revisando tus juegos…" })
+                }
                 if (!any) SpacedRow {
                     Icon(Icons.Rounded.CheckCircle, null, tint = Palette.ok)
                     Text("Todo en orden.", fontWeight = FontWeight.SemiBold)
                 }
+                Fix(Icons.Rounded.AutoFixHigh, "Juegos por ordenar", "Comprimidos, nombres raros, fuera de su carpeta o repetidos",
+                    tidy.size) { open = "tidy" }
                 Fix(Icons.Rounded.DeleteSweep, "Archivos que sobran", "Descargas a medias y copias viejas de partidas", junk) { open = "junk" }
                 Fix(Icons.Rounded.Memory, "BIOS fuera de su carpeta", "Van a «bios», donde las buscan los emuladores", stray) { open = "bios" }
                 Fix(Icons.Rounded.Memory, "BIOS que faltan en el dispositivo",
@@ -93,6 +108,7 @@ fun OrganizeScreen() {
         "junk" -> CleanupDialog { open = "" }
         "bios" -> StrayBiosDialog(Repo.localStrayBios, Repo.library?.strayBios.orEmpty()) { open = "" }
         "dups" -> DuplicatesDialog { open = "" }
+        "tidy" -> TidyDialog { open = "" }
         "only" -> TabletOnlyDialog { open = "" }
         "partial" -> AlertDialog(
             onDismissRequest = { open = "" },
@@ -132,3 +148,63 @@ private fun Fix(icon: ImageVector, title: String, detail: String, count: Int, ac
     }
 }
 
+
+/** El plan de "Ordenar juegos": qué se va a hacer con cada archivo; todo marcado, se puede desmarcar. */
+@Composable
+private fun TidyDialog(onClose: () -> Unit) {
+    val ctx = LocalContext.current
+    val plan = Tidy.plan.orEmpty()
+    val doable = plan.filter { it.kind != Tidy.Kind.INFO }
+    var selected by remember(plan) { mutableStateOf(doable.map { it.id }.toSet()) }
+    AlertDialog(
+        onDismissRequest = { if (!Tidy.running) onClose() },
+        title = { Text("Ordenar juegos") },
+        text = {
+            if (Tidy.running) Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                androidx.compose.material3.LinearProgressIndicator(Modifier.fillMaxWidth())
+                Muted(Tidy.progress)
+            } else LazyColumn(Modifier.heightIn(max = 460.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                item { Muted("Así van a quedar. Los juegos de Switch se nombran con su nombre oficial y su TitleID.") }
+                item {
+                    val all = selected.size == doable.size
+                    TextButton(onClick = { selected = if (all) emptySet() else doable.map { it.id }.toSet() }) {
+                        Text(if (all) "Desmarcar todo" else "Marcar todo")
+                    }
+                }
+                items(plan, key = { it.id }) { it ->
+                    val (icon, color) = when (it.kind) {
+                        Tidy.Kind.EXTRACT -> Icons.Rounded.Unarchive to Palette.blue
+                        Tidy.Kind.MOVE, Tidy.Kind.RENAME_SERVER -> Icons.Rounded.DriveFileRenameOutline to Palette.ok
+                        Tidy.Kind.DELETE -> Icons.Rounded.DeleteSweep to MaterialTheme.colorScheme.error
+                        Tidy.Kind.INFO -> Icons.Rounded.Info to MaterialTheme.colorScheme.onSurfaceVariant
+                    }
+                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+                        .clickable(enabled = it.kind != Tidy.Kind.INFO) { selected = if (it.id in selected) selected - it.id else selected + it.id }
+                        .padding(6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        if (it.kind != Tidy.Kind.INFO) androidx.compose.material3.Checkbox(it.id in selected,
+                            { c -> selected = if (c) selected + it.id else selected - it.id })
+                        Icon(icon, null, tint = color)
+                        Column(Modifier.weight(1f)) {
+                            Text(if (it.kind == Tidy.Kind.DELETE) "Borrar: " + it.from.substringAfterLast('/') else it.title,
+                                fontWeight = FontWeight.SemiBold)
+                            Muted((if (it.kind == Tidy.Kind.DELETE) "" else "${it.from.substringAfterLast('/')} → ") + it.note +
+                                " · " + formatSize(it.size))
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            if (!Tidy.running) Button(enabled = selected.isNotEmpty(), onClick = {
+                val chosen = doable.filter { it.id in selected }
+                appScope.launch {
+                    val msg = Tidy.run(chosen)
+                    Sound.play(Sound.Fx.DONE)
+                    android.widget.Toast.makeText(ctx, msg, android.widget.Toast.LENGTH_LONG).show()
+                    onClose()
+                }
+            }) { Text("Ordenar (${selected.size})") }
+        },
+        dismissButton = { if (!Tidy.running) TextButton(onClick = onClose) { Text("Cerrar") } },
+    )
+}

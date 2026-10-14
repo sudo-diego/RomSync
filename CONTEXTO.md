@@ -51,15 +51,14 @@ Frontends: ES-DE / Cocoon (carpetas `ROMs/<plataforma>` y `bios`).
   `local.properties` con `sdk.dir=C:/Users/diego/AppData/Local/Android/Sdk`, con barras normales).
 - Pruebas JVM (`app/src/test`, `.\gradlew.bat testReleaseUnitTest`): agrupación, BIOS, sobrantes, Switch, tar, globs y
   SFTP + búsqueda de la carpeta de ROMs contra un servidor SSH de prueba (Apache MINA).
-- Registros: `adb logcat -s RomSync` (Shizuku y errores). adb: `%LOCALAPPDATA%\Android\Sdk\platform-toolsdb.exe`; la
+- Registros: `adb logcat -s RomSync` (Shizuku y errores). adb: `%LOCALAPPDATA%\Android\Sdk\platform-toolsdb.exe`; la
   tablet se conecta sola por depuración inalámbrica (mDNS), no por `192.168.1.95:5555`. Desde Git Bash usar
   `MSYS_NO_PATHCONV=1` (si no, `/sdcard/...` se convierte en una ruta de Windows). Para copiar de Android/data al PC:
   `cp -r` a `/sdcard/Download/...` y `adb pull` desde ahí (`adb pull` directo y `exec-out tar` fallaron).
 
 ## Lo que se vio en la tablet y el PC reales (sesión con adb, 13-10-2026)
 
-- PC: `D:\ROMs` (~60 000 archivos), respaldos en `D:\RomSync
-espaldos\TB321FU`. El shell de OpenSSH es cmd (sin
+- PC: `D:\ROMs` (~60 000 archivos), respaldos en `D:\RomSync\respaldos\TB321FU`. El shell de OpenSSH es cmd (sin
   `DefaultShell`): la lista con PowerShell funciona y la lectura del PC entera tarda < 30 s. Con 60 000 archivos el heap
   llega a ~160 MB: hubo un OutOfMemoryError con el límite de 256 MB → `largeHeap="true"`.
 - Se cayó la tienda con "Key … was already used": un juego solo en la tablet con el mismo id que uno del PC (Switch:
@@ -86,14 +85,12 @@ espaldos\TB321FU`. El shell de OpenSSH es cmd (sin
   slot 1: hubo que poner hola123.ps2 en el slot 1 (Memory Cards). Persona 3 FES en ARMSX2 carga la partida
   (Diego, PLV 33, 35 h 25 m). Ahora RomSync lo avisa al terminar. Antes: NetherSX2 buscaba también en /sdcard/ARMSX2
   (habría copiado de ARMSX2 a ARMSX2); ahora solo ARMSX2 lo hace. Respaldo manual en
-  `D:\RomSync
-espaldosdb-manual-2026-10-13
-ethersx2` (salvo `gamesettings/94A82AAA.ini`, que ni el shell puede leer).
+  `D:/RomSync/respaldos/adb-manual-2026-10-13/nethersx2` (salvo `gamesettings/94A82AAA.ini`, que ni el shell puede leer).
 
 ## Limpieza de la biblioteca (14-10-2026, con permiso del usuario)
 
 Todo lo quitado está en `D:\RomSync\papelera-2026-10-13` (26 GB) y `/sdcard/RomSync/papelera-2026-10-13` (92 MB):
-nada se borró de verdad. Las partidas de DS reemplazadas también quedaron en `D:\RomSyncespaldos\limpieza-2026-10-13`.
+nada se borró de verdad. Las partidas de DS reemplazadas también quedaron en `D:/RomSync/respaldos/limpieza-2026-10-13`.
 - Wii U: 7 carpetas (base/update/DLC, ~60 000 archivos, 23 GB) que estaban completas dentro de los .wua (se comparó
   el TitleID y la versión de cada carpeta con los que trae cada .wua). La lectura del PC pasa de 60 000 a ~460 archivos.
 - 3DS: `Minerva_Myrient/` (zips cortados de Pokémon Moon y X; los .3ds buenos ya estaban).

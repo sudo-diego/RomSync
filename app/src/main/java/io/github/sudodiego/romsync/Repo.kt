@@ -32,7 +32,7 @@ object Repo {
     var localBios by mutableStateOf<List<FileEntry>>(emptyList())
         private set
     var space by mutableStateOf(Local.Space(0, 0))
-        private set
+        internal set
     var tabletOnly by mutableStateOf<List<Game>>(emptyList())
         private set
     var biosMissing by mutableStateOf<List<FileEntry>>(emptyList())
@@ -81,6 +81,9 @@ object Repo {
         }
         return Where(p, missing, localSize, differs)
     }
+
+    /** Cuándo se guardó la última lista del servidor (la que se muestra sin conexión). 0 si no hay. */
+    fun savedAt(): Long = if (::cacheFile.isInitialized && cacheFile.isFile) cacheFile.lastModified() else 0L
 
     fun has(path: String) = localIndex.containsKey(path.lowercase())
 

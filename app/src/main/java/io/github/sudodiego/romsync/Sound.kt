@@ -17,17 +17,17 @@ import android.util.Log
  * Respeta el foco de audio y se pausa en segundo plano. Un error de audio nunca cierra la app: se sigue sin sonido.
  */
 object Sound {
-    enum class Fx { MOVE, OPEN, BACK, DONE, WARN, TOGGLE }
+    enum class Fx { MOVE, OPEN, BACK, DONE, WARN, TOGGLE, JINGLE }
 
     val packs = linkedMapOf("clasico" to "Clásico", "suave" to "Suave", "retro" to "Retro")
 
     private val packRes = mapOf(
         "clasico" to listOf(R.raw.sfx_clasico_mover, R.raw.sfx_clasico_abrir, R.raw.sfx_clasico_volver,
-            R.raw.sfx_clasico_listo, R.raw.sfx_clasico_aviso, R.raw.sfx_clasico_interruptor),
+            R.raw.sfx_clasico_listo, R.raw.sfx_clasico_aviso, R.raw.sfx_clasico_interruptor, R.raw.sfx_clasico_jingle),
         "suave" to listOf(R.raw.sfx_suave_mover, R.raw.sfx_suave_abrir, R.raw.sfx_suave_volver,
-            R.raw.sfx_suave_listo, R.raw.sfx_suave_aviso, R.raw.sfx_suave_interruptor),
+            R.raw.sfx_suave_listo, R.raw.sfx_suave_aviso, R.raw.sfx_suave_interruptor, R.raw.sfx_suave_jingle),
         "retro" to listOf(R.raw.sfx_retro_mover, R.raw.sfx_retro_abrir, R.raw.sfx_retro_volver,
-            R.raw.sfx_retro_listo, R.raw.sfx_retro_aviso, R.raw.sfx_retro_interruptor),
+            R.raw.sfx_retro_listo, R.raw.sfx_retro_aviso, R.raw.sfx_retro_interruptor, R.raw.sfx_retro_jingle),
     )
 
     private lateinit var app: Context

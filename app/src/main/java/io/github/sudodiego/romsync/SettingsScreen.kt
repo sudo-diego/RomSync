@@ -73,7 +73,7 @@ fun SettingsScreen() {
 private fun Field(label: String, value: String, onChange: (String) -> Unit, modifier: Modifier = Modifier,
                   password: Boolean = false, number: Boolean = false, hint: String = "") {
     OutlinedTextField(value = value, onValueChange = onChange, label = { Text(label) }, singleLine = true,
-        placeholder = { if (hint.isNotEmpty()) Text(hint) }, modifier = modifier,
+        placeholder = { if (hint.isNotEmpty()) Text(hint) }, modifier = modifier.gamepadText(),
         visualTransformation = if (password) PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
         keyboardOptions = KeyboardOptions(keyboardType = when {
             password -> KeyboardType.Password
@@ -412,7 +412,7 @@ private fun LookControls() {
         OutlinedTextField(hex, { v ->
             hex = v.uppercase().filter { it in "0123456789ABCDEF" }.take(6)
             if (hex.length == 6) { UiState.accent = 0xFF000000L or hex.toLong(16); Prefs.accent = UiState.accent }
-        }, Modifier.width(150.dp), singleLine = true, prefix = { Text("#") }, label = { Text("Código") },
+        }, Modifier.width(150.dp).gamepadText(), singleLine = true, prefix = { Text("#") }, label = { Text("Código") },
             leadingIcon = { androidx.compose.foundation.layout.Box(Modifier.size(18.dp).clip(RoundedCornerShape(99.dp)).background(Color(UiState.accent))) })
     }
     SpacedRow {

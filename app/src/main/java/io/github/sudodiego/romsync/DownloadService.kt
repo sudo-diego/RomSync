@@ -222,6 +222,7 @@ class DownloadService : Service() {
                     if (d.status == DlStatus.RUNNING) {
                         d.status = DlStatus.DONE
                         finished++
+                        if (!d.bios) Notice.show(d.id, d.title, "Descarga terminada")
                     }
                 } catch (e: Exception) {
                     if (d.status == DlStatus.RUNNING) {

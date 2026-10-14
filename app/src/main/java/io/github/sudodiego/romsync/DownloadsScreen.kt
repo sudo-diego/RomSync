@@ -1,5 +1,7 @@
 package io.github.sudodiego.romsync
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -54,7 +56,11 @@ fun DownloadsScreen() {
                         }
                         DlStatus.DONE -> {}
                     }
-                    if (d.status != DlStatus.DONE) TextButton(onClick = { DownloadService.cancel(d) }) { Text("Cancelar") }
+                    if (d.status != DlStatus.DONE) {
+                        var ask by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+                        TextButton(onClick = { Sound.play(Sound.Fx.WARN); ask = true }, Modifier.focusHighlight(androidx.compose.foundation.shape.RoundedCornerShape(99.dp))) { Text("Cancelar") }
+                        if (ask) CancelDownloadDialog(d) { ask = false }
+                    }
                 }
                 if (d.status != DlStatus.DONE) LinearProgressIndicator(
                     progress = { d.done.toFloat() / d.total.coerceAtLeast(1) }, Modifier.fillMaxWidth())

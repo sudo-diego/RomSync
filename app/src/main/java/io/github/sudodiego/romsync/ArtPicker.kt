@@ -62,7 +62,7 @@ fun ArtPicker(g: Game, kind: String = "grid", onClose: () -> Unit) {
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (chosen == null) {
-                    OutlinedTextField(value = q, onValueChange = { q = it }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                    OutlinedTextField(value = q, onValueChange = { q = it }, singleLine = true, modifier = Modifier.fillMaxWidth().gamepadText(),
                         label = { Text("Buscar en SteamGridDB") }, trailingIcon = { TextButton(onClick = { search() }) { Text("Buscar") } })
                 }
                 when {

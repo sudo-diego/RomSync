@@ -255,8 +255,19 @@ Descargas, y propone un plan (todo marcado, con "Desmarcar todo"); no cambia nad
 - Switch: mostrar en la ficha lo instalado en Eden y, con titledb (blawar/titledb: versions.json, cnmts.json), la
   última versión y los DLC que existen. Propuesto al usuario.
 - Vaciar las papeleras cuando el usuario confirme que todo anda bien.
-- Pedidos del usuario aún por hacer: navegación con control (salir del buscador, sonido y foco en Descargar/Borrar),
-  botón de descargar grande estilo eShop, jingle + aviso arriba a la derecha con imagen al terminar una descarga,
-  más seguridad al cancelar descargas, vista de íconos estilo menú de Wii U, lag de ondas/burbujas y del banner,
-  peso de la app (~750 MB entre app+datos+caché), espacio de apps elegidas (GameNative, DroiDeck…) en Organizar
-  con acceso a cada una, y explicar cada cuánto se actualiza el almacenamiento.
+- Revisar: la app a veces queda en 30 Hz (se quitó el límite de 30 cps del fondo, que lo provocaba; confirmar).
+- Cruceta: desde el carrusel, abajo va a la tarjeta de plataforma más centrada, no a la primera.
+
+## Ronda 0.2.0 (14-10-2026)
+
+- Imágenes: se guardan al tamaño en que se muestran, en WebP (`Art.shrink`, una vez para las viejas): 568 MB → 46 MB.
+  Caché de Coil limitada a 48 MB.
+- prod.keys: Organizar avisa si faltan (hay juegos de Switch), las busca en el dispositivo y si no, pide el archivo.
+- Control: `Modifier.gamepadText()` en los campos (cruceta sale, B suelta); con control (`Nav.keys`) el foco cae en
+  Descargar al abrir la ficha; botón grande `BigDownloadButton` con el color destacado; cancelar pide confirmación.
+- Aviso al terminar una descarga (`Notice.kt`): arriba a la derecha con ícono/carátula y jingle (sfx_*_jingle).
+- Vista de íconos (menú Wii U), botón en la barra de la Tienda (`UiState.icons`).
+- Tarjetas de plataforma con el ícono del emulador elegido (`EmuChoice.kt`; mantener presionada o chip al filtrar).
+- Organizar → "Apps y emuladores": espacio de apps elegidas (permiso Acceso a uso), Abrir / Gestionar.
+- Tienda sin conexión: aviso con la fecha de la lista guardada y "Reintentar".
+- Rendimiento: ondas con menos líneas y trazos reutilizados; se pide la frecuencia más alta de pantalla.

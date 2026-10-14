@@ -1,5 +1,7 @@
 package io.github.sudodiego.romsync
 
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.runtime.getValue
@@ -52,6 +54,30 @@ fun Cover(game: Game, modifier: Modifier = Modifier, showTitle: Boolean = true, 
                 maxLines = 4, overflow = TextOverflow.Ellipsis)
         }
         ArtImage(game, "grid", Modifier.fillMaxSize())
+        overlay()
+    }
+}
+
+/**
+ * El juego como ícono cuadrado, como en el menú de Wii U: el ícono de SteamGridDB; si no tiene, la carátula recortada;
+ * y si tampoco, el nombre sobre el color de la plataforma.
+ */
+@Composable
+fun IconCover(game: Game, modifier: Modifier = Modifier, overlay: @Composable () -> Unit = {}) {
+    val sys = Repo.system(game.system)
+    val icon = artFile(game, "icon")
+    Box(
+        modifier.aspectRatio(1f).clip(RoundedCornerShape(22.dp))
+            .background(if (icon != null) Color.White else Color(sys.color))
+    ) {
+        when {
+            icon != null -> ArtImage(game, "icon", Modifier.fillMaxSize().padding(6.dp).clip(RoundedCornerShape(16.dp)), ContentScale.Fit)
+            else -> {
+                Text(game.title, Modifier.align(Alignment.Center).padding(10.dp), color = Color.White, fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp, lineHeight = 16.sp, maxLines = 4, overflow = TextOverflow.Ellipsis)
+                ArtImage(game, "grid", Modifier.fillMaxSize(), ContentScale.Crop, Alignment.TopCenter)
+            }
+        }
         overlay()
     }
 }
@@ -117,9 +143,29 @@ fun SpacedRow(modifier: Modifier = Modifier, content: @Composable RowScope.() ->
  * Para el control (Xbox, G9): cuando el elemento tiene el foco se agranda un poco, lleva un borde del color principal
  * y suena el "tic". Va ANTES del clickable en la cadena de modificadores (así ve el foco del clickable).
  */
-fun Modifier.focusHighlight(shape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(18.dp)): Modifier = composed {
+/**
+ * Para campos de texto con control: la cruceta arriba/abajo sale del campo hacia lo de al lado, y B (o Atrás) cierra
+ * el teclado y suelta el campo. Sin esto el foco quedaba atrapado adentro.
+ */
+fun Modifier.gamepadText(): Modifier = composed {
+    val fm = androidx.compose.ui.platform.LocalFocusManager.current
+    val kb = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+    this.onPreviewKeyEvent { e ->
+        if (e.type != androidx.compose.ui.input.key.KeyEventType.KeyDown) return@onPreviewKeyEvent false
+        when (e.nativeKeyEvent.keyCode) {
+            android.view.KeyEvent.KEYCODE_DPAD_DOWN -> { kb?.hide(); fm.moveFocus(androidx.compose.ui.focus.FocusDirection.Down) }
+            android.view.KeyEvent.KEYCODE_DPAD_UP -> { kb?.hide(); fm.moveFocus(androidx.compose.ui.focus.FocusDirection.Up) }
+            android.view.KeyEvent.KEYCODE_BACK, android.view.KeyEvent.KEYCODE_BUTTON_B, android.view.KeyEvent.KEYCODE_ESCAPE -> {
+                kb?.hide(); fm.clearFocus(); true
+            }
+            else -> false
+        }
+    }
+}
+
+fun Modifier.focusHighlight(shape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(18.dp), grow: Float = 1.05f): Modifier = composed {
     var focused by remember { androidx.compose.runtime.mutableStateOf(false) }
-    val scale by androidx.compose.animation.core.animateFloatAsState(if (focused) 1.05f else 1f,
+    val scale by androidx.compose.animation.core.animateFloatAsState(if (focused) grow else 1f,
         androidx.compose.animation.core.spring(dampingRatio = 0.6f, stiffness = 500f), label = "foco")
     val color = MaterialTheme.colorScheme.primary
     this.onFocusChanged {

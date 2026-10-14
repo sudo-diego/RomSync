@@ -168,6 +168,7 @@ object Art {
             if (c.responseCode != 200) throw IOException("imagen: ${c.responseCode}")
             val tmp = File(to.path + ".tmp")
             c.inputStream.use { i -> tmp.outputStream().use { i.copyTo(it) } }
+            shrink(tmp, to.name)
             tmp.renameTo(to)
         } finally {
             c.disconnect()
@@ -288,9 +289,55 @@ object Art {
         versions[gameId] = (versions[gameId] ?: 0) + 1
     }
 
+    /** Ancho máximo con que se guarda cada tipo (lo que se ve en la pantalla de la tablet; más es peso y lag). */
+    private val maxWidth = mapOf("grid" to 600, "hero" to 1920, "logo" to 800, "icon" to 256)
+
+    /**
+     * Deja la imagen del tamaño en que se muestra, en WebP (con transparencia para logos e íconos). Un fondo de
+     * SteamGridDB viene a 3840 px y varios MB; así queda en unos cientos de KB y se dibuja mucho más rápido.
+     */
+    fun shrink(f: File, name: String = f.name) {
+        runCatching {
+            val kind = kinds.keys.firstOrNull { name.contains("_$it.") } ?: return
+            val max = maxWidth.getValue(kind)
+            val o = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            android.graphics.BitmapFactory.decodeFile(f.path, o)
+            if (o.outWidth <= 0) return
+            // Ya está chica y es WebP: nada que hacer.
+            if (o.outWidth <= max && o.outMimeType == "image/webp") return
+            var sample = 1
+            while (o.outWidth / (sample * 2) >= max) sample *= 2
+            val bmp = android.graphics.BitmapFactory.decodeFile(f.path, android.graphics.BitmapFactory.Options().apply { inSampleSize = sample })
+                ?: return
+            val scaled = if (bmp.width > max) android.graphics.Bitmap.createScaledBitmap(bmp, max, bmp.height * max / bmp.width, true) else bmp
+            val out = File(f.path + ".webp")
+            out.outputStream().use { scaled.compress(android.graphics.Bitmap.CompressFormat.WEBP_LOSSY, 85, it) }
+            if (scaled !== bmp) scaled.recycle()
+            bmp.recycle()
+            if (out.length() in 1 until f.length()) { f.delete(); out.renameTo(f) } else out.delete()
+        }
+    }
+
+    /** Una sola vez: achica las imágenes que se bajaron antes de existir [shrink]. */
+    suspend fun shrinkAll() = withContext(Dispatchers.IO) {
+        if (Prefs.flag("artShrunk")) return@withContext
+        val before = dir.walkTopDown().sumOf { it.length() }
+        dir.listFiles()?.filter { it.name.endsWith(".img") || it.name.endsWith(".custom") }?.forEach { f ->
+            val before = f.length()
+            shrink(f)
+            if (f.length() != before) {
+                val id = f.name.substringBefore('_')
+                withContext(Dispatchers.Main) { versions[id] = (versions[id] ?: 0) + 1 }
+            }
+        }
+        android.util.Log.i("RomSync", "imágenes: ${before shr 20} MB → ${dir.walkTopDown().sumOf { it.length() } shr 20} MB")
+        Prefs.setFlag("artShrunk", true)
+    }
+
     /** Imagen subida desde la web (gana sobre SteamGridDB). */
     fun setCustom(gameId: String, kind: String, bytes: ByteArray) {
         custom(gameId, kind).writeBytes(bytes)
+        shrink(custom(gameId, kind))
         versions[gameId] = (versions[gameId] ?: 0) + 1
     }
 

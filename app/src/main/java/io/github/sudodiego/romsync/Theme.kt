@@ -67,6 +67,8 @@ object UiState {
     var accent by mutableStateOf(0xFFFF7A1AL)
     /** Fondo animado: "burbujas", "ondas" o "ninguno". */
     var background by mutableStateOf("burbujas")
+    /** Juegos como carátulas (eShop) o como íconos cuadrados (menú de Wii U). */
+    var icons by mutableStateOf(false)
     /** Panel lateral abierto (con nombres) o colapsado (solo íconos). */
     var sidebarOpen by mutableStateOf(true)
 }
@@ -214,6 +216,7 @@ fun AppBackground(modifier: Modifier = Modifier) {
     // Tiempo continuo en segundos (no un ciclo que vuelve a 0): así nada "salta" al repetirse.
     val time = remember { mutableFloatStateOf(0f) }
     if (UiState.background != "ninguno") LaunchedEffect(Unit) {
+        // Cada cuadro: limitarlo a 30 hacía que la tablet bajara la pantalla a 30 Hz (detecta a cuánto dibuja la app).
         val start = withFrameNanos { it }
         while (true) withFrameNanos { time.floatValue = (it - start) / 1_000_000_000f }
     }
@@ -256,6 +259,8 @@ private fun WavesCanvas(modifier: Modifier, time: androidx.compose.runtime.Mutab
     val bgTop = if (dark) mix(accent, Color.Black, 0.55f) else mix(accent, Color.White, 0.45f)
     val bgBottom = if (dark) mix(accent, Color.Black, 0.88f) else mix(accent, Color.White, 0.80f)
     val line = Color.White
+    // Los trazos se reutilizan (antes se creaban 72 por cuadro).
+    val paths = remember { List(2 * 20) { androidx.compose.ui.graphics.Path() } }
     Canvas(modifier.fillMaxSize()) {
         val t = time.floatValue
         val w = size.width; val h = size.height
@@ -263,15 +268,15 @@ private fun WavesCanvas(modifier: Modifier, time: androidx.compose.runtime.Mutab
         // Brillo suave detrás de la cinta.
         drawRect(Brush.verticalGradient(0f to Color.Transparent, 0.5f to Color.White.copy(alpha = if (dark) 0.06f else 0.18f),
             1f to Color.Transparent, startY = h * 0.35f, endY = h * 0.75f))
-        val stroke = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.4.dp.toPx())
-        // Dos cintas, cada una de 36 líneas con la fase apenas corrida: juntas parecen una tela que ondula.
+        val stroke = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.6.dp.toPx())
+        // Dos cintas, cada una de 20 líneas con la fase apenas corrida: juntas parecen una tela que ondula.
         for (ribbon in 0 until 2) {
             val base = h * (0.55f + ribbon * 0.04f)
             val amp = h * (0.10f - ribbon * 0.03f)
             val spread = h * (0.05f + ribbon * 0.02f)
-            for (i in 0 until 36) {
-                val f = i / 35f
-                val path = androidx.compose.ui.graphics.Path()
+            for (i in 0 until 20) {
+                val f = i / 19f
+                val path = paths[ribbon * 20 + i].apply { rewind() }
                 var x = 0f
                 while (x <= w + 16f) {
                     val u = x / w
@@ -280,11 +285,11 @@ private fun WavesCanvas(modifier: Modifier, time: androidx.compose.runtime.Mutab
                             (0.55f + 0.45f * kotlin.math.sin(u * 2.3f - t * 0.11f + ribbon)) +
                         spread * (f - 0.5f) * kotlin.math.cos(u * 3.1f + t * 0.17f + ribbon * 1.7f)
                     if (x == 0f) path.moveTo(x, y) else path.lineTo(x, y)
-                    x += 16f
+                    x += 28f
                 }
                 // Más opacas en el centro de la cinta, transparentes en los bordes.
                 val edge = 1f - kotlin.math.abs(f - 0.5f) * 2f
-                drawPath(path, line.copy(alpha = (if (dark) 0.10f else 0.22f) * (0.25f + 0.75f * edge)), style = stroke)
+                drawPath(path, line.copy(alpha = (if (dark) 0.14f else 0.30f) * (0.25f + 0.75f * edge)), style = stroke)
             }
         }
         // Chispas: suben despacio y titilan.

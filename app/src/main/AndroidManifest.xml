@@ -11,6 +11,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Para mostrar cuánto ocupa cada app elegida (GameNative, emuladores) en Organizar. Se da en Ajustes → Acceso a uso. -->
+    <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" tools:ignore="ProtectedPermissions" />
     <!-- Ver qué emuladores están instalados. -->
     <!-- Instalar un APK subido desde la Cocina (Android pide confirmar en la tablet). -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />

@@ -28,6 +28,7 @@ import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.Downloading
 import androidx.compose.material.icons.rounded.Image
+import androidx.compose.material.icons.rounded.Key
 import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilledTonalButton
@@ -68,14 +69,28 @@ fun OrganizeScreen() {
     // El plan de "Ordenar juegos" se arma solo al entrar (lee cabeceras; no cambia nada).
     androidx.compose.runtime.LaunchedEffect(Unit) { if (Tidy.plan == null) Tidy.scan() }
     val tidy = Tidy.plan.orEmpty().filter { it.kind != Tidy.Kind.INFO }
+    // Sin prod.keys no se pueden reconocer los juegos de Switch que no traen su código en el nombre.
+    val hasSwitch = remember(Repo.library, Repo.localFiles) { Repo.allGames().any { it.system == "switch" } }
+    var keysOk by remember { mutableStateOf(SwitchId.headerKey != null) }
+    val pickKeys = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        val ok = runCatching { ctx.contentResolver.openInputStream(uri)!!.use { SwitchId.useKeys(it.readBytes()) } }.getOrDefault(false)
+        keysOk = ok
+        android.widget.Toast.makeText(ctx, if (ok) "Llaves guardadas en bios" else "Ese archivo no tiene las llaves (header_key)",
+            android.widget.Toast.LENGTH_LONG).show()
+        if (ok) appScope.launch { Tidy.scan() }
+    }
     val noArt = remember(Repo.library, Repo.tabletOnly, Art.versions.size, Art.bulkTotal) { Repo.allGames().count { Art.needsFetch(it) } }
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item { Text("Organizar", style = MaterialTheme.typography.headlineLarge) }
         item { StorageCard() }
+        item { AppsStorageCard() }
         item {
             Section("Por revisar") {
-                val any = junk + stray + dups.size + only.size + partial.size + biosMissing.size + noArt + tidy.size > 0
+                val missingKeys = if (hasSwitch && !keysOk) 1 else 0
+                val any = missingKeys + junk + stray + dups.size + only.size + partial.size + biosMissing.size + noArt + tidy.size > 0
                 if (Tidy.scanning) SpacedRow {
                     androidx.compose.material3.CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
                     Muted(Tidy.progress.ifEmpty { "Revisando tus juegos…" })
@@ -83,6 +98,21 @@ fun OrganizeScreen() {
                 if (!any) SpacedRow {
                     Icon(Icons.Rounded.CheckCircle, null, tint = Palette.ok)
                     Text("Todo en orden.", fontWeight = FontWeight.SemiBold)
+                }
+                Fix(Icons.Rounded.Key, "Faltan las llaves de Switch", "prod.keys: sin ellas no se reconocen los juegos de Switch " +
+                    "que no traen su código en el nombre. Se buscan en el dispositivo; si no aparecen, elige el archivo",
+                    missingKeys, "Buscar") {
+                    appScope.launch {
+                        val ok = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { SwitchId.findKeys() }
+                        keysOk = ok
+                        if (ok) {
+                            android.widget.Toast.makeText(ctx, "Llaves encontradas y guardadas en bios", android.widget.Toast.LENGTH_LONG).show()
+                            Tidy.scan()
+                        } else {
+                            android.widget.Toast.makeText(ctx, "No las encontré: elige dónde está prod.keys", android.widget.Toast.LENGTH_LONG).show()
+                            pickKeys.launch(arrayOf("*/*"))
+                        }
+                    }
                 }
                 Fix(Icons.Rounded.AutoFixHigh, "Juegos por ordenar", "Comprimidos, nombres raros, fuera de su carpeta o repetidos",
                     tidy.size) { open = "tidy" }

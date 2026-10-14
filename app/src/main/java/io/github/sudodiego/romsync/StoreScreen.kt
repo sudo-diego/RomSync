@@ -1,5 +1,10 @@
 package io.github.sudodiego.romsync
 
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.material.icons.rounded.CloudOff
+import androidx.compose.material.icons.rounded.Apps
+import androidx.compose.material.icons.rounded.ViewModule
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -133,7 +138,7 @@ fun StoreScreen() {
 
     Box(Modifier.fillMaxSize()) {
         LazyVerticalGrid(
-            columns = GridCells.Adaptive(158.dp),
+            columns = GridCells.Adaptive(if (UiState.icons) 124.dp else 158.dp),
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 40.dp),
             horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -142,6 +147,7 @@ fun StoreScreen() {
             item(span = { GridItemSpan(maxLineSpan) }, key = "cabecera") {
                 Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     Header(onRefresh = { scope.launch { Repo.refresh() } })
+                    OfflineBanner { scope.launch { Repo.refresh() } }
                     Toolbar(systems.map { it.first })
                 }
             }
@@ -185,14 +191,20 @@ private fun FeaturedCarousel(cards: List<Game>) {
     }
     if (featured.isEmpty()) return
     val pager = rememberPagerState { featured.size }
+    // Con el foco del control encima, no pasa solo (si no, se lleva el foco a otra página).
+    var focusedIn by remember { mutableStateOf(false) }
     LaunchedEffect(pager, featured.size) {
         while (true) {
             kotlinx.coroutines.delay(6000)
-            if (!pager.isScrollInProgress) pager.animateScrollToPage((pager.currentPage + 1) % featured.size, animationSpec = tween(700))
+            if (!pager.isScrollInProgress && !focusedIn) pager.animateScrollToPage((pager.currentPage + 1) % featured.size,
+                animationSpec = tween(900, easing = androidx.compose.animation.core.FastOutSlowInEasing))
         }
     }
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        HorizontalPager(pager, Modifier.fillMaxWidth().height(260.dp), pageSpacing = 16.dp) { i ->
+        HorizontalPager(pager, Modifier.fillMaxWidth().height(260.dp).onFocusChanged { focusedIn = it.hasFocus }
+            .focusProperties { canFocus = false } /* el carrusel no, la página sí */, pageSpacing = 16.dp,
+            // Solo la página visible recibe el foco; izquierda/derecha cambian de página.
+            beyondViewportPageCount = 0) { i ->
             val g = featured[i]
             val offset = (pager.currentPage - i) + pager.currentPageOffsetFraction
             Box(
@@ -237,7 +249,7 @@ private fun ShelfRow(title: String, games: List<Game>, onAll: () -> Unit, versio
             TextButton(onClick = { Sound.play(Sound.Fx.MOVE); onAll() }) { Text("Ver todo (${games.size})") }
         }
         LazyRow(horizontalArrangement = Arrangement.spacedBy(16.dp), contentPadding = PaddingValues(end = 8.dp)) {
-            items(games.take(20), key = { it.id }) { g -> GameCard(g, versions(g), Modifier.width(158.dp)) }
+            items(games.take(20), key = { it.id }) { g -> GameCard(g, versions(g), Modifier.width(if (UiState.icons) 124.dp else 158.dp)) }
         }
     }
 }
@@ -294,6 +306,25 @@ private fun CoversDialog() {
         },
         confirmButton = { TextButton(onClick = { StoreState.coversHidden = true }) { Text("Seguir en segundo plano") } },
     )
+}
+
+/** Sin conexión con el servidor: la tienda se sigue viendo (la última lista guardada), pero se avisa. */
+@Composable
+private fun OfflineBanner(onRetry: () -> Unit) {
+    val conn = Repo.conn as? Conn.Offline ?: return
+    val at = Repo.savedAt()
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Palette.warn.copy(alpha = 0.16f)).padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Icon(Icons.Rounded.CloudOff, null, tint = Palette.warn)
+        Column(Modifier.weight(1f)) {
+            Text("Sin conexión con el servidor", fontWeight = FontWeight.Bold)
+            Muted((if (at > 0) "Ves la lista guardada ${formatAgo(at)}. " else "") +
+                "Lo que está en tu dispositivo funciona igual; para descargar hace falta conexión.")
+        }
+        TextButton(onClick = { Sound.play(Sound.Fx.MOVE); onRetry() }) { Text("Reintentar") }
+    }
 }
 
 @Composable
@@ -385,7 +416,7 @@ private fun Toolbar(systems: List<SystemInfo>) {
         SpacedRow {
             TextField(
                 value = StoreState.query, onValueChange = { StoreState.query = it },
-                modifier = Modifier.weight(1f), singleLine = true, placeholder = { Text("Buscar") },
+                modifier = Modifier.weight(1f).gamepadText(), singleLine = true, placeholder = { Text("Buscar") },
                 leadingIcon = { Icon(Icons.Rounded.Search, null) },
                 trailingIcon = {
                     if (StoreState.query.isNotEmpty()) IconButton(onClick = { StoreState.query = "" }) { Icon(Icons.Rounded.Close, "Borrar") }
@@ -396,6 +427,10 @@ private fun Toolbar(systems: List<SystemInfo>) {
                     focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent,
                 ),
             )
+            // Carátulas (eShop) o íconos (menú de Wii U).
+            FilledTonalIconButton(onClick = { Sound.play(Sound.Fx.TOGGLE); UiState.icons = !UiState.icons; Prefs.icons = UiState.icons }) {
+                Icon(if (UiState.icons) Icons.Rounded.ViewModule else Icons.Rounded.Apps, if (UiState.icons) "Ver carátulas" else "Ver íconos")
+            }
             Box {
                 FilledTonalIconButton(onClick = { Sound.play(Sound.Fx.MOVE); sortOpen = true }) { Icon(Icons.AutoMirrored.Rounded.Sort, "Ordenar") }
                 DropdownMenu(expanded = sortOpen, onDismissRequest = { sortOpen = false }) {
@@ -416,6 +451,15 @@ private fun Toolbar(systems: List<SystemInfo>) {
                     label = { Text(cur.name) }, shape = RoundedCornerShape(99.dp),
                     leadingIcon = { Box(Modifier.size(10.dp).clip(RoundedCornerShape(3.dp)).background(Color(cur.color))) },
                     trailingIcon = { Icon(Icons.Rounded.Close, "Quitar", Modifier.size(18.dp)) })
+                // Con qué app se juega esta plataforma (también se cambia manteniendo presionada su tarjeta).
+                val ctx = LocalContext.current
+                var pick by remember { mutableStateOf(false) }
+                val emu = remember(cur.id, EmuChoice.version) { EmuChoice.pkg(ctx, cur.id) }
+                FilterChip(selected = false, onClick = { Sound.play(Sound.Fx.MOVE); pick = true }, shape = RoundedCornerShape(99.dp),
+                    label = { Text(emu?.let { runCatching { ctx.packageManager.getApplicationLabel(ctx.packageManager.getApplicationInfo(it, 0)).toString() }.getOrNull() }
+                        ?: "Elegir emulador") },
+                    leadingIcon = { emu?.let { EmuChoice.icon(ctx, it) }?.let { androidx.compose.foundation.Image(it, null, Modifier.size(20.dp).clip(RoundedCornerShape(5.dp))) } })
+                if (pick) EmuPickerDialog(cur) { pick = false }
             }
         }
     }
@@ -453,24 +497,27 @@ private fun GameCard(g: Game, versions: Int = 1, modifier: Modifier = Modifier) 
     Column(modifier.graphicsLayer {
         scaleX = scale; scaleY = scale; alpha = shown.value; translationY = (1f - shown.value) * 24f
     }) {
-        Box(Modifier.focusHighlight().shadow(if (pressed) 2.dp else 8.dp, RoundedCornerShape(18.dp)).clip(RoundedCornerShape(18.dp))
+        val cardShape = RoundedCornerShape(if (UiState.icons) 22.dp else 18.dp)
+        Box(Modifier.focusHighlight(cardShape).shadow(if (pressed) 2.dp else 8.dp, cardShape).clip(cardShape)
             .then(if (selected) Modifier.border(3.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(18.dp)) else Modifier)
             .combinedClickable(interactionSource = press, indication = null,
                 onClick = { if (selecting) toggle() else { Sound.play(Sound.Fx.OPEN); Nav.game = g } }, onLongClick = { toggle() })) {
-            Cover(g, Modifier.fillMaxWidth()) {
+            val overlay: @Composable () -> Unit = {
                 Box(Modifier.fillMaxSize().padding(8.dp)) {
                     if (selecting) Icon(if (selected) Icons.Rounded.CheckCircle else Icons.Rounded.RadioButtonUnchecked, null,
                         Modifier.align(Alignment.BottomEnd).size(30.dp).clip(RoundedCornerShape(99.dp)).background(Color(0xCC0D1220)),
                         tint = if (selected) MaterialTheme.colorScheme.primary else Color.White)
                     PresenceBadge(g, Modifier.align(Alignment.TopStart))
-                    Pill(Repo.system(g.system).short, Color(0xAA0D1220), Modifier.align(Alignment.TopEnd))
+                    if (!UiState.icons) Pill(Repo.system(g.system).short, Color(0xAA0D1220), Modifier.align(Alignment.TopEnd))
                     if (versions > 1) Pill("×$versions", Palette.blue, Modifier.align(Alignment.BottomStart))
                 }
             }
+            if (UiState.icons) IconCover(g, Modifier.fillMaxWidth(), overlay) else Cover(g, Modifier.fillMaxWidth(), overlay = overlay)
         }
         Text(if (versions > 1) Group.cleanTitle(g.name).first else g.title, Modifier.padding(top = 8.dp, start = 4.dp, end = 4.dp),
-            fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium)
-        Text(formatSize(g.size), Modifier.padding(horizontal = 4.dp), style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.Bold, maxLines = if (UiState.icons) 1 else 2, overflow = TextOverflow.Ellipsis,
+            style = MaterialTheme.typography.bodyMedium)
+        if (!UiState.icons) Text(formatSize(g.size), Modifier.padding(horizontal = 4.dp), style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
@@ -533,18 +580,38 @@ private fun SelectionBar(sel: List<Game>) {
 
 /** Plataformas como tarjetas de color (como las categorías de la eShop): tocar una muestra solo sus juegos. */
 @Composable
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 private fun PlatformRow(systems: List<Pair<SystemInfo, Int>>) {
+    var pickEmu by remember { mutableStateOf<SystemInfo?>(null) }
+    pickEmu?.let { EmuPickerDialog(it) { pickEmu = null } }
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text("Plataformas", style = MaterialTheme.typography.titleLarge)
+        SpacedRow {
+            Text("Plataformas", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+            Muted("Mantén presionada una para elegir su emulador")
+        }
         LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             items(systems.filter { it.first.id !in Group.shortcutSystems }, key = { it.first.id }) { (sys, n) ->
-                Box(Modifier.size(150.dp, 92.dp).focusHighlight().shadow(6.dp, RoundedCornerShape(18.dp)).clip(RoundedCornerShape(18.dp))
-                    .background(Brush.linearGradient(listOf(Color(sys.color), androidx.compose.ui.graphics.lerp(Color(sys.color), Color.Black, 0.25f))))
-                    .pressable { Sound.play(Sound.Fx.OPEN); StoreState.system = sys.id }.padding(14.dp)) {
+                // El fondo es el ícono de la app con que se juega (elegida por el usuario; se cambia manteniendo presionado).
+                val ctx = LocalContext.current
+                val emu = remember(sys.id, EmuChoice.version) { EmuChoice.pkg(ctx, sys.id) }
+                val icon = emu?.let { EmuChoice.icon(ctx, it) }
+                Box(Modifier.size(190.dp, 100.dp).focusHighlight().shadow(6.dp, RoundedCornerShape(18.dp)).clip(RoundedCornerShape(18.dp))
+                    .background(Brush.linearGradient(listOf(androidx.compose.ui.graphics.lerp(Color(sys.color), Color.Black, 0.15f),
+                        androidx.compose.ui.graphics.lerp(Color(sys.color), Color.Black, 0.55f))))
+                    .combinedClickable(onClick = { Sound.play(Sound.Fx.OPEN); StoreState.system = sys.id },
+                        onLongClick = { Sound.play(Sound.Fx.MOVE); pickEmu = sys })) {
+                    // El ícono grande, girado y recortado a la derecha, como marca de agua.
+                    if (icon != null) androidx.compose.foundation.Image(icon, null,
+                        Modifier.size(120.dp).align(Alignment.CenterEnd).graphicsLayer {
+                            translationX = 30.dp.toPx(); rotationZ = -12f; alpha = 0.35f
+                        }.clip(RoundedCornerShape(26.dp)))
                     Text(sys.short, color = Color.White, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.titleLarge,
-                        modifier = Modifier.align(Alignment.TopStart))
-                    Text("$n juegos", color = Color.White.copy(alpha = 0.9f), style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.align(Alignment.BottomStart))
+                        modifier = Modifier.align(Alignment.TopStart).padding(14.dp))
+                    Row(Modifier.align(Alignment.BottomStart).padding(14.dp), verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (icon != null) androidx.compose.foundation.Image(icon, null, Modifier.size(22.dp).clip(RoundedCornerShape(6.dp)))
+                        Text("$n juegos", color = Color.White.copy(alpha = 0.9f), style = MaterialTheme.typography.bodySmall)
+                    }
                 }
             }
         }

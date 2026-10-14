@@ -237,6 +237,14 @@ def sfx():
         save('listo', seq([76+shift, 79+shift, 84+shift, 88+shift], .07, .3*slow, 14/slow, kind), .55)
         save('aviso', seq([57+shift, 55+shift], .09, .18*slow, 18/slow, kind), .5)
         save('interruptor', seq([81+shift], 0, .07*slow, 60/slow, kind), .45)
+        # Descarga terminada: arpegio que sube y un acorde final que queda sonando (~1,2 s).
+        j = seq([72+shift, 76+shift, 79+shift, 84+shift], .09, .5*slow, 9/slow, kind)
+        chord = [0.0]*int(.9*slow*SR)
+        for m in (84+shift, 88+shift, 91+shift):
+            for i, v in enumerate(tone(hz(m), .9*slow, 4.5/slow, kind)): chord[i] += v * .55
+        start = int(.36*SR); j = j + [0.0]*max(0, start + len(chord) - len(j))
+        for i, v in enumerate(chord): j[start + i] += v
+        save('jingle', j, .6)
     print('sonidos: 3 juegos')
 
 if __name__ == '__main__':

@@ -1,5 +1,10 @@
 package io.github.sudodiego.romsync
 
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.foundation.border
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material.icons.rounded.Album
@@ -188,6 +193,7 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
                 StateCard(g, w, downloadSize)
 
                 // Acciones, como en la eShop: el tamaño en el botón.
+                var askCancel by remember { mutableStateOf(false) }
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
                     when {
                         dl != null && dl.status != DlStatus.FAILED -> {
@@ -195,20 +201,23 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
                                 LinearProgressIndicator(progress = { dl.done.toFloat() / dl.total.coerceAtLeast(1) }, Modifier.fillMaxWidth())
                                 Muted("${formatSize(dl.done)} de ${formatSize(dl.total)}  ${formatSpeed(dl.speed)}  ${formatEta(dl.total - dl.done, dl.speed)}")
                             }
-                            if (dl.status == DlStatus.PAUSED) FilledTonalButton(onClick = { DownloadService.resume(ctx, dl) }) {
+                            val pill = RoundedCornerShape(99.dp)
+                            if (dl.status == DlStatus.PAUSED) FilledTonalButton(onClick = { Sound.play(Sound.Fx.MOVE); DownloadService.resume(ctx, dl) },
+                                Modifier.focusHighlight(pill)) {
                                 Icon(Icons.Rounded.PlayArrow, null); Spacer(Modifier.width(6.dp)); Text("Seguir")
-                            } else FilledTonalButton(onClick = { DownloadService.pause(dl) }) {
+                            } else FilledTonalButton(onClick = { Sound.play(Sound.Fx.MOVE); DownloadService.pause(dl) }, Modifier.focusHighlight(pill)) {
                                 Icon(Icons.Rounded.Pause, null); Spacer(Modifier.width(6.dp)); Text("Pausar")
                             }
-                            TextButton(onClick = { DownloadService.cancel(dl) }) { Text("Cancelar") }
+                            TextButton(onClick = { Sound.play(Sound.Fx.WARN); askCancel = true }, Modifier.focusHighlight(pill)) { Text("Cancelar") }
+                            if (askCancel) CancelDownloadDialog(dl) { askCancel = false }
                         }
                         w.presence != Presence.INSTALLED && w.presence != Presence.TABLET_ONLY && toDownload.isNotEmpty() -> {
-                            Button(onClick = {
+                            BigDownloadButton(
+                                if (w.presence == Presence.PARTIAL) "Descargar lo que falta" else "Descargar", formatSize(downloadSize),
+                                Modifier.weight(1f),
+                            ) {
                                 noSpace = startDownload(ctx, g, toDownload)
                                 Sound.play(if (noSpace == null) Sound.Fx.DONE else Sound.Fx.WARN)
-                            }) {
-                                Icon(Icons.Rounded.Download, null); Spacer(Modifier.width(8.dp))
-                                Text(if (w.presence == Presence.PARTIAL) "Descargar lo que falta · ${formatSize(downloadSize)}" else "Descargar · ${formatSize(downloadSize)}")
                             }
                         }
                     }
@@ -218,7 +227,8 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
                         if (up != null) Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             LinearProgressIndicator(progress = { up.toFloat() / g.size.coerceAtLeast(1) }, Modifier.fillMaxWidth())
                             Muted("Copiando al servidor: ${formatSize(up)} de ${formatSize(g.size)}")
-                        } else FilledTonalButton(onClick = {
+                        } else FilledTonalButton(modifier = Modifier.focusHighlight(RoundedCornerShape(99.dp)), onClick = {
+                            Sound.play(Sound.Fx.MOVE)
                             scope.launch {
                                 val msg = runCatching { PcEdit.uploadFromTablet(g) }.fold({ "${g.title} ya está en el servidor" }, { "No se pudo copiar: ${it.message}" })
                                 Toast.makeText(ctx, msg, Toast.LENGTH_LONG).show()
@@ -227,7 +237,8 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
                         }) { Text("Copiar al servidor · ${formatSize(g.size)}") }
                     }
                     if ((w.presence != Presence.MISSING || Prefs.configured) && dl?.status != DlStatus.RUNNING) {
-                        OutlinedButton(onClick = { askDelete = true },
+                        OutlinedButton(onClick = { Sound.play(Sound.Fx.WARN); askDelete = true },
+                            modifier = Modifier.height(if (toDownload.isNotEmpty() && dl == null) 64.dp else 40.dp).focusHighlight(RoundedCornerShape(99.dp), grow = 1.02f),
                             colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)) {
                             Icon(Icons.Rounded.Delete, null); Spacer(Modifier.width(6.dp)); Text("Borrar…")
                         }
@@ -721,7 +732,7 @@ private fun GameEditor(g: Game, onClose: () -> Unit) {
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 androidx.compose.material3.OutlinedTextField(value = name, onValueChange = { name = it }, singleLine = true,
-                    label = { Text("Nombre") }, modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Nombre") }, modifier = Modifier.fillMaxWidth().gamepadText(),
                     supportingText = { Text("Archivo: ${g.name}") })
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     listOf(Triple("grid", "Carátula", 2f / 3f), Triple("hero", "Fondo", 1.6f), Triple("logo", "Logo", 1.6f)).forEach { (k, label, ratio) ->
@@ -749,5 +760,50 @@ private fun GameEditor(g: Game, onClose: () -> Unit) {
         dismissButton = {
             TextButton(onClick = { Repo.rename(g, ""); onClose(); Nav.game = Repo.game(g.id) ?: g }) { Text("Nombre original") }
         },
+    )
+}
+
+/**
+ * El botón de descargar de la ficha, como el de la eShop: grande, naranja con brillo, el tamaño a la vista, y con foco y
+ * sonido para el control.
+ */
+@Composable
+fun BigDownloadButton(label: String, size: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(99.dp)
+    // Del color destacado elegido en Ajustes: más claro arriba, más oscuro abajo (brillo de botón de eShop).
+    val accent = Color(UiState.accent)
+    val brush = androidx.compose.ui.graphics.Brush.verticalGradient(listOf(
+        androidx.compose.ui.graphics.lerp(accent, Color.White, 0.30f), accent, androidx.compose.ui.graphics.lerp(accent, Color.Black, 0.15f)))
+    // Con control, al abrir la ficha el foco cae directo aquí (sin recorrer toda la pantalla).
+    val focus = androidx.compose.runtime.remember { androidx.compose.ui.focus.FocusRequester() }
+    androidx.compose.runtime.LaunchedEffect(Unit) { if (Nav.keys) runCatching { focus.requestFocus() } }
+    Row(
+        modifier.height(64.dp).focusRequester(focus).focusHighlight(shape, grow = 1.02f).clip(shape).background(brush)
+            .border(2.dp, Color.White.copy(alpha = .35f), shape)
+            .pressable { onClick() } // clickable ya recibe el foco y responde a A / Enter
+            .padding(horizontal = 26.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Icon(Icons.Rounded.Download, null, tint = Color.White, modifier = Modifier.size(30.dp))
+        Text(label, color = Color.White, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.titleLarge,
+            modifier = Modifier.weight(1f))
+        Box(Modifier.clip(shape).background(Color.White.copy(alpha = .25f)).padding(horizontal = 14.dp, vertical = 6.dp)) {
+            Text(size, color = Color.White, fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+/** Cancelar una descarga pide confirmación: se borra lo bajado y no se puede deshacer. */
+@Composable
+fun CancelDownloadDialog(d: Download, onClose: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onClose,
+        title = { Text("¿Cancelar la descarga?") },
+        text = { Text("Se borra lo que ya se bajó de ${d.title} (${formatSize(d.done)}). Si solo quieres detenerla un rato, usa Pausar.") },
+        confirmButton = {
+            Button(onClick = { Sound.play(Sound.Fx.WARN); DownloadService.cancel(d); onClose() },
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) { Text("Cancelar descarga") }
+        },
+        dismissButton = { TextButton(onClick = onClose) { Text("Seguir descargando") } },
     )
 }

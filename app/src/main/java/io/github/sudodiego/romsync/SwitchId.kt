@@ -58,12 +58,40 @@ object SwitchId {
         }
     }
 
+    /** Dónde están las llaves (en la carpeta bios), si están. */
+    val keysFile get() = java.io.File(Prefs.biosDir, "prod.keys")
+
+    /**
+     * Busca un prod.keys en los lugares de siempre (Descargas, carpetas de emuladores) y lo copia a bios.
+     * Devuelve true si quedó.
+     */
+    fun findKeys(): Boolean {
+        if (headerKey != null) return true
+        val sd = android.os.Environment.getExternalStorageDirectory()
+        val found = sd.walkTopDown().maxDepth(5).onEnter { !it.name.startsWith(".") && it.name != "Android" }
+            .firstOrNull { it.isFile && it.name.equals("prod.keys", true) && it != keysFile } ?: return false
+        return useKeys(found.readBytes())
+    }
+
+    /** Guarda unas llaves elegidas por el usuario (si de verdad traen header_key). */
+    fun useKeys(bytes: ByteArray): Boolean {
+        if (parseHeaderKey(String(bytes)) == null) return false
+        keysFile.parentFile?.mkdirs()
+        keysFile.writeBytes(bytes)
+        cachedKey = null
+        return headerKey != null
+    }
+
+    private fun parseHeaderKey(text: String): ByteArray? = text.lines().firstOrNull { it.trim().startsWith("header_key") && !it.contains("source") }
+        ?.substringAfter('=')?.trim()?.takeIf { it.length == 64 }?.chunked(2)?.map { it.toInt(16).toByte() }?.toByteArray()
+
+    private var cachedKey: ByteArray? = null
+
     /** header_key de prod.keys (en la carpeta bios). Null si no está. */
-    val headerKey: ByteArray? by lazy {
-        runCatching {
-            java.io.File(Prefs.biosDir, "prod.keys").readLines().firstOrNull { it.trim().startsWith("header_key") && !it.contains("source") }
-                ?.substringAfter('=')?.trim()?.chunked(2)?.map { it.toInt(16).toByte() }?.toByteArray()?.takeIf { it.size == 32 }
-        }.getOrNull()
+    val headerKey: ByteArray? get() {
+        cachedKey?.let { return it }
+        cachedKey = runCatching { parseHeaderKey(keysFile.readText()) }.getOrNull()
+        return cachedKey
     }
 
     /**

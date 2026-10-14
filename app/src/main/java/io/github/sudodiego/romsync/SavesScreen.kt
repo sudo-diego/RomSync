@@ -172,7 +172,7 @@ private fun EmulatorCard(emu: Emulator, onRestore: () -> Unit) {
             }
             if (editPath) {
                 st.sources.forEach { Muted("• ${it.root}") }
-                OutlinedTextField(value = path, onValueChange = { path = it }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                OutlinedTextField(value = path, onValueChange = { path = it }, singleLine = true, modifier = Modifier.fillMaxWidth().gamepadText(),
                     label = { Text("Otra carpeta (vacío = la detectada)") })
                 TextButton(onClick = { Prefs.setEmuPath(emu.id, path); scope.launch { Saves.inspect(ctx, emu) } }) { Text("Guardar carpeta") }
             }

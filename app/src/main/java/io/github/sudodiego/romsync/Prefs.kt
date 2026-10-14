@@ -116,6 +116,15 @@ object Prefs {
     var accent: Long
         get() = sp.getLong("accent", 0xFFFF7A1AL)
         set(v) = sp.edit().putLong("accent", v).apply()
+    /** Apps cuyo espacio se muestra en Organizar (null = aún no elegidas: se usan las conocidas que estén instaladas). */
+    var watchedApps: Set<String>?
+        get() = sp.getStringSet("watchedApps", null)
+        set(v) = sp.edit().putStringSet("watchedApps", v).apply()
+    fun emuFor(system: String): String? = sp.getString("emu:$system", null)
+    fun setEmuFor(system: String, pkg: String) = sp.edit().putString("emu:$system", pkg).apply()
+    var icons: Boolean
+        get() = sp.getBoolean("icons", false)
+        set(v) = sp.edit().putBoolean("icons", v).apply()
     var background: String
         get() = sp.getString("background", "burbujas") ?: "burbujas"
         set(v) = sp.edit().putString("background", v).apply()
@@ -156,6 +165,8 @@ object Prefs {
         sp.edit().putString("last_hash_$emu", hash).putLong("last_at_$emu", at).apply()
 
     // TitleID leído de cada .nsp sin código en el nombre ("ruta|tamaño" → id; "" = no se pudo).
+    fun flag(key: String) = sp.getBoolean("flag:$key", false)
+    fun setFlag(key: String, v: Boolean) = sp.edit().putBoolean("flag:$key", v).apply()
     fun switchId(key: String): String? = sp.getString("tid:$key", null)
     fun setSwitchId(key: String, id: String) = sp.edit().putString("tid:$key", id).apply()
 

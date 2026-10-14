@@ -100,6 +100,8 @@ object Nav {
     var tab by mutableStateOf(Tab.STORE)
     var game by mutableStateOf<Game?>(null)
     var hasFilesAccess by mutableStateOf(true)
+    /** Se está usando control o teclado (no el dedo): entonces al abrir una pantalla el foco va a su botón principal. */
+    var keys by mutableStateOf(false)
 }
 
 class MainActivity : ComponentActivity() {
@@ -111,6 +113,12 @@ class MainActivity : ComponentActivity() {
         Names.init(this)
         SwitchDb.init(this)
         Art.init(this) // antes que Repo: los nombres oficiales de SteamGridDB se usan al cargar la biblioteca
+        // Caché de imágenes de internet (miniaturas al elegir carátula) acotada: por defecto Coil usa hasta 250 MB.
+        coil.Coil.setImageLoader(coil.ImageLoader.Builder(this)
+            .diskCache { coil.disk.DiskCache.Builder().directory(cacheDir.resolve("image_cache")).maxSizeBytes(48L shl 20).build() }
+            .memoryCache { coil.memory.MemoryCache.Builder(this).maxSizePercent(0.15).build() }
+            .build())
+        appScope.launch { Art.shrinkAll() }
         Repo.init(this)
         Sound.init(this)
         DownloadService.load(this)
@@ -134,7 +142,17 @@ class MainActivity : ComponentActivity() {
         UiState.theme = Prefs.theme
         UiState.accent = Prefs.accent
         UiState.background = Prefs.background
+        UiState.icons = Prefs.icons
         UiState.sidebarOpen = Prefs.sidebarOpen
+        // La tablet baja a 60 Hz cuando no se toca la pantalla y el carrusel automático se veía a saltos: se pide la
+        // frecuencia más alta de la pantalla (misma resolución).
+        runCatching {
+            val d = if (Build.VERSION.SDK_INT >= 30) display else @Suppress("DEPRECATION") windowManager.defaultDisplay
+            val cur = d!!.mode
+            val best = d.supportedModes.filter { it.physicalWidth == cur.physicalWidth && it.physicalHeight == cur.physicalHeight }
+                .maxByOrNull { it.refreshRate }
+            if (best != null) window.attributes = window.attributes.apply { preferredDisplayModeId = best.modeId }
+        }
         setContent {
             val view = androidx.compose.ui.platform.LocalView.current
             // Se lee aquí (no dentro del efecto) para que al cambiar de tema se vuelva a aplicar.
@@ -147,13 +165,22 @@ class MainActivity : ComponentActivity() {
             }
             RomSyncTheme {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                    if (!Nav.hasFilesAccess) FilesAccessScreen { openFilesAccess() } else AppShell()
+                    if (!Nav.hasFilesAccess) FilesAccessScreen { openFilesAccess() } else androidx.compose.foundation.layout.Box {
+                        AppShell()
+                        NoticeOverlay()
+                    }
                 }
             }
         }
     }
 
+    override fun dispatchTouchEvent(ev: android.view.MotionEvent): Boolean {
+        if (Nav.keys) Nav.keys = false
+        return super.dispatchTouchEvent(ev)
+    }
+
     override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
+        if (!Nav.keys && event.keyCode != android.view.KeyEvent.KEYCODE_BACK) Nav.keys = true
         if (event.action == android.view.KeyEvent.ACTION_DOWN) {
             val step = when (event.keyCode) {
                 android.view.KeyEvent.KEYCODE_BUTTON_L1 -> -1

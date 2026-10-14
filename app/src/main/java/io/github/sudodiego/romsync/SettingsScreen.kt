@@ -1,5 +1,14 @@
 package io.github.sudodiego.romsync
 
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.TouchApp
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -36,7 +45,8 @@ import kotlinx.coroutines.withContext
 @Composable
 fun SettingsScreen() {
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        item { Text("Ajustes", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold) }
+        item { Text("Ajustes", style = MaterialTheme.typography.headlineLarge) }
+        item { LookAndSoundCard() }
         item { PcCard() }
         item { TabletCard() }
         item { ArtCard() }
@@ -257,7 +267,7 @@ private fun TabletCard() {
             Text("Dejar siempre libres: ${reserve.toInt()} GB")
             Slider(value = reserve, onValueChange = { reserve = it }, valueRange = 0f..30f, steps = 29,
                 onValueChangeFinished = { Prefs.reserveGb = reserve.toInt() })
-            Muted("Una descarga que deje menos que esto no empieza (los emuladores también necesitan espacio para cachés y partidas).")
+            Muted("Una descarga que deje menos libre que esto no empieza.")
         }
         Button(onClick = {
             Prefs.romsDir = roms; Prefs.biosDir = bios; Prefs.deviceName = name
@@ -270,7 +280,7 @@ private fun TabletCard() {
 private fun ArtCard() {
     var key by remember { mutableStateOf(Prefs.sgdbKey) }
     Section("Carátulas (SteamGridDB)") {
-        Muted("Gratis: en steamgriddb.com inicia sesión → Preferencias → API → copia la clave. Las imágenes quedan guardadas en la tablet.")
+        Muted("Gratis en steamgriddb.com → Preferencias → API.")
         Field("Clave de la API", key, { key = it }, Modifier.fillMaxWidth(), password = true)
         val scope = appScope
         var msg by remember { mutableStateOf<Pair<Boolean, String>?>(null) }
@@ -293,5 +303,38 @@ private fun ArtCard() {
             }
         }
         msg?.let { (ok, text) -> Text(text, color = if (ok) Palette.ok else MaterialTheme.colorScheme.error) }
+    }
+}
+
+/** Tema (claro estilo eShop u oscuro), música de fondo y sonidos de navegación. */
+@Composable
+private fun LookAndSoundCard() {
+    var music by remember { mutableStateOf(Prefs.musicOn) }
+    var sfx by remember { mutableStateOf(Prefs.sfxOn) }
+    var musicVol by remember { mutableStateOf(Prefs.musicVolume.toFloat()) }
+    var sfxVol by remember { mutableStateOf(Prefs.sfxVolume.toFloat()) }
+    Section("Sonido y aspecto") {
+        SpacedRow {
+            Text("Tema", Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
+            listOf("claro" to "Claro", "oscuro" to "Oscuro").forEach { (id, label) ->
+                FilterChip(selected = UiState.theme == id, onClick = {
+                    Sound.play(Sound.Fx.TOGGLE); UiState.theme = id; Prefs.theme = id
+                }, label = { Text(label) }, shape = RoundedCornerShape(99.dp))
+            }
+        }
+        SpacedRow {
+            Icon(Icons.Rounded.MusicNote, null)
+            Text("Música", Modifier.width(110.dp), fontWeight = FontWeight.SemiBold)
+            Slider(musicVol, { musicVol = it; Prefs.musicVolume = it.toInt(); Sound.musicSettingsChanged() }, Modifier.weight(1f),
+                enabled = music, valueRange = 0f..100f)
+            Switch(music, { music = it; Prefs.musicOn = it; Sound.musicSettingsChanged(); Sound.play(Sound.Fx.TOGGLE) })
+        }
+        SpacedRow {
+            Icon(Icons.Rounded.TouchApp, null)
+            Text("Sonidos", Modifier.width(110.dp), fontWeight = FontWeight.SemiBold)
+            Slider(sfxVol, { sfxVol = it; Prefs.sfxVolume = it.toInt() }, Modifier.weight(1f), enabled = sfx, valueRange = 0f..100f,
+                onValueChangeFinished = { Sound.play(Sound.Fx.MOVE) })
+            Switch(sfx, { sfx = it; Prefs.sfxOn = it; Sound.play(Sound.Fx.TOGGLE) })
+        }
     }
 }

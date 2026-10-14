@@ -54,7 +54,7 @@ fun SavesScreen() {
             SpacedRow(Modifier.fillMaxWidth()) {
                 Column(Modifier.weight(1f)) {
                     Text("Partidas", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-                    Muted("Se respaldan en el PC (${Prefs.remoteBackups.ifBlank { "sin configurar" }}). En la tablet nunca se borran.")
+                    Muted("En el PC: ${Prefs.remoteBackups.removePrefix("/").ifBlank { "sin configurar" }}")
                 }
                 if (allBusy) CircularProgressIndicator(Modifier.size(28.dp))
                 else Button(enabled = Prefs.configured, onClick = {
@@ -72,8 +72,7 @@ fun SavesScreen() {
                 SpacedRow {
                     Column(Modifier.weight(1f)) {
                         Text("Respaldo automático", fontWeight = FontWeight.Bold)
-                        Muted("Cada ${Prefs.autoBackupHours} h, sin abrir la app, con WiFi y el PC encendido. Si el PC está apagado, " +
-                            "lo intenta cada hora hasta que responda. Solo sube lo que cambió.")
+                        Muted("Cada ${Prefs.autoBackupHours} h, con la app cerrada. Si el PC está apagado, reintenta cada hora.")
                         val last = Prefs.lastAutoBackupOk
                         if (last > 0 || Prefs.lastAutoBackupNote.isNotEmpty()) Muted(
                             (if (last > 0) "Último que salió bien: ${formatAgo(last)}" else "Todavía no salió ninguno") +
@@ -85,7 +84,7 @@ fun SavesScreen() {
                 val pm = ctx.getSystemService(android.os.PowerManager::class.java)
                 var free by remember { mutableStateOf(pm.isIgnoringBatteryOptimizations(ctx.packageName)) }
                 if (auto && !free) SpacedRow {
-                    Text("Android puede frenar el respaldo automático cuando la app está cerrada.", Modifier.weight(1f),
+                    Text("Android puede frenarlo con la app cerrada.", Modifier.weight(1f),
                         color = Palette.warn, style = MaterialTheme.typography.bodySmall)
                     androidx.compose.material3.TextButton(onClick = {
                         runCatching {
@@ -97,13 +96,13 @@ fun SavesScreen() {
                 }
                 var keep by remember { mutableStateOf(Prefs.keepBackups) }
                 SpacedRow {
-                    Muted("En el PC se guardan, por emulador, los últimos $keep respaldos completos, 5 de cada juego y 5 copias " +
-                        "de seguridad. Los más viejos se borran solos (salvo los marcados «conservar»).", Modifier.weight(1f))
+                    Muted("Respaldos completos que se guardan", Modifier.weight(1f))
                     listOf(5, 10, 20).forEach { n ->
                         androidx.compose.material3.FilterChip(selected = keep == n, onClick = { keep = n; Prefs.keepBackups = n },
                             label = { Text("$n") })
                     }
                 }
+                Muted("Más 5 por juego. Los viejos se borran solos.")
             }
         }
         if (needShell) item { ShizukuCard() }
@@ -117,8 +116,7 @@ fun SavesScreen() {
 fun ShizukuCard() {
     val ctx = LocalContext.current
     Section("Shizuku") {
-        Muted("Dolphin, Eden, ARMSX2 y Vita3K guardan sus partidas en Android/data, que una app normal no puede leer. " +
-            "Con Shizuku (el mismo de TBF Companion) RomSync las copia sin root.")
+        Muted("Para leer las partidas de Dolphin, Eden, ARMSX2 y Vita3K (sin root).")
         SpacedRow {
             when (Shell.state) {
                 Shell.State.NOT_INSTALLED -> Muted("Shizuku no está instalado.")
@@ -145,7 +143,6 @@ private fun EmulatorCard(emu: Emulator, onRestore: () -> Unit) {
         SpacedRow {
             Column(Modifier.weight(1f)) {
                 Text(emu.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                Muted(emu.what)
             }
             if (st?.installed != true) Muted("No instalado")
         }
@@ -154,7 +151,7 @@ private fun EmulatorCard(emu: Emulator, onRestore: () -> Unit) {
                 busy != null -> SpacedRow { CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp); Muted(busy) }
                 st.error != null -> Text(if (st.needsShell && Shell.state != Shell.State.READY) "Necesita Shizuku para leer sus partidas" else st.error,
                     color = MaterialTheme.colorScheme.error)
-                else -> Muted("${st.files} archivos · ${formatSize(st.bytes)} · último respaldo ${formatAgo(Prefs.lastBackupAt(emu.id))}")
+                else -> Muted("${formatSize(st.bytes)} · respaldado ${formatAgo(Prefs.lastBackupAt(emu.id))}")
             }
             SpacedRow {
                 Button(enabled = busy == null && Prefs.configured && st.error == null, onClick = {
@@ -180,7 +177,7 @@ private fun EmulatorCard(emu: Emulator, onRestore: () -> Unit) {
                 TextButton(onClick = { Prefs.setEmuPath(emu.id, path); scope.launch { Saves.inspect(ctx, emu) } }) { Text("Guardar carpeta") }
             }
         }
-        if (emu.note.isNotEmpty()) Muted(emu.note)
+        if (emu.note.isNotEmpty() && st?.installed == true && emu.id == "nethersx2") Muted(emu.note)
         if (emu.id == "nethersx2" && st?.installed == true && Saves.statuses["armsx2"]?.installed == true) {
             Button(enabled = busy == null, onClick = { askTransfer = true }) { Text("Pasar tarjetas a ARMSX2") }
         }
@@ -264,7 +261,7 @@ fun RestoreDialog(emu: Emulator, onlyKey: String? = null, onClose: () -> Unit) {
                     chosen.take(6).forEach { Text("• ${it.title}") }
                     if (chosen.size > 6) Muted("y ${chosen.size - 6} más")
                     Text("Solo se reemplazan esas partidas. Las demás de ${emu.name} no se tocan.", fontWeight = FontWeight.SemiBold)
-                    Muted("Antes se guarda en el PC un respaldo de cómo está todo ahora, por si quieres volver atrás. Cierra ${emu.name} antes de seguir.")
+                    Muted("Antes se respalda lo de ahora. Cierra ${emu.name}.")
                 }
             },
             confirmButton = {

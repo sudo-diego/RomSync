@@ -162,6 +162,28 @@ nada se borró de verdad. Las partidas de DS reemplazadas también quedaron en `
   `/sdcard/Cocoon Shell` (1,3 GB) es la carpeta vieja, sin cambios desde agosto: no se borró (preguntar).
 - `2S2H/MM.z64` = Majora's Mask de `ROMs/n64`: lo necesita el port 2Ship2Harkinian, se queda.
 
+## Rediseño estilo eShop (14-10-2026)
+
+- Look: eShop de Switch en estructura (panel izquierdo que se colapsa a íconos, `Sidebar` en MainActivity; se colapsa
+  solo al abrir un juego) con la vibra de Wii U / 3DS: naranja 3DS (`Palette.orange`) + azul Wii U, fondo claro con
+  burbujas que flotan (`BubblesBackground`), letra Nunito (res/font, OFL; licencia en tools/Nunito-OFL.txt).
+  Tema claro por defecto y oscuro en Ajustes (`UiState.theme`, `Prefs.theme`; los íconos de la barra de estado se
+  ajustan solos).
+- Tienda: inicio con carrusel de destacados (juegos con hero; pasa cada 6 s, paralaje y escala) y filas por tema
+  ("En tu tablet", "Para descargar" y por plataforma, con "Ver todo"); al buscar o filtrar aparece la grilla con
+  `animateItem`. Tarjetas con sombra, rebote al tocar, aparición suave; el estado es un ícono (✓ verde, ámbar a medias,
+  % descargando) en vez de texto. Estado del PC en una píldora con punto de color.
+- Ficha: hero más alto con paralaje al hacer scroll, portada que entra con rebote, píldoras (plataforma, tamaño,
+  formato) en vez de una línea de texto, archivos plegados. Transiciones entre pantallas con `AnimatedContent`.
+- Sonido (`Sound.kt`): música de fondo y 6 sonidos, todos ORIGINALES generados por `tools/sintetizar.py` (bossa en Fa,
+  34 s, loop sin corte con AudioTrack estático + setLoopPoints; sonidos por SoundPool). Foco de audio (se calla si otra
+  app suena), pausa al salir de la app (onStop). Ajustes → Sonido y aspecto: interruptores y volumen de música y
+  sonidos. Los botones de Material 3 usan su propia onda (no `LocalIndication`), así que el sonido está puesto a mano en
+  las acciones principales; `SoundIndication` cubre los `clickable` comunes.
+- Menos texto en todas las pantallas (Partidas, Ajustes, Web, Descargas, ficha).
+- Probado en la tablet: navegación por todas las pestañas, búsqueda, selección múltiple, panel, tema oscuro/claro,
+  música que se pausa al ir al inicio y vuelve; monkey de 400 toques sin cierres (y sin cambios en archivos).
+
 ## Pendiente
 
 - Switch: mostrar en la ficha lo instalado en Eden y, con titledb (blawar/titledb: versions.json, cnmts.json), la

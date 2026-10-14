@@ -86,6 +86,27 @@ object Prefs {
         get() = sp.getInt("reserve_gb", 3)
         set(v) = sp.edit().putInt("reserve_gb", v).apply()
 
+    // Sonido (música de fondo y sonidos de navegación).
+    var musicOn: Boolean
+        get() = sp.getBoolean("music_on", true)
+        set(v) = sp.edit().putBoolean("music_on", v).apply()
+    var sfxOn: Boolean
+        get() = sp.getBoolean("sfx_on", true)
+        set(v) = sp.edit().putBoolean("sfx_on", v).apply()
+    var musicVolume: Int
+        get() = sp.getInt("music_volume", 45)
+        set(v) = sp.edit().putInt("music_volume", v).apply()
+    var sfxVolume: Int
+        get() = sp.getInt("sfx_volume", 70)
+        set(v) = sp.edit().putInt("sfx_volume", v).apply()
+    var sidebarOpen: Boolean
+        get() = sp.getBoolean("sidebar_open", true)
+        set(v) = sp.edit().putBoolean("sidebar_open", v).apply()
+    /** "claro" (estilo eShop de Wii U / 3DS) u "oscuro". */
+    var theme: String
+        get() = sp.getString("theme", "claro") ?: "claro"
+        set(v) = sp.edit().putString("theme", v).apply()
+
     var autoBackup: Boolean
         get() = sp.getBoolean("auto_backup", true)
         set(v) = sp.edit().putBoolean("auto_backup", v).apply()

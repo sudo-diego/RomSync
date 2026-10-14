@@ -11,6 +11,38 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.automirrored.rounded.MenuOpen
+import androidx.compose.material.icons.rounded.Menu
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.remember
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -35,8 +67,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationRail
-import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -80,6 +110,7 @@ class MainActivity : ComponentActivity() {
         SwitchDb.init(this)
         Art.init(this) // antes que Repo: los nombres oficiales de SteamGridDB se usan al cargar la biblioteca
         Repo.init(this)
+        Sound.init(this)
         DownloadService.load(this)
         BackupWorker.schedule(this)
         if (Build.VERSION.SDK_INT >= 33) requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
@@ -98,13 +129,34 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        UiState.theme = Prefs.theme
+        UiState.sidebarOpen = Prefs.sidebarOpen
         setContent {
+            val view = androidx.compose.ui.platform.LocalView.current
+            // Se lee aquí (no dentro del efecto) para que al cambiar de tema se vuelva a aplicar.
+            val darkTheme = UiState.dark
+            androidx.compose.runtime.LaunchedEffect(darkTheme) {
+                androidx.core.view.WindowCompat.getInsetsController(window, view).apply {
+                    isAppearanceLightStatusBars = !darkTheme
+                    isAppearanceLightNavigationBars = !darkTheme
+                }
+            }
             RomSyncTheme {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                     if (!Nav.hasFilesAccess) FilesAccessScreen { openFilesAccess() } else AppShell()
                 }
             }
         }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        Sound.onForeground(true)
+    }
+
+    override fun onStop() {
+        Sound.onForeground(false)
+        super.onStop()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -130,41 +182,87 @@ class MainActivity : ComponentActivity() {
 fun AppShell() {
     val wide = LocalConfiguration.current.screenWidthDp >= 600
     val active = DownloadService.items.count { it.status == DlStatus.RUNNING || it.status == DlStatus.QUEUED }
-    BackHandler(enabled = Nav.game != null) { Nav.game = null }
+    BackHandler(enabled = Nav.game != null) { Sound.play(Sound.Fx.BACK); Nav.game = null }
 
-    @Composable
-    fun TabIcon(t: Tab) {
-        if (t == Tab.DOWNLOADS && active > 0) BadgedBox(badge = { Badge { Text("$active") } }) { Icon(t.icon, null) }
-        else Icon(t.icon, null)
+    fun go(t: Tab) {
+        if (Nav.tab != t || Nav.game != null) Sound.play(Sound.Fx.MOVE)
+        Nav.tab = t; Nav.game = null
     }
 
-    Box(Modifier.fillMaxSize().safeDrawingPadding()) {
-        if (wide) {
-            Row(Modifier.fillMaxSize()) {
-                NavigationRail(containerColor = MaterialTheme.colorScheme.background) {
-                    Spacer(Modifier.height(12.dp))
-                    Tab.entries.forEach { t ->
-                        NavigationRailItem(
-                            selected = Nav.tab == t && Nav.game == null,
-                            onClick = { Nav.tab = t; Nav.game = null },
-                            icon = { TabIcon(t) },
-                            label = { Text(t.label) },
-                        )
+    Box(Modifier.fillMaxSize()) {
+        BubblesBackground()
+        Box(Modifier.fillMaxSize().safeDrawingPadding()) {
+            if (wide) {
+                Row(Modifier.fillMaxSize()) {
+                    Sidebar(active, ::go)
+                    Box(Modifier.weight(1f)) { TabContent() }
+                }
+            } else {
+                Column(Modifier.fillMaxSize()) {
+                    Box(Modifier.weight(1f)) { TabContent() }
+                    NavigationBar {
+                        Tab.entries.forEach { t ->
+                            NavigationBarItem(
+                                selected = Nav.tab == t && Nav.game == null,
+                                onClick = { go(t) },
+                                icon = {
+                                    if (t == Tab.DOWNLOADS && active > 0) BadgedBox(badge = { Badge { Text("$active") } }) { Icon(t.icon, null) }
+                                    else Icon(t.icon, null)
+                                },
+                                label = { Text(t.label) },
+                            )
+                        }
                     }
                 }
-                Box(Modifier.weight(1f)) { TabContent() }
             }
-        } else {
-            Column(Modifier.fillMaxSize()) {
-                Box(Modifier.weight(1f)) { TabContent() }
-                NavigationBar {
-                    Tab.entries.forEach { t ->
-                        NavigationBarItem(
-                            selected = Nav.tab == t && Nav.game == null,
-                            onClick = { Nav.tab = t; Nav.game = null },
-                            icon = { TabIcon(t) },
-                            label = { Text(t.label) },
-                        )
+        }
+    }
+}
+
+/**
+ * Panel lateral como el de la eShop de Switch: íconos con nombre que se colapsa a solo íconos (botón de arriba, o solo
+ * al abrir un juego para dejarle espacio). La pestaña elegida lleva una píldora naranja.
+ */
+@Composable
+private fun Sidebar(active: Int, go: (Tab) -> Unit) {
+    val open = UiState.sidebarOpen && Nav.game == null
+    val width by animateDpAsState(if (open) 232.dp else 84.dp, spring(dampingRatio = 0.8f, stiffness = 400f), label = "panel")
+    Column(
+        Modifier.width(width).fillMaxHeight().padding(vertical = 14.dp, horizontal = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Row(Modifier.height(56.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = {
+                Sound.play(Sound.Fx.TOGGLE)
+                if (Nav.game != null) Nav.game = null else UiState.sidebarOpen = !UiState.sidebarOpen
+                Prefs.sidebarOpen = UiState.sidebarOpen
+            }) { Icon(if (open) Icons.AutoMirrored.Rounded.MenuOpen else Icons.Rounded.Menu, "Panel") }
+            AnimatedVisibility(open, enter = fadeIn() + expandHorizontally(), exit = fadeOut() + shrinkHorizontally()) {
+                Text("RomSync", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold,
+                    color = MaterialTheme.colorScheme.primary, maxLines = 1, modifier = Modifier.padding(start = 6.dp))
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        Tab.entries.forEach { t ->
+            val selected = Nav.tab == t && Nav.game == null
+            val bg by animateColorAsState(if (selected) MaterialTheme.colorScheme.primary else Color.Transparent, tween(220), label = "bg")
+            val fg by animateColorAsState(if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant, tween(220), label = "fg")
+            val pressed = remember { MutableInteractionSource() }
+            val isPressed by pressed.collectIsPressedAsState()
+            val scale by animateFloatAsState(if (isPressed) 0.94f else 1f, label = "s")
+            Row(
+                Modifier.fillMaxWidth().height(52.dp).graphicsLayer { scaleX = scale; scaleY = scale }
+                    .clip(RoundedCornerShape(16.dp)).background(bg)
+                    .clickable(interactionSource = pressed, indication = null) { go(t) }
+                    .padding(horizontal = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                CompositionLocalProvider(LocalContentColor provides fg) {
+                    if (t == Tab.DOWNLOADS && active > 0) BadgedBox(badge = { Badge { Text("$active") } }) { Icon(t.icon, null) }
+                    else Icon(t.icon, null)
+                    AnimatedVisibility(open, enter = fadeIn(tween(200, 80)), exit = fadeOut(tween(80))) {
+                        Text(t.label, Modifier.padding(start = 16.dp), fontWeight = if (selected) FontWeight.ExtraBold else FontWeight.SemiBold,
+                            maxLines = 1)
                     }
                 }
             }
@@ -174,17 +272,30 @@ fun AppShell() {
 
 @Composable
 private fun TabContent() {
-    val game = Nav.game
-    if (game != null) {
-        GameScreen(game) { Nav.game = null }
-        return
-    }
-    when (Nav.tab) {
-        Tab.STORE -> StoreScreen()
-        Tab.DOWNLOADS -> DownloadsScreen()
-        Tab.SAVES -> SavesScreen()
-        Tab.KITCHEN -> KitchenScreen()
-        Tab.SETTINGS -> SettingsScreen()
+    // Clave de la pantalla: la pestaña, o el juego abierto. Al abrir un juego entra desde la derecha; al volver, sale.
+    val key = Nav.game?.id ?: Nav.tab.name
+    AnimatedContent(
+        targetState = key,
+        transitionSpec = {
+            val isTab = { k: String -> Tab.entries.any { it.name == k } }
+            when {
+                !isTab(targetState) -> (slideInHorizontally(tween(320)) { it / 3 } + fadeIn(tween(250))) togetherWith fadeOut(tween(150))
+                !isTab(initialState) -> fadeIn(tween(250)) togetherWith (slideOutHorizontally(tween(280)) { it / 3 } + fadeOut(tween(220)))
+                else -> (fadeIn(tween(260)) + slideInVertically(tween(300)) { it / 20 }) togetherWith fadeOut(tween(120))
+            }
+        },
+        label = "pantalla",
+    ) { k ->
+        val tab = Tab.entries.firstOrNull { it.name == k }
+        val game = if (tab == null) (Nav.game?.takeIf { it.id == k } ?: Repo.game(k)) else null
+        when {
+            game != null -> GameScreen(game) { Sound.play(Sound.Fx.BACK); Nav.game = null }
+            tab == Tab.DOWNLOADS -> DownloadsScreen()
+            tab == Tab.SAVES -> SavesScreen()
+            tab == Tab.KITCHEN -> KitchenScreen()
+            tab == Tab.SETTINGS -> SettingsScreen()
+            else -> StoreScreen()
+        }
     }
 }
 

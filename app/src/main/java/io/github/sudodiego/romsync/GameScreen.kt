@@ -1,5 +1,15 @@
 package io.github.sudodiego.romsync
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.spring
+import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.CloudDownload
+import androidx.compose.material.icons.rounded.Downloading
+import androidx.compose.material.icons.rounded.ExpandLess
+import androidx.compose.material.icons.rounded.ExpandMore
+import androidx.compose.material.icons.rounded.TabletAndroid
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.graphicsLayer
 import android.content.Context
 import android.widget.Toast
 import androidx.compose.foundation.background
@@ -108,26 +118,34 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
     else w.missing
     val downloadSize = toDownload.sumOf { it.size }
 
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-        // Fondo (hero) con degradado hacia el color de la página.
-        Box(Modifier.fillMaxWidth().height(260.dp).background(Brush.linearGradient(listOf(Color(sys.color), Color(0xFF0D1220))))) {
+    val scroll = rememberScrollState()
+    val enter = remember(g.id) { Animatable(0f) }
+    LaunchedEffect(g.id) { enter.animateTo(1f, spring(dampingRatio = 0.75f, stiffness = 260f)) }
+    Column(Modifier.fillMaxSize().verticalScroll(scroll)) {
+        // Fondo (hero) con degradado hacia la página; se mueve más lento que el scroll (paralaje).
+        Box(Modifier.fillMaxWidth().height(300.dp).graphicsLayer { translationY = scroll.value * 0.45f; clip = true }
+            .background(Brush.linearGradient(listOf(Color(sys.color), Color(0xFF0D1220))))) {
             ArtImage(g, "hero", Modifier.fillMaxSize())
-            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, MaterialTheme.colorScheme.background))))
-            ArtImage(g, "logo", Modifier.align(Alignment.BottomEnd).padding(24.dp).height(90.dp).width(260.dp), ContentScale.Fit)
-            IconButton(onClick = onBack, Modifier.padding(12.dp).clip(RoundedCornerShape(99.dp)).background(Color(0x66000000))) {
+            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color.Transparent, MaterialTheme.colorScheme.background))))
+            ArtImage(g, "logo", Modifier.align(Alignment.BottomEnd).padding(28.dp).height(100.dp).width(300.dp), ContentScale.Fit)
+            IconButton(onClick = onBack, Modifier.padding(14.dp).size(48.dp).clip(RoundedCornerShape(99.dp)).background(Color(0x88000000))) {
                 Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Volver", tint = Color.White)
             }
         }
-        Row(Modifier.padding(horizontal = 24.dp).offset(y = (-90).dp), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-            Cover(g, Modifier.width(190.dp))
-            Column(Modifier.weight(1f).padding(top = 96.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(g.title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-                Muted(listOfNotNull(sys.name, Group.ext(g.primary).removePrefix(".").uppercase().ifEmpty { null }, formatSize(g.size), "${g.files.size} archivo(s)", g.serial.ifBlank { null }).joinToString(" · "))
+        Row(Modifier.padding(horizontal = 28.dp).offset(y = (-100).dp), horizontalArrangement = Arrangement.spacedBy(28.dp)) {
+            Cover(g, Modifier.width(200.dp).graphicsLayer {
+                alpha = enter.value; translationY = (1f - enter.value) * 80f
+                rotationZ = (1f - enter.value) * -4f
+            }.shadow(16.dp, RoundedCornerShape(18.dp)))
+            Column(Modifier.weight(1f).padding(top = 108.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(g.title, style = MaterialTheme.typography.headlineMedium)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Pill(sys.name, Color(sys.color))
+                    Pill(formatSize(g.size), Color(0xFF64748B))
+                    Group.ext(g.primary).removePrefix(".").uppercase().ifEmpty { null }?.let { Pill(it, Color(0xFF64748B)) }
+                }
                 val versionList = remember(g, Repo.library, Repo.tabletOnly) { listOf(g) + Repo.versions(g) }
                 if (versionList.size > 1) VersionPicker(g, versionList)
-                if (g.tags.isNotEmpty()) FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    g.tags.forEach { Pill(it, Color(0xFF475569)) }
-                }
 
                 StateCard(g, w, downloadSize)
 
@@ -149,6 +167,7 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
                         w.presence != Presence.INSTALLED && w.presence != Presence.TABLET_ONLY && toDownload.isNotEmpty() -> {
                             Button(onClick = {
                                 noSpace = startDownload(ctx, g, toDownload)
+                                Sound.play(if (noSpace == null) Sound.Fx.DONE else Sound.Fx.WARN)
                             }) {
                                 Icon(Icons.Rounded.Download, null); Spacer(Modifier.width(8.dp))
                                 Text(if (w.presence == Presence.PARTIAL) "Descargar lo que falta · ${formatSize(downloadSize)}" else "Descargar · ${formatSize(downloadSize)}")
@@ -201,7 +220,6 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
                                 if (have) Pill("En la tablet", Palette.ok)
                             }
                         }
-                        Muted("En Eden, deja las actualizaciones y DLC en la carpeta de contenido externo (Ajustes → Carpetas de juegos) para no instalarlas en la NAND.")
                     }
                 }
                 TabletExtras(g)
@@ -228,9 +246,17 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
                     if (g.kind == "shortcut") Muted("Es un acceso directo (no un ROM): lo crea el frontend o GameNative.")
                 }
 
-                Section(if (g.files.size > 40) "Archivos (${g.files.size})" else "Archivos") {
+                var showFiles by remember(g.id) { mutableStateOf(false) }
+                Section("") {
+                    SpacedRow(Modifier.fillMaxWidth().clickable { Sound.play(Sound.Fx.MOVE); showFiles = !showFiles }) {
+                        Text("Archivos (${g.files.size})", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold,
+                            modifier = Modifier.weight(1f))
+                        if (g.serial.isNotBlank()) Muted(g.serial)
+                        Icon(if (showFiles) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore, null)
+                    }
+                    if (g.tags.isNotEmpty() && showFiles) Muted(g.tags.joinToString(" · "))
                     // Una carpeta de Wii U puede tener decenas de miles de archivos: dibujarlos todos cerraba la app.
-                    g.files.take(40).forEach { f ->
+                    if (showFiles) g.files.take(40).forEach { f ->
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(f.path, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
                             Text(formatSize(f.size), style = MaterialTheme.typography.bodySmall)
@@ -239,7 +265,7 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
                                 .background(if (Repo.has(f.path)) Palette.ok else MaterialTheme.colorScheme.outline))
                         }
                     }
-                    if (g.files.size > 40) Muted("y ${g.files.size - 40} archivos más")
+                    if (showFiles && g.files.size > 40) Muted("y ${g.files.size - 40} archivos más")
                 }
                 Spacer(Modifier.height(40.dp))
             }
@@ -364,17 +390,25 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
 @Composable
 private fun StateCard(g: Game, w: Repo.Where, downloadSize: Long) {
     val (text, color) = when (w.presence) {
-        Presence.INSTALLED -> (if (w.differs) "En la tablet · algún archivo es distinto al del PC" else "En la tablet") to Palette.ok
-        Presence.PARTIAL -> "A medias en la tablet · faltan ${w.missing.size} archivo(s)" to Palette.warn
+        Presence.INSTALLED -> (if (w.differs) "En la tablet (distinto al del PC)" else "En la tablet") to Palette.ok
+        Presence.PARTIAL -> "A medias en la tablet" to Palette.warn
         Presence.MISSING -> "No está en la tablet" to MaterialTheme.colorScheme.onSurfaceVariant
-        Presence.TABLET_ONLY -> "Solo en la tablet (no está en el PC)" to Color(0xFF94A3B8)
+        Presence.TABLET_ONLY -> "Solo en la tablet" to Color(0xFF94A3B8)
     }
     Section("") {
-        Text(text, color = color, fontWeight = FontWeight.Bold)
+        SpacedRow {
+            Icon(when (w.presence) {
+                Presence.INSTALLED -> Icons.Rounded.CheckCircle
+                Presence.PARTIAL -> Icons.Rounded.Downloading
+                Presence.MISSING -> Icons.Rounded.CloudDownload
+                Presence.TABLET_ONLY -> Icons.Rounded.TabletAndroid
+            }, null, tint = color)
+            Text(text, color = color, fontWeight = FontWeight.Bold)
+        }
         if (w.presence == Presence.MISSING || w.presence == Presence.PARTIAL) {
             val free = Repo.space.free
             val after = free - downloadSize
-            Muted("Ocupa ${formatSize(downloadSize)} · libres ahora ${formatSize(free)} · después ${formatSize(after.coerceAtLeast(0))}")
+            Muted("${formatSize(downloadSize)} · quedan ${formatSize(after.coerceAtLeast(0))} libres")
             if (Repo.space.total > 0) UsageBar(listOf(
                 (Repo.space.total - free).toFloat() / Repo.space.total to MaterialTheme.colorScheme.primary,
                 downloadSize.toFloat() / Repo.space.total to if (after < Prefs.reserveGb * 1_000_000_000L) Palette.danger else Palette.sky,
@@ -393,7 +427,7 @@ private fun GameSavesSection(g: Game) {
     val ctx = LocalContext.current
     if (g.system in GameSaves.sharedCards) {
         Section("Partidas") {
-            Muted("Las partidas de PS2 van en tarjetas de memoria que comparten todos los juegos: se respaldan enteras desde Partidas.")
+            Muted("Las de PS2 van en tarjetas compartidas: se respaldan desde Partidas.")
         }
         return
     }
@@ -416,7 +450,7 @@ private fun GameSavesSection(g: Game) {
                 Text(l.emu.name, fontWeight = FontWeight.SemiBold)
                 Muted(when {
                     busy != null -> busy
-                    u == null -> "No hay partidas de este juego en la tablet."
+                    u == null -> "Sin partidas en la tablet"
                     else -> "${u.files} archivo(s) · ${formatSize(u.bytes)} · " +
                         java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.SHORT, java.text.DateFormat.SHORT).format(java.util.Date(u.newest))
                 })
@@ -436,7 +470,6 @@ private fun GameSavesSection(g: Game) {
                 }
             }
         }
-        Muted("Borrar el juego nunca borra sus partidas.")
     }
     restoreFor?.let { l -> RestoreDialog(l.emu, onlyKey = l.key) { restoreFor = null; reload++ } }
 }
@@ -454,10 +487,10 @@ private fun VitaInstallSection(g: Game) {
     if (!checked) return
     Section("Vita3K") {
         val i = inst
-        if (i == null) Muted("No está instalado en Vita3K. Para jugarlo, instálalo desde Vita3K (Archivo → Instalar .vpk/.pkg).")
+        if (i == null) Muted("No está instalado en Vita3K.")
         else {
             Text("Instalado en Vita3K · ${formatSize(i.second)}", fontWeight = FontWeight.SemiBold, color = Palette.ok)
-            Muted("El juego vive dentro de Vita3K. El archivo de la carpeta de ROMs es solo un acceso directo (o el instalador, que se puede borrar).")
+            Muted("El archivo de ROMs es solo un acceso directo.")
             OutlinedButton(onClick = { ask = true }, colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)) {
                 Text("Quitar de Vita3K")
             }
@@ -554,21 +587,19 @@ private fun SwitchStatus(g: Game) {
     val info = remember(base, SwitchDb.updatedAt) { SwitchDb.info(base) }
     Section("Actualizaciones y DLC") {
         if (info == null) {
-            Muted(if (SwitchDb.busy) "Buscando qué hay publicado…" else "No se pudo saber qué hay publicado (sin internet).")
+            Muted(if (SwitchDb.busy) "Buscando…" else "Sin internet")
             return@Section
         }
         val have = g.parts.filter { it.kind == "update" }.maxOfOrNull { it.version } ?: 0L
         val upToDate = info.latest == 0L || have >= info.latest
         Text(when {
-            info.latest == 0L -> "Este juego no tiene actualizaciones."
-            upToDate -> "Actualización: tienes la última (${SwitchDb.label(have)})."
-            else -> "Actualización: tienes ${SwitchDb.label(have)}; la última es la ${SwitchDb.label(info.latest)} (${info.latestDate})."
+            info.latest == 0L -> "Sin actualizaciones"
+            upToDate -> "Actualizado (${SwitchDb.label(have)})"
+            else -> "Hay una actualización nueva: ${SwitchDb.label(info.latest)} (tienes ${SwitchDb.label(have).removePrefix("versión ")})"
         }, color = if (upToDate) Palette.ok else Palette.warn, fontWeight = FontWeight.SemiBold)
         val owned = g.parts.filter { it.kind == "dlc" }.map { it.titleId.uppercase() }.toSet()
-        if (info.dlcs.isEmpty()) Muted("No tiene DLC.")
-        else Text("DLC: tienes ${info.dlcs.count { it in owned }} de ${info.dlcs.size}" +
-            if (info.dlcs.all { it in owned }) " (todos)." else ".", color = if (info.dlcs.all { it in owned }) Palette.ok else MaterialTheme.colorScheme.onSurface)
-        Muted("Según titledb, revisado ${formatAgo(SwitchDb.updatedAt)}.")
+        if (info.dlcs.isNotEmpty()) Text("DLC: ${info.dlcs.count { it in owned }} de ${info.dlcs.size}",
+            color = if (info.dlcs.all { it in owned }) Palette.ok else MaterialTheme.colorScheme.onSurface)
     }
 }
 
@@ -603,6 +634,5 @@ private fun TabletExtras(g: Game) {
                 Repo.refresh()
             }
         }) { Text("Copiar al PC · ${formatSize(files.sumOf { it.size })}") }
-        Muted("Si se pierde la tablet, esto se pierde: en el PC queda guardado y se vuelve a bajar con el juego.")
     }
 }

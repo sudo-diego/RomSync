@@ -1,5 +1,11 @@
 package io.github.sudodiego.romsync
 
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.composed
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -58,12 +64,22 @@ fun artFile(game: Game, kind: String): java.io.File? {
 }
 
 @Composable
-fun ArtImage(game: Game, kind: String, modifier: Modifier = Modifier, contentScale: ContentScale = ContentScale.Crop) {
+fun ArtImage(game: Game, kind: String, modifier: Modifier = Modifier, contentScale: ContentScale = ContentScale.Crop,
+             alignment: Alignment = Alignment.Center) {
     val img = artFile(game, kind) ?: return
     val ctx = androidx.compose.ui.platform.LocalContext.current
     val req = coil.request.ImageRequest.Builder(ctx).data(img)
         .memoryCacheKey("${img.path}:${img.lastModified()}:${Art.versions[game.id] ?: 0}").crossfade(true).build()
-    AsyncImage(model = req, contentDescription = null, contentScale = contentScale, modifier = modifier)
+    AsyncImage(model = req, contentDescription = null, contentScale = contentScale, alignment = alignment, modifier = modifier)
+}
+
+/** Tocar con rebote: se hunde un poco al presionar y vuelve (sin la onda gris de Material). */
+fun Modifier.pressable(onClick: () -> Unit): Modifier = composed {
+    val press = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+    val pressed by press.collectIsPressedAsState()
+    val scale by androidx.compose.animation.core.animateFloatAsState(if (pressed) 0.96f else 1f,
+        androidx.compose.animation.core.spring(dampingRatio = 0.55f, stiffness = 500f), label = "toque")
+    graphicsLayer { scaleX = scale; scaleY = scale }.clickable(interactionSource = press, indication = null, onClick = onClick)
 }
 
 @Composable

@@ -110,7 +110,7 @@ private fun OrganizeDialog(onClose: () -> Unit) {
         title = { Text("Ordenar tu biblioteca") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                Muted("Paso a paso. Nada se borra sin que lo confirmes, y las partidas nunca se tocan.")
+                Muted("Nada se borra sin confirmar. Las partidas no se tocan.")
                 Step(1, "Archivos que sobran", "Descargas a medias y copias viejas de partidas que dejan otras apps.", junk) { step = "junk" }
                 Step(2, "BIOS fuera de su carpeta", "BIOS sueltas junto a los juegos: van a la carpeta bios, donde las buscan los emuladores.", bios) { step = "bios" }
                 Step(3, "Juegos repetidos", "El mismo juego en varias regiones o formatos. Te digo con cuál quedarte.", dups) { step = "dups" }

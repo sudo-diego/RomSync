@@ -33,7 +33,7 @@ fun DownloadsScreen() {
         }
         if (Repo.biosMissing.isNotEmpty() && items.none { it.bios && it.status != DlStatus.DONE }) item {
             Section("BIOS") {
-                Muted("En el PC hay ${Repo.biosMissing.size} archivo(s) de la carpeta bios que no están en la tablet (${formatSize(Repo.biosMissing.sumOf { it.size })}):")
+                Muted("Faltan en la tablet (${formatSize(Repo.biosMissing.sumOf { it.size })}):")
                 // Que diga cuáles: con solo el número no se sabía qué faltaba.
                 Repo.biosMissing.take(12).forEach { f ->
                     Text("• bios/${f.path} · ${formatSize(f.size)}", style = MaterialTheme.typography.bodySmall)
@@ -45,7 +45,7 @@ fun DownloadsScreen() {
             }
         }
         if (items.isEmpty()) item {
-            Section("") { Muted("No hay descargas. En la Tienda, abre un juego y toca Descargar.") }
+            Section("") { Muted("Nada descargando.") }
         }
         items(items.toList().reversed(), key = { it.id + it.status }) { d ->
             Section("") {

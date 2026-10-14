@@ -39,13 +39,13 @@ fun KitchenScreen() {
         item {
             Column {
                 Text("RomSync Web", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-                Muted("Administra la tablet desde el navegador del PC o del teléfono: juegos, BIOS, carátulas, partidas y archivos.")
+                Muted("Maneja la tablet desde el navegador del PC o del teléfono.")
             }
         }
         item {
             Section("") {
                 if (!Kitchen.running) {
-                    Muted("Enciéndela y abre la dirección en un equipo de la misma red WiFi. El PIN cambia cada vez.")
+                    Muted("Abre la dirección en la misma red WiFi. El PIN cambia cada vez.")
                     Button(onClick = { Kitchen.start(ctx) }) { Text("Encender la web") }
                 } else {
                     Row(horizontalArrangement = Arrangement.spacedBy(28.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -67,11 +67,7 @@ fun KitchenScreen() {
         }
         item {
             Section("Qué se puede hacer") {
-                Text("• Plataformas: ver los juegos de la tablet y del PC, subir ROMs arrastrándolos, borrar, cambiar carátulas.")
-                Text("• Instalar desde el PC: la tablet lo descarga del disco por SFTP, como en la Tienda.")
-                Text("• BIOS: ver las que faltan, copiarlas del PC o subirlas.")
-                Text("• Partidas: bajar las de cada emulador en un zip, respaldarlas en el PC o restaurar subiendo un zip.")
-                Text("• Herramientas: explorador de archivos de la tablet e instalar APK.")
+                Muted("Juegos (subir arrastrando, borrar, carátulas) · BIOS · Partidas en zip · Archivos de la tablet · Instalar APK")
             }
         }
     }

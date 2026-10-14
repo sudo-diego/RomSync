@@ -1,5 +1,19 @@
 package io.github.sudodiego.romsync
 
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.rounded.LibraryMusic
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.Alignment
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.MusicNote
@@ -46,7 +60,7 @@ import kotlinx.coroutines.withContext
 fun SettingsScreen() {
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item { Text("Ajustes", style = MaterialTheme.typography.headlineLarge) }
-        item { LookAndSoundCard() }
+        item { Column { LookAndSoundCard() } }
         item { PcCard() }
         item { TabletCard() }
         item { ArtCard() }
@@ -89,11 +103,11 @@ private fun PcCard() {
         Prefs.host = host; Prefs.user = user; Prefs.password = pass
         Prefs.pcRoms = PcFinder.windowsPath(path)
         romsChoices = null
-        message = true to "Listo: la tablet ya ve tu carpeta de ROMs"
+        message = true to "Listo: el dispositivo ya ve tu carpeta de ROMs"
         scope.launch { Repo.refresh() }
     }
 
-    Section("PC") {
+    Section("Servidor (tu PC)") {
         if (Prefs.configured) Text("Conectado a ${Prefs.host} · ${Prefs.pcRoms}", color = Palette.ok, fontWeight = FontWeight.SemiBold)
 
         // Paso 1: activar SFTP en Windows, solo con herramientas de Windows.
@@ -108,7 +122,7 @@ private fun PcCard() {
         }
 
         // Paso 2: encontrar el PC en la red.
-        Text("2. Buscar el PC", fontWeight = FontWeight.Bold)
+        Text("2. Buscar el servidor", fontWeight = FontWeight.Bold)
         SpacedRow {
             Button(enabled = !searching, onClick = {
                 searching = true
@@ -123,16 +137,16 @@ private fun PcCard() {
                     if (found!!.size == 1) host = found!![0].ip
                     searching = false
                 }
-            }) { Text("Buscar mi PC") }
+            }) { Text("Buscar mi servidor") }
             if (searching) { CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp); Muted("Buscando en tu WiFi…") }
-            else if (host.isNotBlank()) Muted("PC elegido: $host")
+            else if (host.isNotBlank()) Muted("Elegido: $host")
         }
         found?.let { list ->
-            if (list.isEmpty()) Text("No apareció ningún PC con SFTP. Revisa el paso 1 y que el PC esté en la misma WiFi.",
+            if (list.isEmpty()) Text("No apareció ningún equipo con SFTP. Revisa el paso 1 y que el servidor esté en la misma WiFi.",
                 color = MaterialTheme.colorScheme.error)
             list.forEach { f ->
                 TextButton(onClick = { host = f.ip }) {
-                    Text((if (f.ip == host) "✓ " else "") + f.ip + (if (f.windows) " · Windows (tu PC)" else " · otro aparato (router, NAS…): no es el PC"))
+                    Text((if (f.ip == host) "✓ " else "") + f.ip + (if (f.windows) " · Windows (tu servidor)" else " · otro aparato (router, NAS…): no es el servidor"))
                 }
             }
         }
@@ -194,13 +208,13 @@ private fun ManualPc() {
     var bios by remember { mutableStateOf(Prefs.pcBios) }
     var backups by remember { mutableStateOf(Prefs.pcBackups) }
     Field("Puerto", port, { port = it.filter(Char::isDigit) }, Modifier.width(140.dp), number = true)
-    Field("Carpeta de ROMs en el PC", roms, { roms = it }, Modifier.fillMaxWidth(), hint = "D:\\Emulación\\ROMs")
+    Field("Carpeta de ROMs en el servidor", roms, { roms = it }, Modifier.fillMaxWidth(), hint = "D:\\Emulación\\ROMs")
     Field("Carpeta de BIOS (opcional)", bios, { bios = it }, Modifier.fillMaxWidth(), hint = "vacío = «bios» dentro de ROMs")
     Field("Respaldos de partidas (opcional)", backups, { backups = it }, Modifier.fillMaxWidth(), hint = "vacío = «RomSync» junto a ROMs")
     TextButton(onClick = {
         Prefs.port = port.toIntOrNull() ?: 22; Prefs.pcRoms = roms; Prefs.pcBios = bios; Prefs.pcBackups = backups
     }) { Text("Guardar") }
-    if (Prefs.fingerprint.isNotEmpty()) TextButton(onClick = { Prefs.fingerprint = "" }) { Text("Olvidar la identidad del PC") }
+    if (Prefs.fingerprint.isNotEmpty()) TextButton(onClick = { Prefs.fingerprint = "" }) { Text("Olvidar la identidad del servidor") }
 }
 
 /** Navegar las carpetas del PC por SFTP y elegir una (sin escribir rutas). */
@@ -226,7 +240,7 @@ private fun FolderPicker(cfg: SftpConfig, onPick: (String) -> Unit, onClose: () 
     }
     androidx.compose.material3.AlertDialog(
         onDismissRequest = onClose,
-        title = { Text(dir?.let { PcFinder.windowsPath(it) } ?: "Discos del PC") },
+        title = { Text(dir?.let { PcFinder.windowsPath(it) } ?: "Discos del servidor") },
         text = {
             androidx.compose.foundation.lazy.LazyColumn(Modifier.fillMaxWidth().heightIn(max = 420.dp)) {
                 if (error != null) item { Text(error!!, color = MaterialTheme.colorScheme.error) }
@@ -259,10 +273,10 @@ private fun TabletCard() {
     var name by remember { mutableStateOf(Prefs.deviceName) }
     var reserve by remember { mutableStateOf(Prefs.reserveGb.toFloat()) }
     val scope = appScope
-    Section("Tablet") {
+    Section("Este dispositivo") {
         Field("Carpeta de ROMs", roms, { roms = it }, Modifier.fillMaxWidth())
         Field("Carpeta de BIOS", bios, { bios = it }, Modifier.fillMaxWidth())
-        Field("Nombre de la tablet (carpeta de sus respaldos)", name, { name = it }, Modifier.fillMaxWidth())
+        Field("Nombre del dispositivo (carpeta de sus respaldos)", name, { name = it }, Modifier.fillMaxWidth())
         Column {
             Text("Dejar siempre libres: ${reserve.toInt()} GB")
             Slider(value = reserve, onValueChange = { reserve = it }, valueRange = 0f..30f, steps = 29,
@@ -306,22 +320,36 @@ private fun ArtCard() {
     }
 }
 
-/** Tema (claro estilo eShop u oscuro), música de fondo y sonidos de navegación. */
+/** Tema, color, fondo, música de fondo y sonidos de navegación. */
 @Composable
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 private fun LookAndSoundCard() {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
     var music by remember { mutableStateOf(Prefs.musicOn) }
     var sfx by remember { mutableStateOf(Prefs.sfxOn) }
     var musicVol by remember { mutableStateOf(Prefs.musicVolume.toFloat()) }
     var sfxVol by remember { mutableStateOf(Prefs.sfxVolume.toFloat()) }
-    Section("Sonido y aspecto") {
-        SpacedRow {
-            Text("Tema", Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
-            listOf("claro" to "Claro", "oscuro" to "Oscuro").forEach { (id, label) ->
-                FilterChip(selected = UiState.theme == id, onClick = {
-                    Sound.play(Sound.Fx.TOGGLE); UiState.theme = id; Prefs.theme = id
-                }, label = { Text(label) }, shape = RoundedCornerShape(99.dp))
-            }
+    var trackSel by remember { mutableStateOf(Prefs.musicTrack) }
+    var pack by remember { mutableStateOf(Prefs.sfxPack) }
+    var customName by remember { mutableStateOf(Prefs.customMusicName) }
+    // Elegir una canción propia (cualquier audio del dispositivo); se guarda el permiso para leerla siempre.
+    val pick = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            runCatching { ctx.contentResolver.takePersistableUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+            val name = runCatching {
+                ctx.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+                    if (c.moveToFirst()) c.getString(0) else null
+                }
+            }.getOrNull() ?: "Canción propia"
+            Prefs.customMusic = uri.toString(); Prefs.customMusicName = name; customName = name
+            Prefs.musicTrack = "propia"; trackSel = "propia"
+            Sound.musicSettingsChanged()
         }
+    }
+    Section("Aspecto") { LookControls() }
+    Spacer(Modifier.height(14.dp))
+    Section("Sonido") {
         SpacedRow {
             Icon(Icons.Rounded.MusicNote, null)
             Text("Música", Modifier.width(110.dp), fontWeight = FontWeight.SemiBold)
@@ -329,12 +357,78 @@ private fun LookAndSoundCard() {
                 enabled = music, valueRange = 0f..100f)
             Switch(music, { music = it; Prefs.musicOn = it; Sound.musicSettingsChanged(); Sound.play(Sound.Fx.TOGGLE) })
         }
+        androidx.compose.foundation.layout.FlowRow(Modifier.padding(start = 34.dp), horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Sound.tracks.forEach { (id, v) ->
+                FilterChip(selected = trackSel == id, enabled = music, onClick = {
+                    trackSel = id; Prefs.musicTrack = id; Sound.musicSettingsChanged()
+                }, label = { Text(v.first) }, shape = RoundedCornerShape(99.dp))
+            }
+            FilterChip(selected = trackSel == "propia", enabled = music, onClick = {
+                if (Prefs.customMusic.isBlank()) pick.launch(arrayOf("audio/*"))
+                else { trackSel = "propia"; Prefs.musicTrack = "propia"; Sound.musicSettingsChanged() }
+            }, label = { Text(if (customName.isBlank()) "Elegir canción propia…" else customName.substringBeforeLast('.').take(28)) },
+                leadingIcon = { Icon(Icons.Rounded.LibraryMusic, null, Modifier.size(18.dp)) }, shape = RoundedCornerShape(99.dp))
+            if (customName.isNotBlank()) TextButton(enabled = music, onClick = { pick.launch(arrayOf("audio/*")) }) { Text("Cambiar") }
+        }
         SpacedRow {
             Icon(Icons.Rounded.TouchApp, null)
             Text("Sonidos", Modifier.width(110.dp), fontWeight = FontWeight.SemiBold)
             Slider(sfxVol, { sfxVol = it; Prefs.sfxVolume = it.toInt() }, Modifier.weight(1f), enabled = sfx, valueRange = 0f..100f,
                 onValueChangeFinished = { Sound.play(Sound.Fx.MOVE) })
             Switch(sfx, { sfx = it; Prefs.sfxOn = it; Sound.play(Sound.Fx.TOGGLE) })
+        }
+        androidx.compose.foundation.layout.FlowRow(Modifier.padding(start = 34.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Sound.packs.forEach { (id, label) ->
+                FilterChip(selected = pack == id, enabled = sfx, onClick = { pack = id; Prefs.sfxPack = id; Sound.preview(id) },
+                    label = { Text(label) }, shape = RoundedCornerShape(99.dp))
+            }
+        }
+    }
+}
+
+/** Modo claro/oscuro/sistema, color principal (presets o código) y fondo animado. */
+@Composable
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+private fun LookControls() {
+    var hex by remember { mutableStateOf("%06X".format(UiState.accent and 0xFFFFFF)) }
+    fun setAccent(v: Long) {
+        UiState.accent = v; Prefs.accent = v; hex = "%06X".format(v and 0xFFFFFF); Sound.play(Sound.Fx.TOGGLE)
+    }
+    SpacedRow {
+        Text("Tema", Modifier.width(110.dp), fontWeight = FontWeight.SemiBold)
+        listOf("claro" to "Claro", "oscuro" to "Oscuro", "sistema" to "Del sistema").forEach { (id, label) ->
+            FilterChip(selected = UiState.theme == id, onClick = {
+                Sound.play(Sound.Fx.TOGGLE); UiState.theme = id; Prefs.theme = id
+            }, label = { Text(label) }, shape = RoundedCornerShape(99.dp))
+        }
+    }
+    SpacedRow {
+        Text("Color", Modifier.width(110.dp), fontWeight = FontWeight.SemiBold)
+        androidx.compose.foundation.layout.FlowRow(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            accentPresets.forEach { (name, v) ->
+                val sel = UiState.accent == v
+                androidx.compose.foundation.layout.Box(
+                    Modifier.size(40.dp).clip(RoundedCornerShape(99.dp)).background(Color(v))
+                        .then(if (sel) Modifier.border(3.dp, MaterialTheme.colorScheme.onSurface, RoundedCornerShape(99.dp)) else Modifier)
+                        .clickable { setAccent(v) },
+                    contentAlignment = Alignment.Center,
+                ) { if (sel) Icon(Icons.Rounded.Check, name, tint = Color.White) }
+            }
+        }
+        OutlinedTextField(hex, { v ->
+            hex = v.uppercase().filter { it in "0123456789ABCDEF" }.take(6)
+            if (hex.length == 6) { UiState.accent = 0xFF000000L or hex.toLong(16); Prefs.accent = UiState.accent }
+        }, Modifier.width(150.dp), singleLine = true, prefix = { Text("#") }, label = { Text("Código") },
+            leadingIcon = { androidx.compose.foundation.layout.Box(Modifier.size(18.dp).clip(RoundedCornerShape(99.dp)).background(Color(UiState.accent))) })
+    }
+    SpacedRow {
+        Text("Fondo", Modifier.width(110.dp), fontWeight = FontWeight.SemiBold)
+        listOf("burbujas" to "Burbujas", "ondas" to "Ondas", "ninguno" to "Sin animación").forEach { (id, label) ->
+            FilterChip(selected = UiState.background == id, onClick = {
+                Sound.play(Sound.Fx.TOGGLE); UiState.background = id; Prefs.background = id
+            }, label = { Text(label) }, shape = RoundedCornerShape(99.dp))
         }
     }
 }

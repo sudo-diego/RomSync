@@ -72,6 +72,7 @@ object GameSaves {
 
     /** La parte baja del TitleID de un .3ds (en 0x108 de la cabecera NCSD), como la carpeta de Azahar ("00055d00"). */
     fun threeDsTitleLow(g: Game): String? {
+        if (g.serial.length == 8) return g.serial // leído del servidor al armar la biblioteca
         val f = Local.romFile(g.primary).takeIf { it.isFile && Group.ext(it.name) == ".3ds" } ?: return null
         return runCatching {
             java.io.RandomAccessFile(f, "r").use { r ->

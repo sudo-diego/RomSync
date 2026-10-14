@@ -128,7 +128,7 @@ object Saves {
                 out.write(manifest.toString(2).toByteArray())
                 out.closeEntry()
             }
-            busy[emu.id] = "Enviando al PC…"
+            busy[emu.id] = "Enviando al servidor…"
             val units = entries.groupBy { (s, f) -> unitOf(emu.id, "${s.label}/${f.rel}").first }
             val kind = reason.ifEmpty { if (only != null) "juego" else if (auto) "auto" else "todo" }
             val games = units.map { (k, es) -> titleFor(k, unitTitle(emu.id, es.map { (s, f) -> "${s.label}/${f.rel}" })) }.sorted()
@@ -159,9 +159,18 @@ object Saves {
     }.getOrDefault(hex)
 
     private val reCodeName = Regex("^(GameCube|Wii) · ([A-Z0-9]{4,6})$")
+    private val reCode2 = Regex("^Juego de (GameCube|Wii|3DS|Switch|Vita) \\(([0-9A-Za-z]+)\\)$")
 
     /** Un nombre guardado en un respaldo como código ("GameCube · GP7P") con el nombre del juego, si ya se conoce. */
-    fun prettyUnitName(s: String): String = reCodeName.matchEntire(s)?.let { titleFor("id:" + it.groupValues[2].take(4), s) } ?: s
+    fun prettyUnitName(s: String): String {
+        reCodeName.matchEntire(s)?.let { return titleFor("id:" + it.groupValues[2].take(4), s) }
+        reCode2.matchEntire(s)?.let { m ->
+            val code = m.groupValues[2]
+            return titleFor(if (m.groupValues[1] == "Switch") "tid:$code" else "id:" + if (m.groupValues[1] in setOf("GameCube", "Wii")) code.take(4) else code.lowercase(), s)
+        }
+        if (s == "Estado al cerrar Dolphin") return "Guardado rápido automático (al cerrar Dolphin)"
+        return s
+    }
 
     /** Nombre para mostrar de una unidad (para anotar respaldos viejos). */
     fun describeUnit(emu: String, key: String, names: List<String>) = titleFor(key, unitTitle(emu, names))
@@ -181,28 +190,40 @@ object Saves {
             var base = file
             val i = base.lowercase().indexOf(".state")
             base = if (i > 0) base.substring(0, i) else base.substringBeforeLast('.')
+            if (base.equals("backup", true) && rel.contains("yaba", true)) return "otros:saturn" to "Memoria interna de Saturn"
             return "g:" + base.lowercase() to Group.cleanTitle(base).first
         }
         return when (emu) {
             "dolphin" -> when {
-                parts[0] == "Wii" && parts.size > 3 -> "id:" + hexAscii(parts[3]).take(4) to "Wii · " + hexAscii(parts[3])
-                parts[0] == "StateSaves" && file.startsWith("lastState") -> "otros:laststate" to "Estado al cerrar Dolphin"
-                parts[0] == "StateSaves" -> "id:" + file.take(4) to "Estado · " + file.take(6)
-                parts[0] == "GC" -> Regex("^[0-9A-Fa-f]{2}-([A-Z0-9]{4})").find(file)?.let { "id:" + it.groupValues[1] to "GameCube · " + it.groupValues[1] }
-                    ?: ("card:$rel" to "Tarjeta de memoria · " + parts.drop(1).joinToString(" / "))
+                parts[0] == "Wii" && parts.size > 3 && parts[2] == "00000001" -> "sistema" to "Ajustes de la consola Wii"
+                parts[0] == "Wii" && parts.size > 3 -> "id:" + hexAscii(parts[3]).take(4) to "Juego de Wii (" + hexAscii(parts[3]) + ")"
+                parts[0] == "StateSaves" && file.startsWith("lastState") -> "otros:laststate" to "Guardado rápido automático (al cerrar Dolphin)"
+                parts[0] == "StateSaves" -> "id:" + file.take(4) to "Guardado rápido (" + file.take(6) + ")"
+                parts[0] == "GC" && (file.equals("IPL.bin", true) || file.equals("SRAM.raw", true)) -> "sistema" to "Archivos del sistema (BIOS y ajustes de GameCube)"
+                parts[0] == "GC" -> Regex("^[0-9A-Fa-f]{2}-([A-Z0-9]{4})").find(file)?.let { "id:" + it.groupValues[1] to "Juego de GameCube (" + it.groupValues[1] + ")" }
+                    ?: ("card:$rel" to "Tarjeta de memoria (" + parts.drop(1).joinToString(" / ") + ")")
                 else -> "otros:" + parts[0] to parts[0]
             }
-            "eden" -> if (rel.contains("/user/save/") && parts.size > 5) "tid:" + parts[5].uppercase() to parts[5].uppercase()
-                else "perfiles" to "Perfiles de usuario"
-            "vita3k" -> if (parts.size > 4 && parts[3] == "savedata") "id:" + parts[4] to parts[4] else "trofeos" to "Trofeos y otros"
-            "armsx2", "nethersx2" -> if (parts[0] == "memcards") "card:$file" to "Tarjeta de memoria · $file"
-                else file.substringBefore(" (").substringBefore('.').let { "id:$it" to "Estado · $it" }
+            "eden" -> when {
+                rel.contains("/user/save/") && parts.size > 5 -> "tid:" + parts[5].uppercase() to "Juego de Switch (" + parts[5].uppercase() + ")"
+                parts[0] == "keys" -> "sistema" to "Claves de Switch"
+                else -> "perfiles" to "Perfiles de usuario de Switch"
+            }
+            "vita3k" -> if (parts.size > 4 && parts[3] == "savedata") "id:" + parts[4] to "Juego de Vita (" + parts[4] + ")" else "trofeos" to "Trofeos y perfil de Vita"
+            "armsx2", "nethersx2" -> if (parts[0] == "memcards") "card:$file" to "Tarjeta de memoria $file (todas las partidas de PS2)"
+                else file.substringBefore(" (").substringBefore('.').let { "id:$it" to "Guardado rápido ($it)" }
             "azahar" -> {
                 val t = parts.indexOf("title")
                 val e = parts.indexOf("extdata")
                 when {
-                    t >= 0 && parts.size > t + 2 -> "id:" + parts[t + 2].lowercase() to "3DS · " + parts[t + 2].uppercase()
-                    e >= 0 && parts.size > e + 2 -> "ext:" + parts[e + 2].lowercase() to "Datos extra · " + parts[e + 2].uppercase()
+                    t >= 0 && parts.size > t + 2 -> "id:" + parts[t + 2].lowercase() to "Juego de 3DS (" + parts[t + 2].uppercase() + ")"
+                    // Los datos extra (extdata) de un juego llevan su código del medio: 0000055D → 00055d00.
+                    e >= 0 && parts.size > e + 2 -> {
+                        val id = (parts[e + 2].takeLast(5).lowercase() + "00").padStart(8, '0')
+                        "id:$id" to "Juego de 3DS ($id)"
+                    }
+                    // Los guardados rápidos de Azahar se llaman con el TitleID completo: van con su juego.
+                    parts[0] == "states" && file.startsWith("00040000") -> "id:" + file.substring(8, 16).lowercase() to "Juego de 3DS (" + file.substring(8, 16) + ")"
                     else -> byName()
                 }
             }
@@ -215,16 +236,21 @@ object Saves {
      * disco de GameCube/Wii ("GP7P" → "Mario Party 7 · GameCube · GP7P"), si el juego está en la tablet.
      */
     private fun titleFor(key: String, fallback: String): String {
+        if (key.startsWith("g:")) return Repo.allGames().firstOrNull { Group.stem(it.primary).equals(key.removePrefix("g:"), true) }?.title ?: fallback
         if (!key.startsWith("id:") && !key.startsWith("tid:")) return fallback
         val id = key.substringAfter(':')
         val title = Repo.allGames().firstOrNull { it.serial.isNotEmpty() && (it.serial.equals(id, true) ||
                 (id.length == 4 && it.serial.length == 6 && it.serial.startsWith(id, true))) }?.title
             ?: Repo.allGames().firstOrNull { it.system == "switch" && it.parts.any { p -> p.kind == "base" && p.titleId.equals(id, true) } }?.title
+            ?: Repo.allGames().firstOrNull { it.system == "n3ds" && GameSaves.threeDsTitleLow(it).equals(id, true) }?.title
             ?: discTitles()[id.uppercase()]
             // Partida de otra región que el disco (GP7P europea, disco GP7E de USA): las 3 primeras letras son el juego.
             ?: if (id.length == 4) Repo.allGames().firstOrNull { (it.system == "gc" || it.system == "wii") &&
                 it.serial.length == 6 && it.serial.take(3).equals(id.take(3), true) }?.title else null
-        return title?.let { "$it · $fallback" } ?: fallback
+        // Códigos bajos de 3DS sin juego en la biblioteca: datos del sistema (menú, Mii…), no de un juego.
+        if (title == null && fallback.startsWith("Juego de 3DS") && (id.toLongOrNull(16) ?: Long.MAX_VALUE) < 0x30000L)
+            return "Datos del sistema de 3DS"
+        return title ?: fallback
     }
 
     private var discCache: Pair<Int, Map<String, String>>? = null
@@ -312,6 +338,27 @@ object Saves {
      * los DOS emuladores en la tablet (RomSync/antes-del-traspaso) y, si el PC está conectado, un respaldo en el PC.
      * Devuelve null si salió bien o el error.
      */
+    /**
+     * Borra del dispositivo las partidas de UN juego (clave de [unitOf]). Antes las respalda en el servidor si se puede:
+     * así "borrar también las partidas" nunca las pierde de verdad.
+     */
+    suspend fun deleteUnit(ctx: Context, emu: Emulator, key: String): String? = withContext(Dispatchers.IO) {
+        val pkg = Emulators.installedPackage(ctx, emu) ?: return@withContext null
+        if (Prefs.configured) when (val r = backup(ctx, emu, auto = false, force = true, only = setOf(key), reason = "antes")) {
+            is Result.Failed -> return@withContext "No se pudieron respaldar antes de borrar: ${r.message}"
+            else -> {}
+        }
+        runCatching {
+            val (sources, all) = collect(emu, pkg)
+            for (s in sources) {
+                val rels = all.filter { (src, f) -> src == s && unitOf(emu.id, "${s.label}/${f.rel}").first == key }.map { it.second.rel }
+                Storage.delete(s.root, rels)
+            }
+            inspect(ctx, emu)
+            null
+        }.getOrElse { it.message ?: "Error" }
+    }
+
     /** Las tarjetas que pasó el último traspaso ("Mcd001.ps2", "hola123.ps2"…), para decir cuál poner en el slot 1. */
     var transferredCards: List<String> = emptyList()
         private set
@@ -339,7 +386,7 @@ object Saves {
                 }
             }
             if (Prefs.configured) {
-                busy["nethersx2"] = "Respaldando en el PC…"
+                busy["nethersx2"] = "Respaldando en el servidor…"
                 backup(ctx, nether, auto = false, force = true, reason = "traspaso")
                 backup(ctx, arm, auto = false, force = true, reason = "traspaso")
             }

@@ -184,6 +184,26 @@ nada se borró de verdad. Las partidas de DS reemplazadas también quedaron en `
 - Probado en la tablet: navegación por todas las pestañas, búsqueda, selección múltiple, panel, tema oscuro/claro,
   música que se pausa al ir al inicio y vuelve; monkey de 400 toques sin cierres (y sin cambios en archivos).
 
+## Segunda vuelta de diseño (14-10-2026, pedido del usuario)
+
+- Aspecto: tema claro/oscuro/del sistema (`isDark()`), color principal elegible (8 colores o código hex; el esquema se
+  arma desde ese color en `schemeFor`), fondo: burbujas, ondas estilo XMB o sin animación (`AppBackground`). El fondo
+  usa tiempo continuo (`withFrameNanos`), no un ciclo: ya no "salta" al repetirse.
+- Música: 3 pistas originales de ~1-2 min con secciones (bossa, lo-fi, 8 bits; `tools/sintetizar.py` → .ogg con
+  ffmpeg, 1,3 MB en total) decodificadas a PCM con MediaCodec y en loop sin corte; o una canción propia del usuario
+  (MediaPlayer en loop; permiso persistente al URI). 3 juegos de sonidos (clásico, suave, retro).
+- Tienda: destacados = juegos que NO están en el dispositivo (cambian cada día); filtros en una línea + "Plataforma ▾".
+  Al abrir un juego, fundido con leve zoom (el deslizamiento dejaba ver una franja mientras el panel se cerraba).
+- Lenguaje genérico: "dispositivo" y "servidor" en vez de tablet/PC en toda la app y la web.
+- Ficha: tocar la portada abre el editor (nombre, carátula, fondo, logo; `ArtPicker(kind)`); menú ⋮ (editar, crear
+  .m3u, borrar); un solo "Borrar…" con casillas: del dispositivo, del servidor y sus partidas (se respaldan antes;
+  `Saves.deleteUnit`, `Storage.delete`). Juegos de varios discos muestran "Contenido" (Disco 1, 2… y el .m3u).
+- Partidas: nombres de juego en vez de códigos (3DS por cabecera NCSD, también leída del servidor; extdata con el
+  código del medio; estados de Azahar con su juego; Dolphin IPL/SRAM = "Archivos del sistema"; Saturn backup.bin =
+  "Memoria interna de Saturn"; códigos bajos de 3DS = "Datos del sistema de 3DS"). "Respaldar un juego" salió de
+  Partidas (está en la ficha).
+- Pruebas: monkey de 400 toques sin cierres; ojo, el monkey puede iniciar descargas (se canceló una de Smash).
+
 ## Pendiente
 
 - Switch: mostrar en la ficha lo instalado en Eden y, con titledb (blawar/titledb: versions.json, cnmts.json), la

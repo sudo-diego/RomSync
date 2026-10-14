@@ -77,7 +77,7 @@ fun OrganizeCard() {
         junk.takeIf { it > 0 }?.let { "$it archivo(s) que sobran" },
         bios.takeIf { it > 0 }?.let { "$it BIOS fuera de su carpeta" },
         dups.takeIf { it > 0 }?.let { "$it juego(s) repetidos" },
-        only.takeIf { it > 0 }?.let { "$it juego(s) sin copia en el PC" },
+        only.takeIf { it > 0 }?.let { "$it juego(s) sin copia en el servidor" },
     )
     if (parts.isEmpty()) return
     Section("") {
@@ -114,7 +114,7 @@ private fun OrganizeDialog(onClose: () -> Unit) {
                 Step(1, "Archivos que sobran", "Descargas a medias y copias viejas de partidas que dejan otras apps.", junk) { step = "junk" }
                 Step(2, "BIOS fuera de su carpeta", "BIOS sueltas junto a los juegos: van a la carpeta bios, donde las buscan los emuladores.", bios) { step = "bios" }
                 Step(3, "Juegos repetidos", "El mismo juego en varias regiones o formatos. Te digo con cuál quedarte.", dups) { step = "dups" }
-                Step(4, "Juegos sin copia en el PC", "Solo están en la tablet: cópialos al PC para no perderlos.", only) { step = "only" }
+                Step(4, "Juegos sin copia en el servidor", "Solo están en el dispositivo: cópialos al servidor para no perderlos.", only) { step = "only" }
             }
         },
         confirmButton = { TextButton(onClick = onClose) { Text("Listo") } },
@@ -149,7 +149,7 @@ private fun DuplicatesDialog(onClose: () -> Unit) {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     chosen.take(8).forEach { Text("• ${it.name} · ${formatSize(it.size)}") }
                     if (chosen.size > 8) Muted("y ${chosen.size - 8} más")
-                    Text("Se borran del PC y de la tablet (libera ${formatSize(chosen.sumOf { it.size })} en el PC).", fontWeight = FontWeight.SemiBold)
+                    Text("Se borran del servidor y del dispositivo (libera ${formatSize(chosen.sumOf { it.size })} en el servidor).", fontWeight = FontWeight.SemiBold)
                     Muted("Las partidas no se borran.")
                 }
             },
@@ -204,10 +204,10 @@ private fun DuplicatesDialog(onClose: () -> Unit) {
                                     Text(v.name, style = MaterialTheme.typography.bodyMedium)
                                     Muted(listOfNotNull(Group.ext(v.primary).removePrefix(".").uppercase().ifEmpty { "Carpeta" }, formatSize(v.size),
                                         when (w.presence) {
-                                            Presence.INSTALLED -> "en la tablet"
-                                            Presence.PARTIAL -> "a medias en la tablet"
-                                            Presence.TABLET_ONLY -> "solo en la tablet"
-                                            Presence.MISSING -> "solo en el PC"
+                                            Presence.INSTALLED -> "en el dispositivo"
+                                            Presence.PARTIAL -> "a medias en el dispositivo"
+                                            Presence.TABLET_ONLY -> "solo en el dispositivo"
+                                            Presence.MISSING -> "solo en el servidor"
                                         }, if (advice?.first?.id == v.id) "recomendada" else null).joinToString(" · "))
                                 }
                             }
@@ -229,10 +229,10 @@ private fun TabletOnlyDialog(onClose: () -> Unit) {
     var selected by remember(list) { mutableStateOf(list.map { it.id }.toSet()) }
     AlertDialog(
         onDismissRequest = onClose,
-        title = { Text("Juegos sin copia en el PC") },
+        title = { Text("Juegos sin copia en el servidor") },
         text = {
             LazyColumn(Modifier.fillMaxWidth().heightIn(max = 460.dp)) {
-                item { Muted("Se copian a la misma carpeta en el PC. La tablet no cambia.", Modifier.padding(bottom = 8.dp)) }
+                item { Muted("Se copian a la misma carpeta en el servidor. El dispositivo no cambia.", Modifier.padding(bottom = 8.dp)) }
                 items(list, key = { it.id }) { g ->
                     val up = PcEdit.uploading[g.id]
                     Row(Modifier.fillMaxWidth().clickable { selected = if (g.id in selected) selected - g.id else selected + g.id },
@@ -252,10 +252,10 @@ private fun TabletOnlyDialog(onClose: () -> Unit) {
                 appScope.launch {
                     var fails = 0
                     for (g in todo) runCatching { PcEdit.uploadFromTablet(g) }.onFailure { fails++ }
-                    Toast.makeText(ctx, if (fails == 0) "Listo: ${todo.size} juego(s) copiados al PC" else "$fails no se pudieron copiar", Toast.LENGTH_LONG).show()
+                    Toast.makeText(ctx, if (fails == 0) "Listo: ${todo.size} juego(s) copiados al servidor" else "$fails no se pudieron copiar", Toast.LENGTH_LONG).show()
                     Repo.refresh()
                 }
-            }) { Text("Copiar al PC (${formatSize(list.filter { it.id in selected }.sumOf { it.size })})") }
+            }) { Text("Copiar al servidor (${formatSize(list.filter { it.id in selected }.sumOf { it.size })})") }
         },
         dismissButton = { TextButton(onClick = onClose) { Text("Cerrar") } },
     )

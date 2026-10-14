@@ -7,7 +7,7 @@ import kotlinx.coroutines.withContext
 object Pc {
     /** Conecta con lo guardado en Ajustes; la primera vez guarda la huella del PC. */
     fun <T> use(block: (SftpConn) -> T): T {
-        if (!Prefs.configured) throw java.io.IOException("Falta configurar el PC (Ajustes)")
+        if (!Prefs.configured) throw java.io.IOException("Falta configurar el servidor (Ajustes)")
         return SftpConn.connect(Prefs.sftp()).use { c ->
             if (Prefs.fingerprint.isEmpty()) Prefs.fingerprint = c.fingerprint
             block(c)
@@ -42,12 +42,12 @@ object Pc {
     /** Lee la carpeta de ROMs del PC y arma los juegos (lee los .cue/.m3u/.gdi para saber qué archivos usan). */
     suspend fun scan(progress: (String) -> Unit = {}): Library = io { c ->
         val root = Prefs.remoteRoms
-        if (c.stat(root)?.isDir != true) throw java.io.IOException("No existe la carpeta $root en el PC")
+        if (c.stat(root)?.isDir != true) throw java.io.IOException("No existe la carpeta $root en el servidor")
         val bios = Prefs.remoteBios
         val biosRel = if (bios.startsWith("$root/", true)) bios.substring(root.length + 1).lowercase() + "/" else null
         val files = ArrayList<FileEntry>()
         val junk = ArrayList<FileEntry>()
-        progress("Pidiendo la lista de archivos al PC…")
+        progress("Pidiendo la lista de archivos al servidor…")
         val listed = windowsList(c, root)
         if (listed != null) {
             progress("Revisando ${listed.size} archivos…")
@@ -90,7 +90,15 @@ object Pc {
             if (Group.ext(p) in descriptors) c.readText(SftpConn.join(root, p), 256 * 1024) else null
         }.map { g ->
             // GameCube/Wii: el código del disco (GP7P01) para poner el nombre del juego a sus partidas. Se lee una vez.
-            if ((g.system == "gc" || g.system == "wii") && g.serial.isEmpty() && g.files.size == 1) {
+            if (g.system == "n3ds" && g.serial.isEmpty() && Group.ext(g.primary) == ".3ds") {
+                val f = g.files.first()
+                val key = "3ds:${f.path}|${f.size}"
+                val id = Prefs.switchId(key) ?: runCatching {
+                    val h = c.head(SftpConn.join(root, f.path), 0x110)
+                    if (String(h, 0x100, 4, Charsets.ISO_8859_1) == "NCSD") "%02x%02x%02x%02x".format(h[0x10B], h[0x10A], h[0x109], h[0x108]) else ""
+                }.getOrNull().orEmpty().also { Prefs.setSwitchId(key, it) }
+                if (id.isNotEmpty()) g.copy(serial = id) else g
+            } else if ((g.system == "gc" || g.system == "wii") && g.serial.isEmpty() && g.files.size == 1) {
                 val f = g.files.first()
                 val key = "disc:${f.path}|${f.size}"
                 val id = Prefs.switchId(key) ?: runCatching { GameSaves.discIdOf(c.head(SftpConn.join(root, f.path), 0x60)) }

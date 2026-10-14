@@ -1,125 +1,245 @@
 """
-Genera la música de fondo y los sonidos de RomSync (todo original, sintetizado aquí: sin muestras de nadie).
-Uso: python tools/sintetizar.py  →  escribe app/src/main/res/raw/*.wav
-Música: bossa nova alegre a 112 BPM en Fa mayor, 16 compases que se repiten sin corte (la cola se suma al principio).
+Genera la música de fondo y los sonidos de RomSync. Todo es ORIGINAL y sintetizado aquí (sin muestras de nadie).
+Uso: python tools/sintetizar.py   (necesita ffmpeg en el PATH para comprimir la música a .ogg)
+Escribe app/src/main/res/raw/: musica_*.ogg (3 pistas de ~2 min con secciones distintas, que empalman sin corte)
+y sfx_<juego>_<sonido>.wav (3 juegos de sonidos).
 """
-import math, random, struct, wave, os
+import math, random, struct, wave, os, subprocess, tempfile
+
 SR = 22050
 OUT = os.path.join(os.path.dirname(__file__), '..', 'app', 'src', 'main', 'res', 'raw')
-random.seed(7)
+TAU = 2 * math.pi
 
-def note(n):  # número MIDI → Hz
-    return 440.0 * 2 ** ((n - 69) / 12)
+def hz(n): return 440.0 * 2 ** ((n - 69) / 12)
 
-def write(name, buf, peak=0.85):
-    m = max(1e-9, max(abs(x) for x in buf))
-    g = peak / m
-    with wave.open(os.path.join(OUT, name), 'wb') as w:
+def save_wav(path, buf, peak):
+    m = max(1e-9, max(abs(x) for x in buf)); g = peak / m
+    with wave.open(path, 'wb') as w:
         w.setnchannels(1); w.setsampwidth(2); w.setframerate(SR)
         w.writeframes(b''.join(struct.pack('<h', int(max(-1, min(1, x * g)) * 32767)) for x in buf))
-    print(name, '%.1f s' % (len(buf) / SR))
 
-def add(buf, start, samples):
-    for i, s in enumerate(samples):
-        j = start + i
-        if j >= len(buf): j -= len(buf)  # se envuelve: así el final empalma con el principio
-        buf[j] += s
+def save_ogg(name, buf, peak=0.7):
+    tmp = os.path.join(tempfile.gettempdir(), name + '.wav')
+    save_wav(tmp, buf, peak)
+    subprocess.run(['ffmpeg', '-y', '-loglevel', 'error', '-i', tmp, '-c:a', 'libvorbis', '-q:a', '3',
+                    os.path.join(OUT, name + '.ogg')], check=True)
+    os.remove(tmp)
+    print(name, '%.0f s' % (len(buf) / SR))
 
-def epiano(f, dur, vol):  # piano eléctrico suave: seno + armónico con trémolo y caída
-    n = int(dur * SR); out = []
+class Song:
+    def __init__(self, seconds): self.buf = [0.0] * int(seconds * SR)
+    def add(self, t, samples):
+        s0 = int(t * SR); n = len(self.buf)
+        for i, v in enumerate(samples):
+            self.buf[(s0 + i) % n] += v  # se envuelve: la cola suena al principio y el loop no corta
+
+# ---------- instrumentos ----------
+def env_ad(t, a, d): return min(1, t / a) * math.exp(-d * t)
+
+def epiano(f, dur, vol):
+    return [vol * env_ad(i / SR, .004, 2.0) * (math.sin(TAU*f*i/SR) + .35*math.sin(TAU*2*f*i/SR)*math.exp(-6*i/SR)
+            + .1*math.sin(TAU*3*f*i/SR)) * (1 + .08*math.sin(TAU*5*i/SR)) for i in range(int(dur*SR))]
+
+def marimba(f, dur, vol):
+    return [vol * env_ad(i/SR, .002, 7) * (math.sin(TAU*f*i/SR) + .2*math.sin(TAU*4*f*i/SR)*math.exp(-25*i/SR)) for i in range(int(dur*SR))]
+
+def vibes(f, dur, vol):
+    return [vol * env_ad(i/SR, .003, 2.6) * (math.sin(TAU*f*i/SR) + .25*math.sin(TAU*4.0*f*i/SR)*math.exp(-8*i/SR))
+            * (1 + .25*math.sin(TAU*6*i/SR)) for i in range(int(dur*SR))]
+
+def flute(f, dur, vol):
+    n = int(dur*SR); out = []
     for i in range(n):
-        t = i / SR
-        env = math.exp(-2.2 * t) * min(1, t * 200)
-        out.append(vol * env * (math.sin(2*math.pi*f*t) + 0.35*math.sin(2*math.pi*2*f*t)*math.exp(-6*t)
-                               + 0.12*math.sin(2*math.pi*3*f*t)) * (1 + 0.08*math.sin(2*math.pi*5*t)))
+        t = i/SR; e = min(1, t/.06) * min(1, (dur - t)/.08) if dur - t > 0 else 0
+        vib = 1 + .004*math.sin(TAU*5.2*t) * min(1, t/.3)
+        out.append(vol * e * (math.sin(TAU*f*vib*t) + .18*math.sin(TAU*2*f*vib*t) + .02*random.uniform(-1, 1)))
     return out
 
 def bass(f, dur, vol):
-    n = int(dur * SR); out = []
-    for i in range(n):
-        t = i / SR
-        env = min(1, t * 300) * math.exp(-3.0 * t)
-        out.append(vol * env * (math.sin(2*math.pi*f*t) + 0.25*math.sin(2*math.pi*2*f*t)))
+    return [vol * env_ad(i/SR, .003, 2.8) * (math.sin(TAU*f*i/SR) + .25*math.sin(TAU*2*f*i/SR)) for i in range(int(dur*SR))]
+
+def square(f, dur, vol, duty=.5, decay=3.0):
+    return [vol * env_ad(i/SR, .002, decay) * (1 if (f*i/SR) % 1 < duty else -1) for i in range(int(dur*SR))]
+
+def triangle(f, dur, vol):
+    return [vol * env_ad(i/SR, .002, 1.5) * (4*abs((f*i/SR) % 1 - .5) - 1) for i in range(int(dur*SR))]
+
+def noise(dur, vol, decay=60, hp=True):
+    out = []; prev = 0
+    for i in range(int(dur*SR)):
+        x = random.uniform(-1, 1); y = x - prev if hp else x; prev = x
+        out.append(vol * y * math.exp(-decay * i/SR))
     return out
 
-def marimba(f, dur, vol):
-    n = int(dur * SR); out = []
-    for i in range(n):
-        t = i / SR
-        env = min(1, t * 400) * math.exp(-7.5 * t)
-        out.append(vol * env * (math.sin(2*math.pi*f*t) + 0.18*math.sin(2*math.pi*4*f*t)*math.exp(-20*t)))
-    return out
+def kick(vol):
+    return [vol * math.sin(TAU * (50 + 90*math.exp(-30*i/SR)) * i/SR) * math.exp(-9*i/SR) for i in range(int(.35*SR))]
 
-def shaker(dur, vol):
-    n = int(dur * SR); out = []; prev = 0
-    for i in range(n):
-        t = i / SR
-        x = random.uniform(-1, 1); hp = x - prev; prev = x
-        out.append(vol * hp * math.exp(-60 * t))
-    return out
+def rim(vol): return [vol * math.sin(TAU*1700*i/SR) * math.exp(-90*i/SR) for i in range(int(.05*SR))]
 
-def rim(vol):
-    n = int(0.05 * SR); return [vol * math.sin(2*math.pi*1700*i/SR) * math.exp(-90*i/SR) for i in range(n)]
-
-def music():
-    bpm = 112; beat = 60 / bpm; bars = 16
-    total = int(bars * 4 * beat * SR)
-    buf = [0.0] * total
-    # Acordes (MIDI) por compás: Fmaj7 | Em7 A7 | Dm7 | G7 | Gm7 | C7 | Fmaj7 | Bbmaj7 ... (dos vueltas con variación)
-    prog = [
-        ([53,57,60,64], 41), ([52,55,59,62], 40), ([50,53,57,60], 38), ([55,59,62,65], 43),
-        ([55,58,62,65], 43), ([48,52,55,58], 36), ([53,57,60,64], 41), ([58,62,65,69], 46),
-        ([53,57,60,64], 41), ([57,61,64,67], 45), ([50,53,57,60], 38), ([55,59,62,65], 43),
-        ([55,58,62,65], 43), ([48,52,55,58], 36), ([53,57,60,64], 41), ([48,52,55,58], 36),
-    ]
-    # Ritmo de bossa para el piano (en corcheas de 8 por compás): golpes "sincopados"
-    comp = [0, 3, 5, 6]
-    # Melodía original (MIDI, inicio en corcheas, duración en corcheas), dos frases que preguntan y responden
-    mel = [
-        (72,0,2),(74,2,1),(76,3,3),(74,6,2),(72,8,1),(69,9,2),(67,11,3),(69,14,2),
-        (70,16,2),(72,18,1),(74,19,3),(72,22,2),(70,24,1),(67,25,2),(65,27,5),
-        (72,32,2),(74,34,1),(76,35,3),(79,38,2),(77,40,1),(76,41,2),(74,43,3),(72,46,2),
-        (70,48,2),(69,50,1),(67,51,3),(65,54,2),(67,56,1),(69,57,2),(65,59,5),
-    ]
-    eighth = beat / 2
-    for b, (ch, root) in enumerate(prog):
-        s0 = int(b * 4 * beat * SR)
-        for k in comp:
-            for n in ch:
-                add(buf, s0 + int(k * eighth * SR), epiano(note(n), 0.9, 0.045))
-        # bajo: raíz en 1, quinta en 3 (patrón de bossa)
-        add(buf, s0, bass(note(root), 1.2, 0.26))
-        add(buf, s0 + int(3 * eighth * SR), bass(note(root + 7), 0.5, 0.18))
-        add(buf, s0 + int(4 * eighth * SR), bass(note(root + 7), 1.0, 0.22))
-        add(buf, s0 + int(7 * eighth * SR), bass(note(root), 0.5, 0.18))
-        for k in range(8):  # shaker en corcheas, acentos suaves
-            add(buf, s0 + int(k * eighth * SR), shaker(0.08, 0.05 if k % 2 else 0.08))
-        for k in (0, 3, 6):  # aro de caja (clave de bossa simplificada)
-            add(buf, s0 + int((k + (0 if b % 2 == 0 else 1)) * eighth * SR), rim(0.06))
-    for rep in range(2):  # la melodía suena dos veces (compases 0-7 y 8-15), la segunda una octava más arriba
-        for n, st, du in mel:
-            add(buf, int((rep * 64 + st) * eighth * SR), marimba(note(n + 12 * rep), min(du * eighth + 0.3, 1.4), 0.16))
-    # suavizar un poco los agudos (filtro de un polo)
+def lowpass(buf, a):
     out = []; y = 0
-    for x in buf:
-        y += 0.55 * (x - y); out.append(y)
-    write('musica_tienda.wav', out, 0.6)
+    for x in buf: y += a * (x - y); out.append(y)
+    return out
 
+# ---------- composición ----------
+def melody_line(rng, scale, chord, length8, start_note, rest_p=.2):
+    """Una frase improvisada: notas de la escala, cae en notas del acorde en los tiempos fuertes."""
+    notes = []; n = start_note; pos = 0
+    while pos < length8:
+        du = rng.choice([1, 1, 2, 2, 3])
+        if rng.random() < rest_p and pos % 4 != 0: pos += du; continue
+        if pos % 4 == 0:  # tiempo fuerte → nota del acorde más cercana
+            n = min((c + 12*o for c in chord for o in range(-1, 3)), key=lambda c: abs(c - n))
+        else:
+            step = rng.choice([-2, -1, -1, 1, 1, 2, 3])
+            cands = sorted(set(s + 12*o for s in scale for o in range(4, 8)))
+            idx = min(range(len(cands)), key=lambda i: abs(cands[i] - n))
+            n = cands[max(0, min(len(cands)-1, idx + step))]
+        notes.append((n, pos, du)); pos += du
+    return notes
+
+def bossa():
+    rng = random.Random(11); bpm = 112; beat = 60/bpm; e8 = beat/2; bar = 4*beat
+    I = [([53,57,60,64],41), ([52,55,59,62],40), ([50,53,57,60],38), ([55,59,62,65],43)]
+    II = [([55,58,62,65],43), ([48,52,55,58],36), ([53,57,60,64],41), ([58,62,65,69],46)]
+    B = [([50,53,57,60],38), ([46,50,53,57],46), ([55,58,62,65],43), ([48,52,55,58],36),
+         ([45,49,52,55],45), ([50,53,57,60],38), ([43,47,50,53],43), ([48,52,55,58],36)]
+    form = [('intro', I), ('A', I+II), ('A2', I+II), ('B', B), ('A3', I+II), ('pausa', II), ('solo', I+II), ('B2', B), ('A', I+II)]
+    bars = sum(len(p) for _, p in form)
+    s = Song(bars * bar)
+    motif = [(72,0,2),(74,2,1),(76,3,3),(74,6,2),(72,8,1),(69,9,2),(67,11,3),(69,14,2),
+             (70,16,2),(72,18,1),(74,19,3),(72,22,2),(70,24,1),(67,25,2),(65,27,5),
+             (72,32,2),(74,34,1),(76,35,3),(79,38,2),(77,40,1),(76,41,2),(74,43,3),(72,46,2),
+             (70,48,2),(69,50,1),(67,51,3),(65,54,2),(67,56,1),(69,57,2),(65,59,5)]
+    bmel = [(69,0,3),(72,3,2),(74,5,3),(77,8,4),(76,12,2),(74,14,2),(70,16,3),(69,19,2),(67,21,3),(65,24,6),(64,30,2),
+            (69,32,3),(72,35,2),(76,37,3),(79,40,4),(77,44,2),(76,46,2),(74,48,3),(72,51,2),(71,53,3),(72,56,8)]
+    scale = [65,67,69,70,72,74,76]
+    t0 = 0
+    for name, prog in form:
+        for b, (ch, root) in enumerate(prog):
+            st = t0 + b*bar
+            soft = name in ('intro', 'pausa')
+            for k in [0, 3, 5, 6]:
+                for n in ch: s.add(st + k*e8, epiano(hz(n), .9, .03 if soft else .042))
+            if name != 'intro':
+                s.add(st, bass(hz(root), 1.2, .24)); s.add(st+3*e8, bass(hz(root+7), .5, .16))
+                s.add(st+4*e8, bass(hz(root+7), 1, .2)); s.add(st+7*e8, bass(hz(root), .5, .16))
+            for k in range(8): s.add(st+k*e8, noise(.07, .05 if k % 2 else .08))
+            if not soft:
+                for k in (0, 3, 6): s.add(st + (k + b % 2)*e8, rim(.06))
+            if name in ('A2', 'A3', 'solo', 'B2') and b % 4 == 3:  # golpe de bombo al cerrar cada frase
+                s.add(st + 7*e8, kick(.25))
+        L = len(prog)*8
+        if name in ('A', 'A2', 'A3'):
+            up = 12 if name == 'A3' else 0
+            inst = marimba if name != 'A2' else flute
+            for n, p, du in motif:
+                if p < L: s.add(t0 + p*e8, inst(hz(n+up), min(du*e8 + .3, 1.6), .16 if inst is marimba else .07))
+            if name == 'A3':  # contracanto con vibráfono
+                for n, p, du in motif[::2]:
+                    s.add(t0 + (p+1)*e8, vibes(hz(n-5), du*e8 + .4, .06))
+        elif name in ('B', 'B2'):
+            for n, p, du in bmel:
+                s.add(t0 + p*e8, (flute if name == 'B' else vibes)(hz(n + (0 if name == 'B' else 12)), du*e8 + .2, .07 if name == 'B' else .08))
+        elif name == 'solo':
+            for i in range(0, L, 16):
+                ch = prog[i//8][0]
+                for n, p, du in melody_line(rng, scale, ch, 16, 74):
+                    s.add(t0 + (i+p)*e8, vibes(hz(n), du*e8 + .3, .09))
+        t0 += len(prog)*bar
+    save_ogg('musica_bossa', lowpass(s.buf, .55))
+
+def lofi():
+    rng = random.Random(5); bpm = 82; beat = 60/bpm; e8 = beat/2; bar = 4*beat
+    A = [([51,55,58,62],39), ([48,51,55,58],36), ([44,48,51,55],44), ([46,50,53,56],46)]
+    B = [([41,44,48,51],41), ([46,50,53,56],46), ([51,55,58,62],39), ([49,53,56,60],49)]
+    form = [('A', A*2), ('A', A*2), ('B', B*2), ('A', A*2), ('C', B+A)]
+    bars = sum(len(p) for _, p in form); s = Song(bars*bar)
+    scale = [63,65,67,68,70,72,74]
+    t0 = 0
+    for si, (name, prog) in enumerate(form):
+        for b, (ch, root) in enumerate(prog):
+            st = t0 + b*bar
+            for k, n in enumerate(ch):  # acorde arpegiado suave, con "swing"
+                s.add(st + k*.03, epiano(hz(n), 2.2, .04))
+            s.add(st + 5*e8 + .04, epiano(hz(ch[-1]+12), .9, .025))
+            s.add(st, bass(hz(root-12), 1.5, .28)); s.add(st + 5*e8, bass(hz(root-5), .8, .2))
+            s.add(st, kick(.35)); s.add(st + 2.6*e8 + .03, kick(.22)); s.add(st + 5*e8, kick(.3))
+            s.add(st + 2*e8, noise(.15, .09, 25)); s.add(st + 6*e8, noise(.15, .09, 25))  # "caja" de ruido
+            for k in range(8): s.add(st + k*e8 + (.04 if k % 2 else 0), noise(.04, .035, 90))
+        L = len(prog)*8
+        if name != 'A' or si > 0:
+            for i in range(0, L, 16):
+                ch = prog[i//8][0]
+                inst = vibes if name == 'C' else marimba
+                for n, p, du in melody_line(rng, scale, ch, 16, 75 if name != 'B' else 79, .35):
+                    s.add(t0 + (i+p)*e8 + .02, inst(hz(n), du*e8 + .4, .08))
+        t0 += len(prog)*bar
+    for i in range(0, len(s.buf), 97):  # crepitar de vinilo
+        if random.random() < .02: s.buf[i] += random.uniform(-.03, .03)
+    save_ogg('musica_lofi', lowpass(s.buf, .35))
+
+def retro():
+    rng = random.Random(3); bpm = 138; beat = 60/bpm; e16 = beat/4; bar = 4*beat
+    A = [([60,64,67],48), ([57,60,64],45), ([53,57,60],41), ([55,59,62],43)]
+    B = [([53,57,60],41), ([55,59,62],43), ([52,55,59],40), ([57,60,64],45)]
+    form = [('A', A*2), ('A2', A*2), ('B', B*2), ('A', A*2), ('C', B*2)]
+    bars = sum(len(p) for _, p in form); s = Song(bars*bar)
+    scale = [60,62,64,65,67,69,71]
+    lead = [(72,0,2),(76,2,2),(79,4,4),(77,8,2),(76,10,2),(74,12,4),(72,16,2),(74,18,2),(76,20,2),(72,22,2),(69,24,8),
+            (71,32,2),(72,34,2),(74,36,4),(76,40,2),(74,42,2),(72,44,4),(71,48,4),(67,52,4),(72,56,8)]
+    t0 = 0
+    for name, prog in form:
+        for b, (ch, root) in enumerate(prog):
+            st = t0 + b*bar
+            for k in range(16):  # arpegio rápido (lo típico de las consolas viejas)
+                s.add(st + k*e16, square(hz(ch[k % 3] + 12), e16*.9, .028, .25, 10))
+            for k in range(0, 16, 2): s.add(st + k*e16, triangle(hz(root - 12 + (7 if k % 8 == 4 else 0)), e16*1.8, .2))
+            for k in (0, 6, 8): s.add(st + k*e16, kick(.25))
+            for k in (4, 12): s.add(st + k*e16, noise(.12, .12, 30, False))
+            for k in range(0, 16, 2): s.add(st + k*e16, noise(.03, .04, 120))
+        L = len(prog)*16
+        if name in ('A', 'A2'):
+            for rep in range(L // 64):
+                for n, p, du in lead:
+                    s.add(t0 + (rep*64 + p)*e16, square(hz(n + (12 if name == 'A2' else 0)), du*e16*.95, .05, .5 if name == 'A' else .125, 2))
+        else:
+            for i in range(0, L, 32):
+                ch = prog[i//16][0]
+                for n, p, du in melody_line(rng, scale, ch, 16, 76, .15):
+                    s.add(t0 + (i + p*2)*e16, square(hz(n), du*2*e16*.9, .045, .25, 2.5))
+        t0 += len(prog)*bar
+    save_ogg('musica_retro', s.buf, .6)
+
+# ---------- sonidos ----------
 def sfx():
-    def blip(freqs, step, dur, vol=1.0, decay=40):
-        n = int((step * (len(freqs) - 1) + dur) * SR); buf = [0.0] * n
-        for k, f in enumerate(freqs):
-            s0 = int(k * step * SR)
-            for i in range(int(dur * SR)):
-                t = i / SR
-                buf[s0 + i] += vol * min(1, t * 800) * math.exp(-decay * t) * (math.sin(2*math.pi*f*t) + 0.3*math.sin(2*math.pi*2*f*t))
+    def tone(f, dur, decay, kind):
+        out = []
+        for i in range(int(dur*SR)):
+            t = i/SR; e = min(1, t*800) * math.exp(-decay*t)
+            if kind == 'clasico': v = math.sin(TAU*f*t) + .3*math.sin(TAU*2*f*t)
+            elif kind == 'suave': v = math.sin(TAU*f*t) + .08*math.sin(TAU*3*f*t)
+            else: v = (1 if (f*t) % 1 < .5 else -1) * .6
+            out.append(e * v)
+        return out
+    def seq(notes, step, dur, decay, kind):
+        n = int((step*(len(notes)-1) + dur)*SR); buf = [0.0]*n
+        for k, m in enumerate(notes):
+            for i, v in enumerate(tone(hz(m), dur, decay, kind)): buf[int(k*step*SR) + i] += v
         return buf
-    write('sfx_mover.wav', blip([note(88)], 0, 0.05, decay=90), 0.45)          # tocar / moverse: un tic agudo
-    write('sfx_abrir.wav', blip([note(79), note(86)], 0.06, 0.16, decay=28), 0.6)   # abrir: dos notas que suben
-    write('sfx_volver.wav', blip([note(84), note(77)], 0.06, 0.14, decay=30), 0.55)  # volver: dos notas que bajan
-    write('sfx_listo.wav', blip([note(76), note(79), note(84), note(88)], 0.07, 0.3, decay=14), 0.6)  # terminó algo
-    write('sfx_aviso.wav', blip([note(57), note(55)], 0.09, 0.18, decay=18), 0.5)   # error o cuidado (grave, suave)
-    write('sfx_interruptor.wav', blip([note(81)], 0, 0.07, decay=60), 0.5)          # interruptor / casilla
+    packs = {'clasico': 0, 'suave': -12, 'retro': 0}
+    for kind, shift in packs.items():
+        slow = 1.4 if kind == 'suave' else 1.0
+        save = lambda name, buf, peak: save_wav(os.path.join(OUT, 'sfx_%s_%s.wav' % (kind, name)), buf, peak)
+        save('mover', seq([88+shift], 0, .05*slow, 90/slow, kind), .4)
+        save('abrir', seq([79+shift, 86+shift], .06, .16*slow, 28/slow, kind), .55)
+        save('volver', seq([84+shift, 77+shift], .06, .14*slow, 30/slow, kind), .5)
+        save('listo', seq([76+shift, 79+shift, 84+shift, 88+shift], .07, .3*slow, 14/slow, kind), .55)
+        save('aviso', seq([57+shift, 55+shift], .09, .18*slow, 18/slow, kind), .5)
+        save('interruptor', seq([81+shift], 0, .07*slow, 60/slow, kind), .45)
+    print('sonidos: 3 juegos')
 
 if __name__ == '__main__':
-    sfx(); music()
+    for f in os.listdir(OUT):
+        if f.startswith(('musica_', 'sfx_')): os.remove(os.path.join(OUT, f))
+    sfx(); bossa(); lofi(); retro()

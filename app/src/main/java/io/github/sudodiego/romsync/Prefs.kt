@@ -93,12 +93,32 @@ object Prefs {
     var sfxOn: Boolean
         get() = sp.getBoolean("sfx_on", true)
         set(v) = sp.edit().putBoolean("sfx_on", v).apply()
+    /** "bossa", "lofi", "retro" o "propia". */
+    var musicTrack: String
+        get() = sp.getString("music_track", "bossa") ?: "bossa"
+        set(v) = sp.edit().putString("music_track", v).apply()
+    var customMusic: String
+        get() = sp.getString("custom_music", "") ?: ""
+        set(v) = sp.edit().putString("custom_music", v).apply()
+    var customMusicName: String
+        get() = sp.getString("custom_music_name", "") ?: ""
+        set(v) = sp.edit().putString("custom_music_name", v).apply()
+    /** Juego de sonidos: "clasico", "suave" o "retro". */
+    var sfxPack: String
+        get() = sp.getString("sfx_pack", "clasico") ?: "clasico"
+        set(v) = sp.edit().putString("sfx_pack", v).apply()
     var musicVolume: Int
         get() = sp.getInt("music_volume", 45)
         set(v) = sp.edit().putInt("music_volume", v).apply()
     var sfxVolume: Int
         get() = sp.getInt("sfx_volume", 70)
         set(v) = sp.edit().putInt("sfx_volume", v).apply()
+    var accent: Long
+        get() = sp.getLong("accent", 0xFFFF7A1AL)
+        set(v) = sp.edit().putLong("accent", v).apply()
+    var background: String
+        get() = sp.getString("background", "burbujas") ?: "burbujas"
+        set(v) = sp.edit().putString("background", v).apply()
     var sidebarOpen: Boolean
         get() = sp.getBoolean("sidebar_open", true)
         set(v) = sp.edit().putBoolean("sidebar_open", v).apply()

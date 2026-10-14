@@ -26,8 +26,8 @@
       <div class="toolbar">
         <input id="search" type="search" placeholder="Buscar juego…" autocomplete="off">
         <div class="chips" id="filters">
-          <button data-f="tablet" class="on">En la tablet</button>
-          <button data-f="pc">En el PC</button>
+          <button data-f="tablet" class="on">En el dispositivo</button>
+          <button data-f="pc">En el servidor</button>
           <button data-f="all">Todos</button>
         </div>
         <select id="sort" aria-label="Ordenar">
@@ -35,7 +35,7 @@
           <option value="size">Tamaño</option>
         </select>
         <button class="ghost" id="uploadBtn" title="Subir ROMs a la plataforma elegida">Subir ROMs</button>
-        <button class="ghost" id="refreshBtn" title="Volver a leer la tablet y el PC">Actualizar</button>
+        <button class="ghost" id="refreshBtn" title="Volver a leer el dispositivo y el servidor">Actualizar</button>
         <input type="file" id="uploadInput" multiple hidden>
       </div>
       <div class="summary" id="summary"></div>
@@ -61,7 +61,7 @@
   <form class="card" id="loginForm">
     <img src="icon.svg" alt="" width="56">
     <h2>RomSync Web</h2>
-    <p>Escribe el PIN que aparece en la tablet (RomSync → Web).</p>
+    <p>Escribe el PIN que aparece en el dispositivo (RomSync → Web).</p>
     <input id="loginPin" maxlength="6" placeholder="······" autocomplete="off" autocapitalize="characters">
     <button class="primary" type="submit">Entrar</button>
     <p class="err" id="loginErr"></p>

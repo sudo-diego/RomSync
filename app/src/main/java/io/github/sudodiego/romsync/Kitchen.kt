@@ -127,7 +127,7 @@ object Kitchen {
     private fun bodyToFile(s: NanoHTTPD.IHTTPSession, dest: File): Long {
         val len = s.headers["content-length"]?.toLongOrNull() ?: throw IOException("Falta el tamaño")
         val free = Local.space(dest.parent ?: Prefs.storageRoot).free
-        if (len > free) throw IOException("No hay espacio en la tablet: faltan ${formatSize(len - free)}")
+        if (len > free) throw IOException("No hay espacio en el dispositivo: faltan ${formatSize(len - free)}")
         dest.parentFile?.mkdirs()
         val part = File(dest.path + ".part")
         part.outputStream().buffered(1 shl 17).use { out ->
@@ -189,7 +189,7 @@ object Kitchen {
             synchronized(sessions) { sessions += token }
             return ok().apply { addHeader("Set-Cookie", "cocina=$token; Path=/; HttpOnly; SameSite=Strict") }
         }
-        if (!authed(s)) return err(NanoHTTPD.Response.Status.UNAUTHORIZED, "Escribe el PIN que aparece en la tablet")
+        if (!authed(s)) return err(NanoHTTPD.Response.Status.UNAUTHORIZED, "Escribe el PIN que aparece en el dispositivo")
         s.remoteIpAddress?.takeIf { it.count { c -> c == '.' } == 3 && !it.startsWith("127.") }?.let { if (it != lastClientIp) lastClientIp = it }
 
         val parts = uri.removePrefix("/api/").split('/')
@@ -323,7 +323,7 @@ object Kitchen {
         val wanted = body.optJSONArray("parts")?.let { a -> (0 until a.length()).map { a.getString(it) }.toSet() }
         val files = if (wanted != null && g.parts.isNotEmpty()) g.parts.filter { it.titleId in wanted }.flatMap { it.files }
             .filter { !Repo.has(it.path) } else w.missing
-        if (files.isEmpty()) return err(NanoHTTPD.Response.Status.BAD_REQUEST, "Ya está en la tablet")
+        if (files.isEmpty()) return err(NanoHTTPD.Response.Status.BAD_REQUEST, "Ya está en el dispositivo")
         val problem = startDownload(app, g, files)
         return if (problem != null) err(NanoHTTPD.Response.Status.BAD_REQUEST, problem) else ok()
     }
@@ -489,7 +489,7 @@ object Kitchen {
             session.commit(PendingIntent.getBroadcast(app, id, intent, flags).intentSender)
         }
         tmp.delete()
-        return ok(JSONObject().put("message", "Confirma la instalación en la tablet"))
+        return ok(JSONObject().put("message", "Confirma la instalación en el dispositivo"))
     }
 }
 

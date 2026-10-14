@@ -10,6 +10,7 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.ArrowDropDown
 import androidx.compose.material.icons.rounded.Downloading
 import androidx.compose.material.icons.rounded.TabletAndroid
 import androidx.compose.material3.FilledTonalIconButton
@@ -80,7 +81,7 @@ import kotlinx.coroutines.launch
 
 enum class StoreFilter(val label: String) {
     // "Repetidos" se fue al asistente Ordenar biblioteca: con la biblioteca ordenada no hace falta como filtro.
-    ALL("Todos"), INSTALLED("En la tablet"), MISSING("Para descargar"), TABLET_ONLY("Sin copia en el PC")
+    ALL("Todos"), INSTALLED("Descargados"), MISSING("Para descargar"), TABLET_ONLY("Sin copia")
 }
 
 object StoreState {
@@ -149,7 +150,7 @@ fun StoreScreen() {
                 val onTablet = cards.filter { Repo.where(it).presence.let { p -> p == Presence.INSTALLED || p == Presence.PARTIAL } && it.kind != "shortcut" }
                 val toGet = cards.filter { Repo.where(it).presence == Presence.MISSING && it.kind != "shortcut" }
                 if (onTablet.isNotEmpty()) item(span = { GridItemSpan(maxLineSpan) }, key = "fila-tablet") {
-                    ShelfRow("En tu tablet", onTablet, { StoreState.filter = StoreFilter.INSTALLED }, ::versionsOf)
+                    ShelfRow("En tu dispositivo", onTablet, { StoreState.filter = StoreFilter.INSTALLED }, ::versionsOf)
                 }
                 if (toGet.isNotEmpty()) item(span = { GridItemSpan(maxLineSpan) }, key = "fila-bajar") {
                     ShelfRow("Para descargar", toGet.sortedByDescending { Art.cached(it.id, "hero") != null }, { StoreState.filter = StoreFilter.MISSING }, ::versionsOf)
@@ -176,9 +177,11 @@ fun StoreScreen() {
 @Composable
 private fun FeaturedCarousel(cards: List<Game>) {
     val featured = remember(cards, Art.versions.size) {
-        cards.filter { it.kind != "shortcut" && Art.cached(it.id, "hero") != null }
-            .sortedWith(compareByDescending<Game> { Repo.where(it).presence == Presence.INSTALLED }.thenByDescending { it.size })
-            .take(6)
+        val day = (System.currentTimeMillis() / 86_400_000L).toInt()
+        val toGet = cards.filter { it.kind != "shortcut" && Art.cached(it.id, "hero") != null && Repo.where(it).presence == Presence.MISSING }
+        // Si ya está todo descargado, se muestran los de siempre para que el inicio no quede vacío.
+        (toGet.ifEmpty { cards.filter { it.kind != "shortcut" && Art.cached(it.id, "hero") != null } })
+            .shuffled(java.util.Random(day.toLong())).take(6)
     }
     if (featured.isEmpty()) return
     val pager = rememberPagerState { featured.size }
@@ -270,9 +273,9 @@ private fun PresencePill(g: Game, modifier: Modifier = Modifier) {
     when {
         dl != null && dl.status != DlStatus.FAILED -> Pill(
             if (dl.status == DlStatus.PAUSED) "En pausa" else "${(dl.done * 100 / dl.total.coerceAtLeast(1))} %", Palette.blue, modifier)
-        w.presence == Presence.INSTALLED -> Pill("En la tablet", Palette.ok, modifier)
+        w.presence == Presence.INSTALLED -> Pill("En el dispositivo", Palette.ok, modifier)
         w.presence == Presence.PARTIAL -> Pill(if (g.kind == "switch") "Falta contenido" else "A medias", Palette.warn, modifier)
-        w.presence == Presence.TABLET_ONLY -> Pill("Solo tablet", Color(0xFF64748B), modifier)
+        w.presence == Presence.TABLET_ONLY -> Pill("Solo dispositivo", Color(0xFF64748B), modifier)
     }
 }
 
@@ -306,10 +309,10 @@ private fun Header(onRefresh: () -> Unit) {
         // Estado del PC en una píldora: punto de color y lo justo (el detalle, al tocarla).
         var showConn by remember { mutableStateOf(false) }
         val (dotColor, label) = when (conn) {
-            is Conn.Online -> Palette.ok to "PC · ${Repo.library?.games?.size ?: 0} juegos"
+            is Conn.Online -> Palette.ok to "${Repo.library?.games?.size ?: 0} juegos"
             Conn.Connecting -> Palette.blue to (Repo.scanStatus.ifEmpty { "Conectando…" }.take(34))
-            is Conn.Offline -> Palette.danger to "PC sin conexión"
-            Conn.Idle -> Color(0xFF94A3B8) to "Sin PC"
+            is Conn.Offline -> Palette.danger to "Servidor sin conexión"
+            Conn.Idle -> Color(0xFF94A3B8) to "Sin servidor"
         }
         Row(
             Modifier.clip(RoundedCornerShape(99.dp)).background(MaterialTheme.colorScheme.surface)
@@ -321,13 +324,13 @@ private fun Header(onRefresh: () -> Unit) {
         }
         if (showConn) androidx.compose.material3.AlertDialog(
             onDismissRequest = { showConn = false },
-            title = { Text("Tu PC") },
+            title = { Text("Tu servidor") },
             text = {
                 Text(when (conn) {
                     is Conn.Online -> "Leído ${formatAgo(conn.at)}: ${Repo.library?.games?.size ?: 0} juegos."
-                    Conn.Connecting -> Repo.scanStatus.ifEmpty { "Conectando con el PC…" }
+                    Conn.Connecting -> Repo.scanStatus.ifEmpty { "Conectando con el servidor…" }
                     is Conn.Offline -> "Sin conexión: ${conn.message}"
-                    Conn.Idle -> "Conecta tu PC en Ajustes."
+                    Conn.Idle -> "Conecta tu servidor en Ajustes."
                 })
             },
             confirmButton = { TextButton(onClick = { showConn = false }) { Text("Cerrar") } },
@@ -401,17 +404,29 @@ private fun Toolbar(systems: List<SystemInfo>) {
                 }
             }
         }
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(StoreFilter.entries) { f ->
-                FilterChip(selected = StoreState.filter == f, onClick = { Sound.play(Sound.Fx.MOVE); StoreState.filter = f }, label = { Text(f.label) },
-                    shape = RoundedCornerShape(99.dp))
+        var sysOpen by remember { mutableStateOf(false) }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            StoreFilter.entries.forEach { f ->
+                FilterChip(selected = StoreState.filter == f, onClick = { Sound.play(Sound.Fx.MOVE); StoreState.filter = f },
+                    label = { Text(f.label) }, shape = RoundedCornerShape(99.dp))
             }
-            item { Box(Modifier.width(1.dp).height(32.dp).background(MaterialTheme.colorScheme.outline)) }
-            items(systems) { s ->
-                FilterChip(selected = StoreState.system == s.id,
-                    onClick = { Sound.play(Sound.Fx.MOVE); StoreState.system = if (StoreState.system == s.id) "" else s.id },
-                    label = { Text(s.short) }, shape = RoundedCornerShape(99.dp),
-                    leadingIcon = { Box(Modifier.size(10.dp).clip(RoundedCornerShape(3.dp)).background(Color(s.color))) })
+            Spacer(Modifier.weight(1f))
+            val cur = systems.firstOrNull { it.id == StoreState.system }
+            Box {
+                FilterChip(selected = cur != null, onClick = { Sound.play(Sound.Fx.MOVE); sysOpen = true },
+                    label = { Text(cur?.name ?: "Plataforma") }, shape = RoundedCornerShape(99.dp),
+                    leadingIcon = { if (cur != null) Box(Modifier.size(10.dp).clip(RoundedCornerShape(3.dp)).background(Color(cur.color))) },
+                    trailingIcon = {
+                        if (cur != null) Icon(Icons.Rounded.Close, "Quitar", Modifier.size(18.dp).clickable { StoreState.system = "" })
+                        else Icon(Icons.Rounded.ArrowDropDown, null)
+                    })
+                DropdownMenu(expanded = sysOpen, onDismissRequest = { sysOpen = false }) {
+                    DropdownMenuItem(text = { Text("Todas") }, onClick = { StoreState.system = ""; sysOpen = false })
+                    systems.forEach { sys ->
+                        DropdownMenuItem(text = { Text(sys.name) }, onClick = { StoreState.system = sys.id; sysOpen = false },
+                            leadingIcon = { Box(Modifier.size(12.dp).clip(RoundedCornerShape(4.dp)).background(Color(sys.color))) })
+                    }
+                }
             }
         }
     }
@@ -421,9 +436,9 @@ private fun Toolbar(systems: List<SystemInfo>) {
 private fun EmptyState() {
     Box(Modifier.fillMaxWidth().padding(vertical = 60.dp), contentAlignment = Alignment.Center) {
         Muted(when {
-            Repo.library == null && !Prefs.configured -> "Conecta tu PC en Ajustes para ver tu biblioteca."
-            Repo.library == null -> "Todavía no se ha podido leer la biblioteca del PC."
-            Repo.library?.error?.isNotBlank() == true -> "El PC dice: ${Repo.library?.error}"
+            Repo.library == null && !Prefs.configured -> "Conecta tu servidor en Ajustes para ver tu biblioteca."
+            Repo.library == null -> "Todavía no se ha podido leer la biblioteca del servidor."
+            Repo.library?.error?.isNotBlank() == true -> "El servidor dice: ${Repo.library?.error}"
             else -> "No hay juegos con este filtro."
         })
     }
@@ -457,7 +472,7 @@ private fun GameCard(g: Game, versions: Int = 1, modifier: Modifier = Modifier) 
                 Box(Modifier.fillMaxSize().padding(8.dp)) {
                     if (selecting) Icon(if (selected) Icons.Rounded.CheckCircle else Icons.Rounded.RadioButtonUnchecked, null,
                         Modifier.align(Alignment.BottomEnd).size(30.dp).clip(RoundedCornerShape(99.dp)).background(Color(0xCC0D1220)),
-                        tint = if (selected) Palette.orangeLight else Color.White)
+                        tint = if (selected) MaterialTheme.colorScheme.primary else Color.White)
                     PresenceBadge(g, Modifier.align(Alignment.TopStart))
                     Pill(Repo.system(g.system).short, Color(0xAA0D1220), Modifier.align(Alignment.TopEnd))
                     if (versions > 1) Pill("×$versions", Palette.blue, Modifier.align(Alignment.BottomStart))
@@ -485,11 +500,11 @@ private fun SelectionBar(sel: List<Game>) {
                 horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("${sel.size} seleccionado(s)", fontWeight = FontWeight.Bold)
                 androidx.compose.material3.OutlinedButton(enabled = onTablet.isNotEmpty(), onClick = { ask = "tablet" }) {
-                    Text("Borrar de la tablet (${onTablet.size})")
+                    Text("Borrar del dispositivo (${onTablet.size})")
                 }
                 if (Prefs.configured) androidx.compose.material3.OutlinedButton(enabled = onPc.isNotEmpty(), onClick = { ask = "pc" },
                     colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)) {
-                    Text("Borrar del PC (${onPc.size})")
+                    Text("Borrar del servidor (${onPc.size})")
                 }
                 TextButton(onClick = { StoreState.selection = emptySet() }) { Text("Cancelar") }
             }
@@ -501,7 +516,7 @@ private fun SelectionBar(sel: List<Game>) {
         list.filter { Repo.where(it).presence == Presence.MISSING && it.kind != "shortcut" }
     androidx.compose.material3.AlertDialog(
         onDismissRequest = { ask = null },
-        title = { Text(if (where == "tablet") "¿Borrar ${list.size} de la tablet?" else "¿Borrar ${list.size} del PC?") },
+        title = { Text(if (where == "tablet") "¿Borrar ${list.size} del dispositivo?" else "¿Borrar ${list.size} del servidor?") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 list.take(8).forEach { Text("• ${it.title}") }

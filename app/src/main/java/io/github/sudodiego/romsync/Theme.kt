@@ -1,5 +1,9 @@
 package io.github.sudodiego.romsync
 
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.foundation.background
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
@@ -55,15 +59,49 @@ object Palette {
     val danger = Color(0xFFDC2626)
 }
 
-/** Tema elegido en Ajustes (se puede cambiar sin reiniciar). */
+/** Aspecto elegido en Ajustes (cambia en vivo, sin reiniciar). */
 object UiState {
+    /** "claro", "oscuro" o "sistema". */
     var theme by mutableStateOf("claro")
+    /** Color principal (ARGB). */
+    var accent by mutableStateOf(0xFFFF7A1AL)
+    /** Fondo animado: "burbujas", "ondas" o "ninguno". */
+    var background by mutableStateOf("burbujas")
     /** Panel lateral abierto (con nombres) o colapsado (solo íconos). */
     var sidebarOpen by mutableStateOf(true)
-    val dark get() = theme == "oscuro"
 }
 
-private val dark = darkColorScheme(
+/** Colores para elegir en Ajustes (además de escribir un código). */
+val accentPresets = listOf(
+    "Naranja 3DS" to 0xFFFF7A1AL, "Azul Wii U" to 0xFF1AA3E8L, "Rojo Switch" to 0xFFE60012L, "Verde" to 0xFF22A355L,
+    "Morado" to 0xFF7C4DFFL, "Rosa" to 0xFFEC4899L, "Turquesa" to 0xFF0FB5AEL, "Ámbar" to 0xFFF2A900L,
+)
+
+@Composable
+fun isDark(): Boolean = when (UiState.theme) {
+    "oscuro" -> true
+    "sistema" -> androidx.compose.foundation.isSystemInDarkTheme()
+    else -> false
+}
+
+private fun mix(a: Color, b: Color, t: Float) = Color(
+    a.red + (b.red - a.red) * t, a.green + (b.green - a.green) * t, a.blue + (b.blue - a.blue) * t, 1f)
+
+/** Esquema de colores a partir del color elegido (texto blanco o negro sobre él, según cuán claro sea). */
+private fun schemeFor(dark: Boolean, accent: Color) = if (dark) {
+    val p = mix(accent, Color.White, 0.30f)
+    darkScheme.copy(
+        primary = p, onPrimary = if (p.luminance() > 0.5f) Color(0xFF14110F) else Color.White,
+        primaryContainer = mix(accent, Color(0xFF0E131F), 0.65f), onPrimaryContainer = mix(accent, Color.White, 0.85f),
+        secondaryContainer = mix(accent, Color(0xFF0E131F), 0.70f), onSecondaryContainer = mix(accent, Color.White, 0.88f),
+    )
+} else lightScheme.copy(
+    primary = accent, onPrimary = if (accent.luminance() > 0.6f) Color(0xFF1B2433) else Color.White,
+    primaryContainer = mix(accent, Color.White, 0.85f), onPrimaryContainer = mix(accent, Color.Black, 0.55f),
+    secondaryContainer = mix(accent, Color.White, 0.82f), onSecondaryContainer = mix(accent, Color.Black, 0.6f),
+)
+
+private val darkScheme = darkColorScheme(
     primary = Palette.orangeLight,
     onPrimary = Color(0xFF2A1406),
     primaryContainer = Color(0xFF4A2A14),
@@ -86,7 +124,7 @@ private val dark = darkColorScheme(
     onSecondaryContainer = Color(0xFFE3F4FF),
 )
 
-private val light = lightColorScheme(
+private val lightScheme = lightColorScheme(
     primary = Palette.orange,
     onPrimary = Color.White,
     primaryContainer = Color(0xFFFFE8D6),
@@ -153,7 +191,7 @@ private class SoundIndication(private val base: androidx.compose.foundation.Indi
 @Composable
 fun RomSyncTheme(content: @Composable () -> Unit) {
     MaterialTheme(
-        colorScheme = if (UiState.dark) dark else light,
+        colorScheme = schemeFor(isDark(), Color(UiState.accent)),
         typography = typography,
         shapes = Shapes(
             small = RoundedCornerShape(12.dp),
@@ -168,34 +206,84 @@ fun RomSyncTheme(content: @Composable () -> Unit) {
     }
 }
 
-/**
- * Fondo con burbujas que flotan despacio (como el fondo animado de la eShop de Wii U). Se dibuja en un Canvas
- * detrás de todo; con pocas figuras y sin recomponer nada más.
- */
+/** El fondo animado elegido en Ajustes. */
 @Composable
-fun BubblesBackground(modifier: Modifier = Modifier) {
-    val dark = UiState.dark
-    val t by rememberInfiniteTransition(label = "fondo").animateFloat(0f, 1f,
-        infiniteRepeatable(tween(60_000, easing = LinearEasing)), label = "t")
-    val bubbles = remember { List(18) { i -> Triple((i * 0.137f + 0.05f) % 1f, (i * 0.291f + 0.1f) % 1f, 40f + (i * 37 % 120)) } }
+fun AppBackground(modifier: Modifier = Modifier) {
+    val dark = isDark()
+    val accent = Color(UiState.accent)
+    // Tiempo continuo en segundos (no un ciclo que vuelve a 0): así nada "salta" al repetirse.
+    val time = remember { mutableFloatStateOf(0f) }
+    if (UiState.background != "ninguno") LaunchedEffect(Unit) {
+        val start = withFrameNanos { it }
+        while (true) withFrameNanos { time.floatValue = (it - start) / 1_000_000_000f }
+    }
     val top = if (dark) Color(0xFF111827) else Color(0xFFF7F9FC)
-    val bottom = if (dark) Color(0xFF0B101A) else Color(0xFFE6EDF5)
+    val bottom = if (dark) Color(0xFF0B101A) else mix(Color(0xFFE6EDF5), accent, 0.05f)
+    when (UiState.background) {
+        "ondas" -> WavesCanvas(modifier, time, dark, accent, top, bottom)
+        "ninguno" -> Canvas(modifier.fillMaxSize()) { drawRect(Brush.verticalGradient(listOf(top, bottom))) }
+        else -> BubblesCanvas(modifier, time, dark, accent, top, bottom)
+    }
+}
+
+private val bubbles = List(18) { i -> Triple((i * 0.137f + 0.05f) % 1f, (i * 0.291f + 0.1f) % 1f, 40f + (i * 37 % 120)) }
+
+/** Burbujas que suben despacio, como el fondo de la eShop de Wii U. */
+@Composable
+private fun BubblesCanvas(modifier: Modifier, time: androidx.compose.runtime.MutableFloatState, dark: Boolean, accent: Color, top: Color, bottom: Color) {
     val dot = if (dark) Color.White.copy(alpha = 0.025f) else Color.White.copy(alpha = 0.55f)
-    val ring = if (dark) Palette.blueLight.copy(alpha = 0.04f) else Palette.blue.copy(alpha = 0.05f)
+    val ring = accent.copy(alpha = if (dark) 0.05f else 0.06f)
     Canvas(modifier.fillMaxSize()) {
+        val t = time.floatValue // se lee solo al dibujar: no recompone la pantalla en cada cuadro
         drawRect(Brush.verticalGradient(listOf(top, bottom)))
         bubbles.forEachIndexed { i, (x0, y0, r) ->
-            val speed = 0.5f + (i % 5) * 0.15f
-            val y = ((y0 - t * speed) % 1f + 1f) % 1f
-            val x = x0 + 0.02f * kotlin.math.sin((t * 6.283f * 3) + i)
-            val c = Offset(x * size.width, y * size.height * 1.2f - size.height * 0.1f)
+            val period = 70f - (i % 5) * 9f // segundos en cruzar la pantalla
+            val y = ((y0 - t / period) % 1f + 1f) % 1f
+            val x = x0 + 0.02f * kotlin.math.sin(t * 0.3f + i)
+            val c = Offset(x * size.width, y * size.height * 1.3f - size.height * 0.15f)
             drawCircle(dot, r.dp.toPx(), c)
             drawCircle(ring, r.dp.toPx(), c, style = androidx.compose.ui.graphics.drawscope.Stroke(2.dp.toPx()))
         }
     }
 }
 
-val accentBrush get() = Brush.horizontalGradient(listOf(Palette.orange, Palette.blue))
+/** Ondas de luz que cruzan la pantalla, como el menú XMB de PlayStation. */
+@Composable
+private fun WavesCanvas(modifier: Modifier, time: androidx.compose.runtime.MutableFloatState, dark: Boolean, accent: Color, top: Color, bottom: Color) {
+    val tint = if (dark) mix(accent, Color.Black, 0.75f) else mix(accent, Color.White, 0.82f)
+    Canvas(modifier.fillMaxSize()) {
+        val t = time.floatValue
+        drawRect(Brush.verticalGradient(listOf(top, tint, bottom)))
+        val w = size.width; val h = size.height
+        for (k in 0 until 5) {
+            val path = androidx.compose.ui.graphics.Path()
+            val base = h * (0.52f + k * 0.035f)
+            val amp = h * (0.06f + k * 0.015f)
+            val speed = 0.12f + k * 0.035f
+            val freq = 1.6f + k * 0.35f
+            var x = 0f
+            path.moveTo(0f, base)
+            while (x <= w) {
+                val u = x / w
+                path.lineTo(x, base + amp * kotlin.math.sin(u * freq * 6.283f + t * speed + k * 1.3f) *
+                    (0.6f + 0.4f * kotlin.math.sin(u * 3.1f + t * 0.05f)))
+                x += 12f
+            }
+            // La onda es una cinta: se vuelve por debajo con otra fase.
+            x = w
+            while (x >= 0f) {
+                val u = x / w
+                path.lineTo(x, base + h * 0.02f + amp * 0.8f * kotlin.math.sin(u * freq * 6.283f + t * speed + k * 1.3f + 0.5f))
+                x -= 12f
+            }
+            path.close()
+            drawPath(path, Color.White.copy(alpha = if (dark) 0.04f else 0.35f))
+            drawPath(path, accent.copy(alpha = if (dark) 0.08f else 0.10f))
+        }
+    }
+}
+
+val accentBrush get() = Brush.horizontalGradient(listOf(Color(UiState.accent), Palette.blue))
 
 /** Barra de uso: segmentos (fracción del total, color) sobre un fondo. */
 @Composable

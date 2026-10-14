@@ -31,9 +31,10 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import kotlinx.coroutines.launch
 
-/** Elegir la carátula a mano: buscar el juego en SteamGridDB y tocar la imagen que guste. */
+/** Elegir una imagen a mano ([kind]: grid = carátula, hero = fondo, logo): buscar el juego y tocar la que guste. */
 @Composable
-fun ArtPicker(g: Game, onClose: () -> Unit) {
+fun ArtPicker(g: Game, kind: String = "grid", onClose: () -> Unit) {
+    val what = when (kind) { "hero" -> "Fondo"; "logo" -> "Logo"; else -> "Carátula" }
     val scope = appScope
     var q by remember { mutableStateOf(g.title) }
     var games by remember { mutableStateOf<List<Pair<Int, String>>?>(null) }
@@ -52,12 +53,12 @@ fun ArtPicker(g: Game, onClose: () -> Unit) {
     LaunchedEffect(chosen) {
         val c = chosen ?: return@LaunchedEffect
         images = null
-        runCatching { Art.options(c.first) }.onSuccess { images = it }.onFailure { error = it.message }
+        runCatching { Art.options(c.first, kind) }.onSuccess { images = it }.onFailure { error = it.message }
     }
 
     AlertDialog(
         onDismissRequest = onClose,
-        title = { Text(if (chosen == null) "Carátula de ${g.title}" else chosen!!.second) },
+        title = { Text(if (chosen == null) "$what de ${g.title}" else chosen!!.second) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (chosen == null) {
@@ -80,21 +81,21 @@ fun ArtPicker(g: Game, onClose: () -> Unit) {
                         }
                     }
                     images == null -> CircularProgressIndicator()
-                    images!!.isEmpty() -> Muted("Ese juego no tiene carátulas en SteamGridDB.")
-                    else -> LazyVerticalGrid(GridCells.Adaptive(110.dp), Modifier.heightIn(max = 420.dp),
+                    images!!.isEmpty() -> Muted("No hay imágenes de ese tipo para este juego.")
+                    else -> LazyVerticalGrid(GridCells.Adaptive(if (kind == "grid") 110.dp else 220.dp), Modifier.heightIn(max = 420.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         items(images!!) { (thumb, url) ->
-                            AsyncImage(model = thumb, contentDescription = null, contentScale = ContentScale.Crop,
+                            AsyncImage(model = thumb, contentDescription = null, contentScale = if (kind == "logo") ContentScale.Fit else ContentScale.Crop,
                                 // Fondo mientras baja la miniatura (sin él la ventana parecía vacía varios segundos).
-                                modifier = Modifier.aspectRatio(2f / 3f).clip(RoundedCornerShape(10.dp))
+                                modifier = Modifier.aspectRatio(when (kind) { "hero" -> 3f; "logo" -> 2f; else -> 2f / 3f }).clip(RoundedCornerShape(10.dp))
                                     .background(MaterialTheme.colorScheme.surfaceVariant).clickable {
                                     saving = true
                                     scope.launch {
-                                        runCatching { Art.useUrl(g.id, "grid", url) }.onFailure { error = it.message }
+                                        runCatching { Art.useUrl(g.id, kind, url) }.onFailure { error = it.message }
                                         saving = false
                                         if (error == null) {
                                             // Elegido a mano: ese es el juego (su nombre oficial y, después, su fondo y logo).
-                                            chosen?.let { (id, name) -> Art.choose(g.id, id, name); Repo.reapplyNames(); Art.startFetchAll(listOf(g), quiet = true) }
+                                            if (kind == "grid") chosen?.let { (id, name) -> Art.choose(g.id, id, name); Repo.reapplyNames(); Art.startFetchAll(listOf(g), quiet = true) }
                                             onClose()
                                         }
                                     }
@@ -107,7 +108,7 @@ fun ArtPicker(g: Game, onClose: () -> Unit) {
         confirmButton = { TextButton(onClick = onClose) { Text("Cerrar") } },
         dismissButton = {
             if (chosen != null) TextButton(onClick = { chosen = null; images = null }) { Text("Otro juego") }
-            else TextButton(onClick = { Art.clear(g.id); onClose() }) { Text("Sin carátula") }
+            else if (kind == "grid") TextButton(onClick = { Art.clear(g.id); onClose() }) { Text("Sin carátula") }
         },
     )
 }

@@ -112,6 +112,17 @@ object Storage {
     }
 
     /** Tamaño de una carpeta en bytes (para ver cuánto ocupan los datos de un emulador). */
+    /** Borra archivos (rutas relativas a [root]). Con Shizuku si están en Android/data. */
+    suspend fun delete(root: String, rels: List<String>) = withContext(Dispatchers.IO) {
+        if (rels.isEmpty()) return@withContext
+        if (Emulators.needsShell(root)) {
+            rels.chunked(40).forEach { chunk ->
+                Shell.run("cd ${Shell.q(root)} && rm -f " + chunk.joinToString(" ") { Shell.q(it) }, 60000)
+                    ?: throw NeedsShizuku()
+            }
+        } else rels.forEach { java.io.File(root, it).delete() }
+    }
+
     suspend fun sizeOf(path: String): Long? = withContext(Dispatchers.IO) {
         if (Emulators.needsShell(path)) {
             Shell.run("du -sk ${Shell.q(path)} 2>/dev/null | cut -f1", 60000)?.trim()?.toLongOrNull()?.times(1024)

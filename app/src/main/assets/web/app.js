@@ -1,6 +1,6 @@
 "use strict";
 
-// RomSync Web: la tablet sirve esta página (estilo Nonna's Kitchen de Cannoli).
+// RomSync Web: el dispositivo sirve esta página (estilo Nonna's Kitchen de Cannoli).
 const S = {
   state: null,      // /api/state
   games: [],        // /api/games: tablet + PC, con "presence"
@@ -116,7 +116,7 @@ $("#filters").addEventListener("click", (e) => {
 $("#search").addEventListener("input", (e) => { S.q = e.target.value.trim().toLowerCase(); renderGrid(); });
 $("#sort").addEventListener("change", (e) => { S.sort = e.target.value; renderGrid(); });
 $("#refreshBtn").addEventListener("click", async () => {
-  toast("Leyendo la tablet y el PC…");
+  toast("Leyendo el dispositivo y el servidor…");
   await api("/api/refresh");
   await loadGames();
   toast("Listo");
@@ -147,9 +147,9 @@ S.artV = {};
 function badge(g) {
   if (g.download && g.download.status !== "FAILED" && g.download.status !== "DONE")
     return `<span class="badge">${g.download.status === "PAUSED" ? "En pausa" : Math.floor((g.download.done * 100) / Math.max(g.download.total, 1)) + " %"}</span>`;
-  if (g.presence === "INSTALLED") return `<span class="badge ok">En la tablet</span>`;
+  if (g.presence === "INSTALLED") return `<span class="badge ok">En el dispositivo</span>`;
   if (g.presence === "PARTIAL") return `<span class="badge part">A medias</span>`;
-  if (g.presence === "TABLET_ONLY") return `<span class="badge">Solo tablet</span>`;
+  if (g.presence === "TABLET_ONLY") return `<span class="badge">Solo dispositivo</span>`;
   return "";
 }
 
@@ -162,7 +162,7 @@ function renderGrid() {
   const banner = $("#connectBanner");
   if (banner) banner.innerHTML = S.state && !S.state.pcConfigured ? connectBox() : "";
   empty.hidden = games.length > 0;
-  if (!games.length) empty.textContent = S.filter === "pc" && !S.state?.pcConfigured ? "Configura el PC en la app (Ajustes) para ver su biblioteca." : "No hay juegos con este filtro.";
+  if (!games.length) empty.textContent = S.filter === "pc" && !S.state?.pcConfigured ? "Configura el servidor en la app (Ajustes) para ver su biblioteca." : "No hay juegos con este filtro.";
   grid.innerHTML = "";
   let i = 0;
   const step = () => {
@@ -197,8 +197,8 @@ function pcLine() {
   const st = S.state;
   if (!st?.pcConfigured) return " · PC sin configurar";
   if (st.pc === "online") return " · PC conectado";
-  if (st.pc === "connecting") return " · leyendo el PC…";
-  if (st.pc === "offline") return ` · PC sin conexión (${st.pcError})`;
+  if (st.pc === "connecting") return " · leyendo el servidor…";
+  if (st.pc === "offline") return ` · Servidor sin conexión (${st.pcError})`;
   return "";
 }
 $("#grid").addEventListener("click", (e) => {
@@ -222,15 +222,15 @@ function openGame(id) {
   const free = S.state?.free || 0;
   const missingSize = (g.missing || []).reduce((a, f) => a + f.size, 0);
   const stateText = {
-    INSTALLED: `<b style="color:var(--ok)">En la tablet</b>${g.differs ? `<span class="muted">· algún archivo es distinto al del PC</span>` : ""}`,
-    PARTIAL: `<b style="color:var(--warn)">A medias en la tablet</b><span class="muted">faltan ${fmtSize(missingSize)}</span>`,
-    MISSING: `<b>No está en la tablet.</b><span class="muted">Ocupa ${fmtSize(g.size)} · quedan ${fmtSize(free)} libres</span>`,
-    TABLET_ONLY: `<b>Solo en la tablet</b><span class="muted">no está en el PC</span>`,
+    INSTALLED: `<b style="color:var(--ok)">En el dispositivo</b>${g.differs ? `<span class="muted">· algún archivo es distinto al del servidor</span>` : ""}`,
+    PARTIAL: `<b style="color:var(--warn)">A medias en el dispositivo</b><span class="muted">faltan ${fmtSize(missingSize)}</span>`,
+    MISSING: `<b>No está en el dispositivo.</b><span class="muted">Ocupa ${fmtSize(g.size)} · quedan ${fmtSize(free)} libres</span>`,
+    TABLET_ONLY: `<b>Solo en el dispositivo</b><span class="muted">no está en el servidor</span>`,
   }[g.presence];
   const dl = g.download && g.download.status !== "DONE" ? g.download : null;
   const parts = g.parts?.length > 1 || g.parts?.some((p) => p.kind !== "base") ? `<h3>Contenido</h3><ul class="files">${g.parts.map((p) => {
     const ok = p.files.every(have);
-    return `<li><label style="flex:1"><input type="checkbox" data-part="${esc(p.titleId)}" ${ok ? "checked disabled" : "checked"}> ${partName[p.kind] || p.kind}${p.version ? ` v${p.version}` : ""} <span class="muted">${esc(p.titleId)}</span></label><span>${fmtSize(p.size)}</span><span class="${ok ? "have" : "miss"}">${ok ? "En la tablet" : "No"}</span></li>`;
+    return `<li><label style="flex:1"><input type="checkbox" data-part="${esc(p.titleId)}" ${ok ? "checked disabled" : "checked"}> ${partName[p.kind] || p.kind}${p.version ? ` v${p.version}` : ""} <span class="muted">${esc(p.titleId)}</span></label><span>${fmtSize(p.size)}</span><span class="${ok ? "have" : "miss"}">${ok ? "En el dispositivo" : "No"}</span></li>`;
   }).join("")}</ul>` : "";
   const files = `<h3>Archivos</h3><ul class="files">${g.files.map((f) => `<li><span>${esc(f.path)}</span><span>${fmtSize(f.size)}</span><span class="${have(f) ? "have" : "miss"}">${have(f) ? `<a href="/api/download?path=${encodeURIComponent(f.path)}" title="Bajar a este equipo">✓ bajar</a>` : "—"}</span></li>`).join("")}</ul>`;
   const canInstall = (g.presence === "MISSING" || g.presence === "PARTIAL") && !dl;
@@ -250,12 +250,12 @@ function openGame(id) {
         <div class="state">${stateText}</div>
         ${dl ? `<div class="state"><b>${dl.status === "PAUSED" ? "En pausa" : dl.status === "FAILED" ? "Falló" : "Descargando"}</b><div class="bar" style="flex:1"><span style="width:${(dl.done * 100) / Math.max(dl.total, 1)}%"></span></div><span class="muted">${fmtSize(dl.done)} de ${fmtSize(dl.total)}</span></div>` : ""}
         <div class="actions">
-          ${canInstall ? `<button class="primary" id="installBtn">Instalar en la tablet · ${fmtSize(g.presence === "PARTIAL" ? missingSize : g.size)}</button>` : ""}
+          ${canInstall ? `<button class="primary" id="installBtn">Instalar en el dispositivo · ${fmtSize(g.presence === "PARTIAL" ? missingSize : g.size)}</button>` : ""}
           ${dl ? `<button class="ghost" id="dlToggle">${dl.status === "PAUSED" || dl.status === "FAILED" ? "Seguir" : "Pausar"}</button><button class="ghost" id="dlCancel">Cancelar</button>` : ""}
-          ${canDelete ? `<button class="danger-btn" id="deleteBtn">Borrar de la tablet</button>` : ""}
-          ${g.presence !== "TABLET_ONLY" && S.state?.pcConfigured ? `<button class="danger-btn" id="deletePcBtn">Borrar del PC</button>` : ""}
+          ${canDelete ? `<button class="danger-btn" id="deleteBtn">Borrar del dispositivo</button>` : ""}
+          ${g.presence !== "TABLET_ONLY" && S.state?.pcConfigured ? `<button class="danger-btn" id="deletePcBtn">Borrar del servidor</button>` : ""}
         </div>
-        <p class="muted small">${canInstall ? "La tablet lo copia desde el disco del PC (SFTP); puedes cerrar esta página." : canDelete ? "Borrar quita solo los archivos del juego: las partidas se quedan." : ""}</p>
+        <p class="muted small">${canInstall ? "El dispositivo lo copia desde el disco del servidor (SFTP); puedes cerrar esta página." : canDelete ? "Borrar quita solo los archivos del juego: las partidas se quedan." : ""}</p>
         ${parts}${files}
         <h3>Carátula</h3>
         <div class="actions">
@@ -275,7 +275,7 @@ function openGame(id) {
     const sel = [...document.querySelectorAll("[data-part]:not(:disabled)")].filter((c) => c.checked).map((c) => c.dataset.part);
     try {
       await post("/api/install", g.parts?.length ? { id, parts: sel } : { id });
-      toast("Descargando en la tablet…");
+      toast("Descargando en el dispositivo…");
       await loadGames();
       openGame(id);
     } catch (e) { toast(e.message); }
@@ -289,8 +289,8 @@ function openGame(id) {
     await loadGames(); openGame(id);
   });
   $("#deleteBtn")?.addEventListener("click", async () => {
-    const warn = g.presence === "TABLET_ONLY" ? "\n\nOjo: este juego NO está en el PC; no lo podrás volver a descargar con RomSync." : "\n\nLo puedes volver a descargar desde el PC.";
-    if (!confirm(`¿Borrar «${g.title}» de la tablet?\n\nSe liberan ${fmtSize(g.localSize)}. Tus partidas no se borran.${warn}`)) return;
+    const warn = g.presence === "TABLET_ONLY" ? "\n\nOjo: este juego NO está en el servidor; no lo podrás volver a descargar con RomSync." : "\n\nLo puedes volver a descargar desde el servidor.";
+    if (!confirm(`¿Borrar «${g.title}» del dispositivo?\n\nSe liberan ${fmtSize(g.localSize)}. Tus partidas no se borran.${warn}`)) return;
     try {
       const r = await post("/api/delete", { id });
       toast(`Borrado · ${fmtSize(r.freed)} libres`);
@@ -299,12 +299,12 @@ function openGame(id) {
     } catch (e) { toast(e.message); }
   });
   $("#deletePcBtn")?.addEventListener("click", async () => {
-    const extra = g.presence === "MISSING" ? "\n\nNo está en la tablet: después no lo vas a tener en ningún lado." : "\n\nLa copia de la tablet se queda.";
-    if (!confirm(`¿Borrar «${g.title}» del disco del PC?\n\nSe borran ${g.files.length} archivo(s), ${fmtSize(g.size)}. No van a la papelera.${extra}`)) return;
+    const extra = g.presence === "MISSING" ? "\n\nNo está en el dispositivo: después no lo vas a tener en ningún lado." : "\n\nLa copia del dispositivo se queda.";
+    if (!confirm(`¿Borrar «${g.title}» del disco del servidor?\n\nSe borran ${g.files.length} archivo(s), ${fmtSize(g.size)}. No van a la papelera.${extra}`)) return;
     if (!confirm("¿Seguro? Esto no se puede deshacer.")) return;
     try {
       const r = await post("/api/delete-pc", { id });
-      toast(`Borrado del PC · ${fmtSize(r.freed)}`);
+      toast(`Borrado del servidor · ${fmtSize(r.freed)}`);
       closeModal();
       await loadGames();
     } catch (e) { toast(e.message); }
@@ -415,20 +415,20 @@ async function renderBios() {
   const el = $("#biosPage");
   const r = await api("/api/bios");
   el.innerHTML = `
-    <div class="box"><div class="row"><h2 style="flex:1">BIOS en la tablet (${r.bios.length})</h2>
+    <div class="box"><div class="row"><h2 style="flex:1">BIOS en el dispositivo (${r.bios.length})</h2>
       <label class="ghost">Subir BIOS<input type="file" id="biosUp" multiple hidden></label></div>
       <p class="muted small">Carpeta: ${esc(S.state?.biosDir || "")}</p>
       ${r.bios.length ? `<ul class="files">${r.bios.map((b) => `<li><span>${esc(b.path)}</span><span>${fmtSize(b.size)}</span><a href="/api/download?bios=1&path=${encodeURIComponent(b.path)}">bajar</a><button class="ghost small" data-del="${esc(b.path)}">Borrar</button></li>`).join("")}</ul>` : `<p class="muted">No hay BIOS.</p>`}</div>
-    <div class="box"><div class="row"><h2 style="flex:1">En el PC y no en la tablet (${r.missing.length})</h2>
-      ${r.missing.length ? `<button class="primary" id="biosCopy">Copiar desde el PC</button>` : ""}</div>
-      ${r.missing.length ? `<ul class="files">${r.missing.map((b) => `<li><span>${esc(b.path)}</span><span>${fmtSize(b.size)}</span></li>`).join("")}</ul>` : `<p class="muted">${S.state?.pcConfigured ? "No falta ninguna." : "Configura el PC en la app para compararlas."}</p>`}</div>`;
+    <div class="box"><div class="row"><h2 style="flex:1">En el servidor y no en el dispositivo (${r.missing.length})</h2>
+      ${r.missing.length ? `<button class="primary" id="biosCopy">Copiar desde el servidor</button>` : ""}</div>
+      ${r.missing.length ? `<ul class="files">${r.missing.map((b) => `<li><span>${esc(b.path)}</span><span>${fmtSize(b.size)}</span></li>`).join("")}</ul>` : `<p class="muted">${S.state?.pcConfigured ? "No falta ninguna." : "Configura el servidor en la app para compararlas."}</p>`}</div>`;
   $("#biosUp").addEventListener("change", (e) => {
     for (const f of e.target.files) uploads.push({ file: f, path: f.name, bios: true, done: 0, status: "cola" });
     renderTransfers(); pumpUploads();
   });
-  $("#biosCopy")?.addEventListener("click", async () => { await post("/api/bios"); toast("Copiando BIOS desde el PC…"); });
+  $("#biosCopy")?.addEventListener("click", async () => { await post("/api/bios"); toast("Copiando BIOS desde el servidor…"); });
   el.querySelectorAll("[data-del]").forEach((b) => b.addEventListener("click", async () => {
-    if (!confirm(`¿Borrar ${b.dataset.del} de la tablet?`)) return;
+    if (!confirm(`¿Borrar ${b.dataset.del} del dispositivo?`)) return;
     await api(`/api/bios?path=${encodeURIComponent(b.dataset.del)}`, { method: "DELETE" });
     renderBios();
   }));
@@ -444,17 +444,17 @@ async function loadSaves() {
   for (const b of backups) { if (!byEmu.has(b.emulator)) byEmu.set(b.emulator, []); byEmu.get(b.emulator).push(b); }
   const shizuku = S.state?.shizuku;
   el.innerHTML = (emus.some((e) => e.installed && e.needsShell) && shizuku !== "READY"
-    ? `<div class="box"><h2>Falta Shizuku</h2><p>Dolphin, Eden, ARMSX2 y Vita3K guardan en Android/data. Abre Shizuku en la tablet y dale permiso a RomSync.</p></div>` : "") +
+    ? `<div class="box"><h2>Falta Shizuku</h2><p>Dolphin, Eden, ARMSX2 y Vita3K guardan en Android/data. Abre Shizuku en el dispositivo y dale permiso a RomSync.</p></div>` : "") +
     emus.filter((e) => e.installed || byEmu.has(e.id)).map((e) => {
       const list = byEmu.get(e.id) || [];
       return `<div class="box">
         <div class="row"><h2 style="flex:1">${esc(e.name)}</h2>
           ${e.installed && e.supported ? `<a class="ghost" href="/api/emulators/${e.id}/export">Bajar partidas (zip)</a>
-          <button class="ghost" data-backup="${e.id}">Respaldar en el PC</button>
+          <button class="ghost" data-backup="${e.id}">Respaldar en el servidor</button>
           <label class="ghost" title="Restaura TODO el zip; para elegir juego por juego usa la app">Restaurar desde zip<input type="file" accept=".zip" data-restore="${e.id}" hidden></label>` : ""}</div>
         <p class="muted small">${esc(e.what)}${e.installed && e.supported ? ` · ${e.error ? esc(e.error) : `${e.files} archivos, ${fmtSize(e.bytes)}`} · último respaldo ${ago(e.lastBackup)}` : !e.installed ? " · no instalado" : ""}</p>
         ${e.note ? `<p class="muted small">${esc(e.note)}</p>` : ""}
-        ${list.length ? `<table><tr><th>Respaldo en el PC</th><th>Archivos</th><th>Tamaño</th><th></th></tr>${list.map((b) => `<tr>
+        ${list.length ? `<table><tr><th>Respaldo en el servidor</th><th>Archivos</th><th>Tamaño</th><th></th></tr>${list.map((b) => `<tr>
           <td>${fmtDate(b.at)}${b.auto ? ` <span class="pill">auto</span>` : ""}${b.keep ? ` <span class="pill">conservar</span>` : ""}</td><td>${b.files || "—"}</td><td>${fmtSize(b.size)}</td>
           <td class="row" style="justify-content:flex-end">
             <a class="ghost" href="/api/backups/${e.id}/${b.id}.zip">Bajar</a>
@@ -463,7 +463,7 @@ async function loadSaves() {
             <button class="danger-btn" data-del-b="${b.id}" data-emu="${e.id}">Borrar</button>
           </td></tr>`).join("")}</table>` : ""}
       </div>`;
-    }).join("") + `<p class="muted small">Restaurar primero respalda lo que hay en la tablet. Cierra el emulador antes.</p>`;
+    }).join("") + `<p class="muted small">Restaurar primero respalda lo que hay en el dispositivo. Cierra el emulador antes.</p>`;
 
   el.querySelectorAll("[data-backup]").forEach((b) => b.addEventListener("click", async () => {
     b.disabled = true; b.textContent = "Respaldando…";
@@ -485,7 +485,7 @@ async function loadSaves() {
     await api(`/api/backups/${b.dataset.emu}/${b.dataset.id}?do=keep&v=${b.dataset.keep}`); loadSaves();
   }));
   el.querySelectorAll("[data-del-b]").forEach((b) => b.addEventListener("click", async () => {
-    if (!confirm("¿Borrar este respaldo del PC? No se puede deshacer.")) return;
+    if (!confirm("¿Borrar este respaldo del servidor? No se puede deshacer.")) return;
     await api(`/api/backups/${b.dataset.emu}/${b.dataset.delB}?do=delete`); loadSaves();
   }));
 }
@@ -500,7 +500,7 @@ async function renderTools(path) {
   el.innerHTML = `
     ${connectBox()}
     <div class="box"><div class="row"><h2 style="flex:1">Instalar APK</h2><label class="primary">Elegir APK<input type="file" id="apk" accept=".apk" hidden></label></div>
-      <p class="muted small">La tablet pide confirmar la instalación en pantalla.</p></div>
+      <p class="muted small">El dispositivo pide confirmar la instalación en pantalla.</p></div>
     <div class="box">
       <div class="row"><h2 style="flex:1">Archivos</h2>
         <button class="ghost" id="mk">Nueva carpeta</button>
@@ -548,14 +548,14 @@ async function loadGames() {
   renderSystems();
   renderGrid();
 }
-// Conectar el PC: un .bat que activa SFTP, busca la carpeta de ROMs y le pasa todo a la tablet.
+// Conectar el servidor: un .bat que activa SFTP, busca la carpeta de ROMs y le pasa todo al dispositivo.
 function connectBox() {
   const ok = S.state?.pcConfigured;
   const ip = S.state?.clientIp;
   return `<div class="box"><h2>${ok ? "PC conectado" : "Conectar este PC"}</h2>
-    <p class="muted small">${ok ? `La tablet lee tus juegos de ${esc(S.state.pcRoms)}.` :
-      `En la tablet: RomSync → Ajustes → PC. Ahí están los pasos (activar «Servidor OpenSSH» en Windows) y el botón «Buscar mi PC».` +
-      (ip ? ` Este equipo es <b>${esc(ip)}</b>: la tablet ya lo anotó.` : "")}</p></div>`;
+    <p class="muted small">${ok ? `El dispositivo lee tus juegos de ${esc(S.state.pcRoms)}.` :
+      `En el dispositivo: RomSync → Ajustes → PC. Ahí están los pasos (activar «Servidor OpenSSH» en Windows) y el botón «Buscar mi servidor».` +
+      (ip ? ` Este equipo es <b>${esc(ip)}</b>: el dispositivo ya lo anotó.` : "")}</p></div>`;
 }
 
 function renderPill() {
@@ -569,7 +569,7 @@ async function boot() {
   try { await loadGames(); } catch { return; }
   const tab = location.hash.slice(1);
   if (["bios", "saves", "tools"].includes(tab)) setTab(tab);
-  // El avance de las descargas en la tablet.
+  // El avance de las descargas en el dispositivo.
   setInterval(async () => {
     if (!$("#tab-platforms").classList.contains("on") || document.hidden) return;
     const busy = S.games.some((g) => g.download && (g.download.status === "RUNNING" || g.download.status === "QUEUED"));

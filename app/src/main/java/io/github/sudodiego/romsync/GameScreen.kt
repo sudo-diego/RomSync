@@ -1,5 +1,14 @@
 package io.github.sudodiego.romsync
 
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material.icons.rounded.Album
+import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.PlaylistAdd
+import androidx.compose.material.icons.rounded.PlaylistPlay
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
 import androidx.compose.material.icons.rounded.CheckCircle
@@ -74,7 +83,7 @@ import kotlinx.coroutines.launch
  * Devuelve null si quedó en cola o el motivo por el que no.
  */
 fun startDownload(ctx: Context, g: Game, files: List<FileEntry>): String? {
-    if (!Prefs.configured) return "Falta conectar el PC (Ajustes)"
+    if (!Prefs.configured) return "Falta conectar el servidor (Ajustes)"
     val need = files.sumOf { it.size - java.io.File(Local.romFile(it.path).path + ".part").length().coerceAtMost(it.size) }
     val free = Repo.space.free - Prefs.reserveGb * 1_000_000_000L - DownloadService.pendingBytes()
     if (need > free) return "No hay espacio: faltan ${formatSize(need - free)}"
@@ -106,9 +115,8 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
     val sys = Repo.system(g.system)
     val dl = DownloadService.items.firstOrNull { it.id == g.id && it.status != DlStatus.DONE }
     var askDelete by remember { mutableStateOf(false) }
-    var askDeletePc by remember { mutableStateOf(false) }
-    var pickArt by remember { mutableStateOf(false) }
-    var renaming by remember { mutableStateOf(false) }
+    var menu by remember { mutableStateOf(false) }
+    var editing by remember { mutableStateOf(false) }
     var noSpace by remember { mutableStateOf<String?>(null) }
     // Switch: qué partes descargar (por defecto, todas las que faltan).
     var selected by remember(g, w) {
@@ -131,12 +139,41 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
             IconButton(onClick = onBack, Modifier.padding(14.dp).size(48.dp).clip(RoundedCornerShape(99.dp)).background(Color(0x88000000))) {
                 Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Volver", tint = Color.White)
             }
+            Box(Modifier.align(Alignment.TopEnd).padding(14.dp)) {
+                IconButton(onClick = { Sound.play(Sound.Fx.MOVE); menu = true },
+                    Modifier.size(48.dp).clip(RoundedCornerShape(99.dp)).background(Color(0x88000000))) {
+                    Icon(Icons.Rounded.MoreVert, "Más", tint = Color.White)
+                }
+                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                    DropdownMenuItem(text = { Text("Editar nombre e imágenes") }, leadingIcon = { Icon(Icons.Rounded.Edit, null) },
+                        onClick = { menu = false; editing = true })
+                    if (g.kind == "discs") DropdownMenuItem(text = { Text("Crear .m3u (un solo juego)") }, leadingIcon = { Icon(Icons.Rounded.PlaylistAdd, null) },
+                        onClick = {
+                            menu = false
+                            scope.launch {
+                                val msg = runCatching { PcEdit.createM3u(g, onPc = w.presence != Presence.TABLET_ONLY && Prefs.configured) }
+                                    .fold({ "Listo: $it" }, { it.message ?: "Error" })
+                                Toast.makeText(ctx, msg, Toast.LENGTH_LONG).show()
+                                Repo.refresh()
+                            }
+                        })
+                    if (w.presence != Presence.MISSING || (w.presence != Presence.TABLET_ONLY && Prefs.configured))
+                        DropdownMenuItem(text = { Text("Borrar…", color = MaterialTheme.colorScheme.error) },
+                            leadingIcon = { Icon(Icons.Rounded.Delete, null, tint = MaterialTheme.colorScheme.error) },
+                            onClick = { menu = false; askDelete = true })
+                }
+            }
         }
         Row(Modifier.padding(horizontal = 28.dp).offset(y = (-100).dp), horizontalArrangement = Arrangement.spacedBy(28.dp)) {
-            Cover(g, Modifier.width(200.dp).graphicsLayer {
+            // Tocar la portada abre el editor (nombre, carátula, fondo y logo).
+            Box(Modifier.width(200.dp).graphicsLayer {
                 alpha = enter.value; translationY = (1f - enter.value) * 80f
                 rotationZ = (1f - enter.value) * -4f
-            }.shadow(16.dp, RoundedCornerShape(18.dp)))
+            }.shadow(16.dp, RoundedCornerShape(18.dp)).clip(RoundedCornerShape(18.dp)).pressable { Sound.play(Sound.Fx.OPEN); editing = true }) {
+                Cover(g, Modifier.fillMaxWidth())
+                Icon(Icons.Rounded.Edit, "Editar", Modifier.align(Alignment.TopEnd).padding(8.dp).size(34.dp)
+                    .clip(RoundedCornerShape(99.dp)).background(Color(0xAA000000)).padding(7.dp), tint = Color.White)
+            }
             Column(Modifier.weight(1f).padding(top = 108.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(g.title, style = MaterialTheme.typography.headlineMedium)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -179,19 +216,19 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
                         val up = PcEdit.uploading[g.id]
                         if (up != null) Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             LinearProgressIndicator(progress = { up.toFloat() / g.size.coerceAtLeast(1) }, Modifier.fillMaxWidth())
-                            Muted("Copiando al PC: ${formatSize(up)} de ${formatSize(g.size)}")
+                            Muted("Copiando al servidor: ${formatSize(up)} de ${formatSize(g.size)}")
                         } else FilledTonalButton(onClick = {
                             scope.launch {
-                                val msg = runCatching { PcEdit.uploadFromTablet(g) }.fold({ "${g.title} ya está en el PC" }, { "No se pudo copiar: ${it.message}" })
+                                val msg = runCatching { PcEdit.uploadFromTablet(g) }.fold({ "${g.title} ya está en el servidor" }, { "No se pudo copiar: ${it.message}" })
                                 Toast.makeText(ctx, msg, Toast.LENGTH_LONG).show()
                                 Repo.refresh()
                             }
-                        }) { Text("Copiar al PC · ${formatSize(g.size)}") }
+                        }) { Text("Copiar al servidor · ${formatSize(g.size)}") }
                     }
-                    if (w.presence != Presence.MISSING && dl?.status != DlStatus.RUNNING) {
+                    if ((w.presence != Presence.MISSING || Prefs.configured) && dl?.status != DlStatus.RUNNING) {
                         OutlinedButton(onClick = { askDelete = true },
                             colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)) {
-                            Icon(Icons.Rounded.Delete, null); Spacer(Modifier.width(6.dp)); Text("Borrar de la tablet")
+                            Icon(Icons.Rounded.Delete, null); Spacer(Modifier.width(6.dp)); Text("Borrar…")
                         }
                     }
                 }
@@ -202,7 +239,7 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
                         // Smash tiene ~100 DLC: marcar o desmarcar de a uno era imposible.
                         val missing = g.parts.filter { p -> !p.files.all { Repo.has(it.path) } }.map { it.titleId }.toSet()
                         if (missing.size > 1) SpacedRow {
-                            Muted("${missing.size} partes que no están en la tablet", Modifier.weight(1f))
+                            Muted("${missing.size} partes que no están en el dispositivo", Modifier.weight(1f))
                             TextButton(onClick = { selected = missing }) { Text("Marcar todo") }
                             TextButton(onClick = { selected = emptySet() }) { Text("Desmarcar todo") }
                         }
@@ -217,8 +254,27 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
                                 }
                                 Text(formatSize(p.size))
                                 Spacer(Modifier.width(12.dp))
-                                if (have) Pill("En la tablet", Palette.ok)
+                                if (have) Pill("En el dispositivo", Palette.ok)
                             }
+                        }
+                    }
+                }
+                if ((g.kind == "discs" || g.kind == "multi") && g.files.size > 1) Section("Contenido") {
+                    g.files.sortedBy { it.path }.forEach { f ->
+                        val have = Repo.has(f.path)
+                        val name = f.path.substringAfterLast('/')
+                        val label = Group.discOf(Group.stem(name))?.let { "Disco ${it.second}" } ?: when (Group.ext(name)) {
+                            ".m3u" -> "Lista de discos (.m3u)"; ".cue", ".gdi" -> "Índice del disco (${Group.ext(name)})"; else -> name
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(if (Group.ext(name) == ".m3u") Icons.Rounded.PlaylistPlay else Icons.Rounded.Album, null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Spacer(Modifier.width(12.dp))
+                            Text(label, Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
+                            Text(formatSize(f.size))
+                            Spacer(Modifier.width(12.dp))
+                            if (have) Icon(Icons.Rounded.CheckCircle, "En el dispositivo", tint = Palette.ok)
+                            else Icon(Icons.Rounded.CloudDownload, "Para descargar", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 }
@@ -228,23 +284,7 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
                 VitaInstallSection(g)
                 GameSavesSection(g)
 
-                Section("Más") {
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(onClick = { renaming = true }) { Text("Cambiar nombre") }
-                        OutlinedButton(onClick = { pickArt = true }) { Text("Cambiar carátula") }
-                        if (g.kind == "discs") OutlinedButton(onClick = {
-                            scope.launch {
-                                val msg = runCatching { PcEdit.createM3u(g, onPc = w.presence != Presence.TABLET_ONLY && Prefs.configured) }
-                                    .fold({ "Listo: $it" }, { it.message ?: "Error" })
-                                Toast.makeText(ctx, msg, Toast.LENGTH_LONG).show()
-                                Repo.refresh()
-                            }
-                        }) { Text("Crear .m3u (un solo juego para RetroArch)") }
-                        if (w.presence != Presence.TABLET_ONLY && Prefs.configured) OutlinedButton(onClick = { askDeletePc = true },
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)) { Text("Borrar del PC") }
-                    }
-                    if (g.kind == "shortcut") Muted("Es un acceso directo (no un ROM): lo crea el frontend o GameNative.")
-                }
+                if (g.kind == "shortcut") Muted("Acceso directo (lo crea el frontend o GameNative).")
 
                 var showFiles by remember(g.id) { mutableStateOf(false) }
                 Section("") {
@@ -272,94 +312,8 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
         }
     }
 
-    if (askDelete) {
-        val onPc = w.presence != Presence.TABLET_ONLY
-        AlertDialog(
-            onDismissRequest = { askDelete = false },
-            title = { Text("¿Borrar ${g.title}?") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Se liberan ${formatSize(w.localSize)} en la tablet.")
-                    Text("Tus partidas guardadas no se borran.", fontWeight = FontWeight.SemiBold)
-                    if (onPc) Muted("Lo puedes volver a descargar desde el PC cuando quieras.")
-                    else Text("Este juego no está en el PC: si lo borras, no lo vas a poder volver a descargar con RomSync.",
-                        color = MaterialTheme.colorScheme.error)
-                }
-            },
-            confirmButton = {
-                Button(onClick = {
-                    askDelete = false
-                    scope.launch {
-                        val freed = Repo.delete(g)
-                        Toast.makeText(ctx, "Borrado · ${formatSize(freed)} libres", Toast.LENGTH_SHORT).show()
-                        if (!onPc) onBack()
-                    }
-                }, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) { Text("Borrar") }
-            },
-            dismissButton = { TextButton(onClick = { askDelete = false }) { Text("Cancelar") } },
-        )
-    }
-
-    if (askDeletePc) {
-        var sure by remember { mutableStateOf(false) }
-        AlertDialog(
-            onDismissRequest = { askDeletePc = false },
-            title = { Text("¿Borrar ${g.title} del PC?") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Se borran ${g.files.size} archivo(s) (${formatSize(g.size)}) del disco del PC. No van a la papelera.")
-                    if (w.presence == Presence.INSTALLED || w.presence == Presence.PARTIAL) Muted("La copia de la tablet se queda.")
-                    else Text("No está en la tablet: después no lo vas a tener en ningún lado.", color = MaterialTheme.colorScheme.error)
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(checked = sure, onCheckedChange = { sure = it })
-                        Text("Sí, borrarlo del PC")
-                    }
-                }
-            },
-            confirmButton = {
-                Button(enabled = sure, onClick = {
-                    askDeletePc = false
-                    scope.launch {
-                        val msg = runCatching { Repo.deleteFromPc(g) }.fold({ "Borrado del PC · ${formatSize(it)}" }, { it.message ?: "Error" })
-                        Toast.makeText(ctx, msg, Toast.LENGTH_LONG).show()
-                        if (w.presence == Presence.MISSING) onBack()
-                    }
-                }, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) { Text("Borrar del PC") }
-            },
-            dismissButton = { TextButton(onClick = { askDeletePc = false }) { Text("Cancelar") } },
-        )
-    }
-
-    if (pickArt) ArtPicker(g) { pickArt = false }
-
-    if (renaming) {
-        var name by remember { mutableStateOf(Names.get(g.id) ?: g.title) }
-        AlertDialog(
-            onDismissRequest = { renaming = false },
-            title = { Text("Nombre del juego") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    androidx.compose.material3.OutlinedTextField(value = name, onValueChange = { name = it }, singleLine = true,
-                        modifier = Modifier.fillMaxWidth())
-                    Muted("Solo cambia cómo se ve en RomSync (y con qué nombre se busca la carátula). El archivo sigue igual: ${g.name}")
-                }
-            },
-            confirmButton = {
-                Button(onClick = {
-                    Repo.rename(g, name)
-                    renaming = false
-                    Nav.game = Repo.game(g.id) ?: g
-                }) { Text("Guardar") }
-            },
-            dismissButton = {
-                TextButton(onClick = {
-                    Repo.rename(g, "")
-                    renaming = false
-                    Nav.game = Repo.game(g.id) ?: g
-                }) { Text("Usar el del archivo") }
-            },
-        )
-    }
+    if (askDelete) DeleteDialog(g, w, onClose = { askDelete = false }, onGone = onBack)
+    if (editing) GameEditor(g) { editing = false }
 
     noSpace?.let { msg ->
         val biggest = remember(Repo.localFiles) {
@@ -373,7 +327,7 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(msg)
                     if (msg.startsWith("No hay espacio") && biggest.isNotEmpty()) {
-                        Muted("Los que más ocupan en la tablet:")
+                        Muted("Los que más ocupan en el dispositivo:")
                         biggest.forEach { b ->
                             TextButton(onClick = { noSpace = null; Nav.game = b }) {
                                 Text("${b.title} · ${formatSize(Repo.where(b).localSize)}", Modifier.weight(1f))
@@ -390,10 +344,10 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
 @Composable
 private fun StateCard(g: Game, w: Repo.Where, downloadSize: Long) {
     val (text, color) = when (w.presence) {
-        Presence.INSTALLED -> (if (w.differs) "En la tablet (distinto al del PC)" else "En la tablet") to Palette.ok
-        Presence.PARTIAL -> "A medias en la tablet" to Palette.warn
-        Presence.MISSING -> "No está en la tablet" to MaterialTheme.colorScheme.onSurfaceVariant
-        Presence.TABLET_ONLY -> "Solo en la tablet" to Color(0xFF94A3B8)
+        Presence.INSTALLED -> (if (w.differs) "En el dispositivo (distinto al del servidor)" else "En el dispositivo") to Palette.ok
+        Presence.PARTIAL -> "A medias en el dispositivo" to Palette.warn
+        Presence.MISSING -> "No está en el dispositivo" to MaterialTheme.colorScheme.onSurfaceVariant
+        Presence.TABLET_ONLY -> "Solo en el dispositivo" to Color(0xFF94A3B8)
     }
     Section("") {
         SpacedRow {
@@ -450,7 +404,7 @@ private fun GameSavesSection(g: Game) {
                 Text(l.emu.name, fontWeight = FontWeight.SemiBold)
                 Muted(when {
                     busy != null -> busy
-                    u == null -> "Sin partidas en la tablet"
+                    u == null -> "Sin partidas en el dispositivo"
                     else -> "${u.files} archivo(s) · ${formatSize(u.bytes)} · " +
                         java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.SHORT, java.text.DateFormat.SHORT).format(java.util.Date(u.newest))
                 })
@@ -458,14 +412,14 @@ private fun GameSavesSection(g: Game) {
                     Button(enabled = u != null && busy == null && Prefs.configured, onClick = {
                         appScope.launch {
                             val msg = when (val r = Saves.backup(ctx, l.emu, auto = false, force = true, only = setOf(l.key))) {
-                                is Saves.Result.Done -> "Partidas de ${g.title} respaldadas en el PC"
+                                is Saves.Result.Done -> "Partidas de ${g.title} respaldadas en el servidor"
                                 Saves.Result.Unchanged, Saves.Result.Empty -> "No había nada que respaldar"
                                 is Saves.Result.Failed -> r.message
                             }
                             Toast.makeText(ctx, msg, Toast.LENGTH_LONG).show()
                             reload++
                         }
-                    }) { Text("Respaldar en el PC") }
+                    }) { Text("Respaldar en el servidor") }
                     OutlinedButton(enabled = busy == null && Prefs.configured, onClick = { restoreFor = l }) { Text("Restaurar…") }
                 }
             }
@@ -558,10 +512,10 @@ private fun VersionPicker(g: Game, versions: List<Game>) {
                         Column {
                             Text(versionLabel(v), fontWeight = if (v.id == g.id) FontWeight.Bold else FontWeight.Normal)
                             Muted(listOfNotNull(when (p) {
-                                Presence.INSTALLED -> "En la tablet"
-                                Presence.PARTIAL -> "A medias en la tablet"
-                                Presence.TABLET_ONLY -> "Solo en la tablet"
-                                Presence.MISSING -> "Solo en el PC"
+                                Presence.INSTALLED -> "En el dispositivo"
+                                Presence.PARTIAL -> "A medias en el dispositivo"
+                                Presence.TABLET_ONLY -> "Solo en el dispositivo"
+                                Presence.MISSING -> "Solo en el servidor"
                             }, if (v.id == best?.id) "recomendada" else null, if (v.id == g.id) "la que estás viendo" else null).joinToString(" · "))
                         }
                     },
@@ -612,7 +566,7 @@ private fun TabletExtras(g: Game) {
     val files = extras.flatMap { it.files }
     val key = "extras:${g.id}"
     val up = PcEdit.uploading[key]
-    Section("Solo en la tablet") {
+    Section("Solo en el dispositivo") {
         extras.forEach { p ->
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
@@ -621,18 +575,123 @@ private fun TabletExtras(g: Game) {
                 }
                 Text(formatSize(p.size))
                 Spacer(Modifier.width(12.dp))
-                Pill("Solo en la tablet", Palette.warn)
+                Pill("Solo en el dispositivo", Palette.warn)
             }
         }
         if (up != null) {
             LinearProgressIndicator(progress = { up.toFloat() / files.sumOf { it.size }.coerceAtLeast(1) }, Modifier.fillMaxWidth())
-            Muted("Copiando al PC: ${formatSize(up)} de ${formatSize(files.sumOf { it.size })}")
+            Muted("Copiando al servidor: ${formatSize(up)} de ${formatSize(files.sumOf { it.size })}")
         } else if (Prefs.configured) Button(onClick = {
             appScope.launch {
-                val msg = runCatching { PcEdit.uploadFiles(key, files) }.fold({ "Copiado al PC" }, { "No se pudo copiar: ${it.message}" })
+                val msg = runCatching { PcEdit.uploadFiles(key, files) }.fold({ "Copiado al servidor" }, { "No se pudo copiar: ${it.message}" })
                 Toast.makeText(ctx, msg, Toast.LENGTH_LONG).show()
                 Repo.refresh()
             }
-        }) { Text("Copiar al PC · ${formatSize(files.sumOf { it.size })}") }
+        }) { Text("Copiar al servidor · ${formatSize(files.sumOf { it.size })}") }
     }
+}
+
+/**
+ * Borrar, todo en uno: del dispositivo, del servidor y (si se quiere) sus partidas del dispositivo. Las partidas se
+ * respaldan en el servidor antes de borrarlas. Avisa si después no queda ninguna copia del juego.
+ */
+@Composable
+private fun DeleteDialog(g: Game, w: Repo.Where, onClose: () -> Unit, onGone: () -> Unit) {
+    val ctx = LocalContext.current
+    val onDevice = w.presence != Presence.MISSING
+    val onServer = w.presence != Presence.TABLET_ONLY && Prefs.configured
+    var dev by remember { mutableStateOf(onDevice) }
+    var srv by remember { mutableStateOf(false) }
+    var saves by remember { mutableStateOf(false) }
+    var withSaves by remember { mutableStateOf<List<Pair<GameSaves.Link, Saves.Unit>>>(emptyList()) }
+    LaunchedEffect(g.id) {
+        withSaves = runCatching {
+            GameSaves.links(ctx, g).mapNotNull { l -> Saves.currentUnits(ctx, l.emu).firstOrNull { it.key == l.key }?.let { l to it } }
+        }.getOrDefault(emptyList())
+    }
+    val lost = (dev || !onDevice) && (srv || !onServer)
+    AlertDialog(
+        onDismissRequest = onClose,
+        title = { Text("Borrar ${g.title}") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                @Composable
+                fun Opt(checked: Boolean, enabled: Boolean, label: String, detail: String, set: (Boolean) -> Unit) {
+                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable(enabled = enabled) { set(!checked) }.padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked, set, enabled = enabled)
+                        Column {
+                            Text(label, fontWeight = FontWeight.SemiBold,
+                                color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
+                            Muted(detail)
+                        }
+                    }
+                }
+                Opt(dev, onDevice, "Del dispositivo", if (onDevice) formatSize(w.localSize) else "No está") { dev = it }
+                Opt(srv, onServer, "Del servidor", if (onServer) formatSize(g.size) else "No está") { srv = it }
+                if (withSaves.isNotEmpty()) Opt(saves, true, "Sus partidas en el dispositivo",
+                    withSaves.joinToString(" · ") { (l, u) -> "${l.emu.name}: ${formatSize(u.bytes)}" } + " (se respaldan antes)") { saves = it }
+                if (lost && (dev || srv)) Text("No va a quedar ninguna copia del juego.", color = MaterialTheme.colorScheme.error,
+                    fontWeight = FontWeight.SemiBold)
+            }
+        },
+        confirmButton = {
+            Button(enabled = dev || srv || saves, onClick = {
+                onClose()
+                appScope.launch {
+                    val msgs = ArrayList<String>()
+                    if (saves) withSaves.forEach { (l, _) -> Saves.deleteUnit(ctx, l.emu, l.key)?.let { msgs += it } }
+                    if (dev && onDevice) msgs += "Dispositivo: ${formatSize(Repo.delete(g))} libres"
+                    if (srv && onServer) msgs += runCatching { "Servidor: ${formatSize(Repo.deleteFromPc(g))}" }.getOrElse { "Servidor: ${it.message}" }
+                    Sound.play(Sound.Fx.DONE)
+                    Toast.makeText(ctx, msgs.joinToString(" · ").ifEmpty { "Listo" }, Toast.LENGTH_LONG).show()
+                    if (lost && (dev || srv)) onGone()
+                }
+            }, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) { Text("Borrar") }
+        },
+        dismissButton = { TextButton(onClick = onClose) { Text("Cancelar") } },
+    )
+}
+
+/** Editar el juego: nombre y las tres imágenes (carátula, fondo, logo), cada una con su vista previa. */
+@Composable
+private fun GameEditor(g: Game, onClose: () -> Unit) {
+    var name by remember { mutableStateOf(Names.get(g.id) ?: g.title) }
+    var pick by remember { mutableStateOf<String?>(null) }
+    pick?.let { k -> ArtPicker(g, k) { pick = null }; return }
+    AlertDialog(
+        onDismissRequest = onClose,
+        title = { Text("Editar") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                androidx.compose.material3.OutlinedTextField(value = name, onValueChange = { name = it }, singleLine = true,
+                    label = { Text("Nombre") }, modifier = Modifier.fillMaxWidth(),
+                    supportingText = { Text("Archivo: ${g.name}") })
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    listOf(Triple("grid", "Carátula", 2f / 3f), Triple("hero", "Fondo", 1.6f), Triple("logo", "Logo", 1.6f)).forEach { (k, label, ratio) ->
+                        Column(Modifier.weight(if (k == "grid") 0.7f else 1f), horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Box(Modifier.fillMaxWidth().aspectRatio(ratio).clip(RoundedCornerShape(14.dp))
+                                .background(MaterialTheme.colorScheme.surfaceVariant).pressable { pick = k }, contentAlignment = Alignment.Center) {
+                                ArtImage(g, k, Modifier.fillMaxSize(), if (k == "logo") ContentScale.Fit else ContentScale.Crop)
+                                Icon(Icons.Rounded.Edit, null, Modifier.align(Alignment.BottomEnd).padding(6.dp).size(28.dp)
+                                    .clip(RoundedCornerShape(99.dp)).background(Color(0xAA000000)).padding(6.dp), tint = Color.White)
+                            }
+                            Text(label, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = {
+                if (name.trim() != (Names.get(g.id) ?: g.title)) Repo.rename(g, if (name.isBlank()) "" else name)
+                onClose()
+                Nav.game = Repo.game(g.id) ?: g
+            }) { Text("Listo") }
+        },
+        dismissButton = {
+            TextButton(onClick = { Repo.rename(g, ""); onClose(); Nav.game = Repo.game(g.id) ?: g }) { Text("Nombre original") }
+        },
+    )
 }

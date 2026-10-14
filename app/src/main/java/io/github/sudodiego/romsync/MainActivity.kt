@@ -22,9 +22,9 @@ import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkHorizontally
-import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -130,11 +130,13 @@ class MainActivity : ComponentActivity() {
         }
 
         UiState.theme = Prefs.theme
+        UiState.accent = Prefs.accent
+        UiState.background = Prefs.background
         UiState.sidebarOpen = Prefs.sidebarOpen
         setContent {
             val view = androidx.compose.ui.platform.LocalView.current
             // Se lee aquí (no dentro del efecto) para que al cambiar de tema se vuelva a aplicar.
-            val darkTheme = UiState.dark
+            val darkTheme = isDark()
             androidx.compose.runtime.LaunchedEffect(darkTheme) {
                 androidx.core.view.WindowCompat.getInsetsController(window, view).apply {
                     isAppearanceLightStatusBars = !darkTheme
@@ -190,7 +192,7 @@ fun AppShell() {
     }
 
     Box(Modifier.fillMaxSize()) {
-        BubblesBackground()
+        AppBackground()
         Box(Modifier.fillMaxSize().safeDrawingPadding()) {
             if (wide) {
                 Row(Modifier.fillMaxSize()) {
@@ -279,8 +281,8 @@ private fun TabContent() {
         transitionSpec = {
             val isTab = { k: String -> Tab.entries.any { it.name == k } }
             when {
-                !isTab(targetState) -> (slideInHorizontally(tween(320)) { it / 3 } + fadeIn(tween(250))) togetherWith fadeOut(tween(150))
-                !isTab(initialState) -> fadeIn(tween(250)) togetherWith (slideOutHorizontally(tween(280)) { it / 3 } + fadeOut(tween(220)))
+                !isTab(targetState) -> (fadeIn(tween(260)) + scaleIn(tween(300), initialScale = 0.97f)) togetherWith fadeOut(tween(120))
+                !isTab(initialState) -> fadeIn(tween(260)) togetherWith (fadeOut(tween(160)) + scaleOut(tween(200), targetScale = 0.98f))
                 else -> (fadeIn(tween(260)) + slideInVertically(tween(300)) { it / 20 }) togetherWith fadeOut(tween(120))
             }
         },

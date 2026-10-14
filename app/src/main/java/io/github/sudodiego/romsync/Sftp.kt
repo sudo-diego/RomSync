@@ -27,7 +27,7 @@ data class SftpConfig(
 )
 
 class HostKeyChanged(val fingerprint: String) :
-    IOException("La identidad del PC cambió. Si reinstalaste Windows u OpenSSH, acéptala de nuevo en Ajustes.")
+    IOException("La identidad del servidor cambió. Si reinstalaste Windows u OpenSSH, acéptala de nuevo en Ajustes.")
 
 class SftpConn private constructor(private val session: Session, val ch: ChannelSftp, val fingerprint: String) : Closeable {
     data class Entry(val name: String, val isDir: Boolean, val size: Long, val mtime: Long)
@@ -57,7 +57,7 @@ class SftpConn private constructor(private val session: Session, val ch: Channel
                 ch.connect(timeoutMs)
             } catch (e: JSchException) {
                 s.disconnect()
-                throw IOException("El PC no ofrece SFTP: ${e.message}", e)
+                throw IOException("El servidor no ofrece SFTP: ${e.message}", e)
             }
             return SftpConn(s, ch, fp)
         }
@@ -66,9 +66,9 @@ class SftpConn private constructor(private val session: Session, val ch: Channel
             val m = e.message.orEmpty()
             return when {
                 m.contains("Auth fail", true) || m.contains("Auth cancel", true) -> "Usuario o contraseña incorrectos"
-                m.contains("timeout", true) || m.contains("timed out", true) -> "El PC no responde (¿encendido y en la misma red?)"
-                m.contains("refused", true) -> "El PC rechazó la conexión (¿está activo el servidor OpenSSH?)"
-                m.contains("UnknownHost", true) -> "No se encuentra el PC en la red"
+                m.contains("timeout", true) || m.contains("timed out", true) -> "El servidor no responde (¿encendido y en la misma red?)"
+                m.contains("refused", true) -> "El servidor rechazó la conexión (¿está activo el servidor OpenSSH?)"
+                m.contains("UnknownHost", true) -> "No se encuentra el servidor en la red"
                 else -> "No se pudo conectar: $m"
             }
         }
@@ -178,7 +178,7 @@ class SftpConn private constructor(private val session: Session, val ch: Channel
     fun open(path: String, offset: Long = 0): InputStream = try {
         ch.get(path, null, offset)
     } catch (e: SftpException) {
-        throw IOException(if (e.id == ChannelSftp.SSH_FX_NO_SUCH_FILE) "El archivo ya no está en el PC" else "No se pudo leer: ${e.message}", e)
+        throw IOException(if (e.id == ChannelSftp.SSH_FX_NO_SUCH_FILE) "El archivo ya no está en el servidor" else "No se pudo leer: ${e.message}", e)
     }
 
     fun mkdirs(path: String) {
@@ -205,7 +205,7 @@ class SftpConn private constructor(private val session: Session, val ch: Channel
             ch.rename(tmp, path)
         } catch (e: SftpException) {
             runCatching { ch.rm(tmp) }
-            throw IOException("No se pudo guardar en el PC: ${e.message}", e)
+            throw IOException("No se pudo guardar en el servidor: ${e.message}", e)
         }
     }
 

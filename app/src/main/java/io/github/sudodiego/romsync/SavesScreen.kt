@@ -54,7 +54,7 @@ fun SavesScreen() {
             SpacedRow(Modifier.fillMaxWidth()) {
                 Column(Modifier.weight(1f)) {
                     Text("Partidas", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-                    Muted("En el PC: ${Prefs.remoteBackups.removePrefix("/").ifBlank { "sin configurar" }}")
+                    Muted("En el servidor: ${Prefs.remoteBackups.removePrefix("/").ifBlank { "sin configurar" }}")
                 }
                 if (allBusy) CircularProgressIndicator(Modifier.size(28.dp))
                 else Button(enabled = Prefs.configured, onClick = {
@@ -72,7 +72,7 @@ fun SavesScreen() {
                 SpacedRow {
                     Column(Modifier.weight(1f)) {
                         Text("Respaldo automático", fontWeight = FontWeight.Bold)
-                        Muted("Cada ${Prefs.autoBackupHours} h, con la app cerrada. Si el PC está apagado, reintenta cada hora.")
+                        Muted("Cada ${Prefs.autoBackupHours} h, con la app cerrada. Si el servidor está apagado, reintenta cada hora.")
                         val last = Prefs.lastAutoBackupOk
                         if (last > 0 || Prefs.lastAutoBackupNote.isNotEmpty()) Muted(
                             (if (last > 0) "Último que salió bien: ${formatAgo(last)}" else "Todavía no salió ninguno") +
@@ -167,7 +167,6 @@ private fun EmulatorCard(emu: Emulator, onRestore: () -> Unit) {
                     }
                 }) { Text("Respaldar") }
                 FilledTonalButton(enabled = busy == null && Prefs.configured, onClick = onRestore) { Text("Restaurar…") }
-                TextButton(enabled = busy == null && Prefs.configured && st.error == null, onClick = { pickOne = true }) { Text("Respaldar un juego…") }
                 TextButton(onClick = { editPath = !editPath }) { Text("Carpeta") }
             }
             if (editPath) {
@@ -190,8 +189,8 @@ private fun EmulatorCard(emu: Emulator, onRestore: () -> Unit) {
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Se copian tus tarjetas de memoria (Mcd001.ps2…) de NetherSX2 a ARMSX2. Son el mismo formato.")
-                Text("Antes se guarda una copia de las tarjetas de los dos emuladores en la tablet (RomSync/antes-del-traspaso)" +
-                    if (Prefs.configured) " y un respaldo en el PC." else ".", fontWeight = FontWeight.SemiBold)
+                Text("Antes se guarda una copia de las tarjetas de los dos emuladores en el dispositivo (RomSync/antes-del-traspaso)" +
+                    if (Prefs.configured) " y un respaldo en el servidor." else ".", fontWeight = FontWeight.SemiBold)
                 Text("Los estados guardados (save states) no sirven entre emuladores: si estabas usando uno, guarda dentro del juego en NetherSX2 antes.")
                 Muted("NetherSX2 no se toca. Cierra los dos emuladores antes de seguir.")
             }
@@ -286,7 +285,7 @@ fun RestoreDialog(emu: Emulator, onlyKey: String? = null, onClose: () -> Unit) {
                 when {
                     error != null -> item { Text(error!!, color = MaterialTheme.colorScheme.error) }
                     b == null && list == null -> item { CircularProgressIndicator() }
-                    b == null && list!!.isEmpty() -> item { Muted("No hay respaldos en el PC.") }
+                    b == null && list!!.isEmpty() -> item { Muted("No hay respaldos en el servidor.") }
                     b == null -> {
                         // Desde la ficha de un juego: solo los respaldos que tienen ese juego (los viejos no lo dicen: se muestran).
                         val shown = list!!.filter { onlyKey == null || it.keys.isEmpty() || onlyKey in it.keys }.take(30)
@@ -422,7 +421,7 @@ private fun BackupRow(b: SaveBackupInfo, onClick: () -> Unit) {
                 Muted(listOfNotNull(friendlyDate(b.at),
                     if (b.games.isNotEmpty()) "${b.games.size} juego(s)" else "${b.files} archivo(s)",
                     formatSize(b.size), if (b.keep) "conservar" else null).joinToString(" · "))
-                if (b.kind == "todo" || b.kind == "auto") b.games.map(Saves::prettyUnitName).sorted().take(4).joinToString(", ").takeIf { it.isNotEmpty() }?.let {
+                if (b.kind == "todo" || b.kind == "auto") b.games.map(Saves::prettyUnitName).distinct().sorted().take(4).joinToString(", ").takeIf { it.isNotEmpty() }?.let {
                     Muted(it + if (b.games.size > 4) " y ${b.games.size - 4} más" else "")
                 }
             }

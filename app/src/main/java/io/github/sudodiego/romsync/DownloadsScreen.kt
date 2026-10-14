@@ -33,7 +33,7 @@ fun DownloadsScreen() {
         }
         if (Repo.biosMissing.isNotEmpty() && items.none { it.bios && it.status != DlStatus.DONE }) item {
             Section("BIOS") {
-                Muted("Faltan en la tablet (${formatSize(Repo.biosMissing.sumOf { it.size })}):")
+                Muted("Faltan en el dispositivo (${formatSize(Repo.biosMissing.sumOf { it.size })}):")
                 // Que diga cuáles: con solo el número no se sabía qué faltaba.
                 Repo.biosMissing.take(12).forEach { f ->
                     Text("• bios/${f.path} · ${formatSize(f.size)}", style = MaterialTheme.typography.bodySmall)

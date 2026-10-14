@@ -39,7 +39,7 @@ fun KitchenScreen() {
         item {
             Column {
                 Text("RomSync Web", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-                Muted("Maneja la tablet desde el navegador del PC o del teléfono.")
+                Muted("Maneja el dispositivo desde el navegador del servidor o del teléfono.")
             }
         }
         item {
@@ -67,7 +67,7 @@ fun KitchenScreen() {
         }
         item {
             Section("Qué se puede hacer") {
-                Muted("Juegos (subir arrastrando, borrar, carátulas) · BIOS · Partidas en zip · Archivos de la tablet · Instalar APK")
+                Muted("Juegos (subir arrastrando, borrar, carátulas) · BIOS · Partidas en zip · Archivos del dispositivo · Instalar APK")
             }
         }
     }

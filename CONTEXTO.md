@@ -124,7 +124,25 @@ nada se borró de verdad. Las partidas de DS reemplazadas también quedaron en `
   de un juego se agrupan por clave (la tarjeta .gci y los estados .s00 de Dolphin juntos). Los códigos de disco del PC
   se leen al escanear (para nombrar partidas aunque el juego no esté en la tablet; 3 letras = juego, la 4.ª región).
 
+## Más cambios (14-10-2026)
+
+- Respaldos en el PC, por emulador: últimos `Prefs.keepBackups` completos/automáticos (10, elegible 5/10/20 en
+  Partidas), 5 de cada juego y 5 de seguridad; "conservar" nunca se borra (`Backups.toPrune`).
+- Tienda: selección múltiple (mantener presionada una tarjeta) para borrar de la tablet o del PC de una vez.
+- Ficha: "Versión: Europe · RVZ · 830 MB ▾" abre la lista de versiones con dónde está cada una y la recomendada.
+- Ordenar → repetidos: "Me quedo con todas" (`Prefs.keepAllVersions`): al usuario le gusta coleccionar versiones.
+- Steam: los accesos del PC (`D:/ROMs/steam`) se movieron a la papelera (pedido del usuario: no sirven en el PC).
+- Gravity Rush: `D:/ROMs/psvita/Gravity Rush (USA) [PCSA00011].vpk` armado desde `/sdcard/Vita/ux0/app/PCSA00011` + la
+  licencia (`ux0/license/PCSA00011/*.rif`) como `sce_sys/package/work.bin`. No se probó reinstalarlo.
+- Switch: el PC solo tiene juegos base (v0). Las actualizaciones y DLC están INSTALADAS en la NAND de Eden (6,3 GB, no
+  son archivos de ROMs): Smash (actualización 3,7 GB + ~85 DLC), Breath of the Wild (actualización 950 MB + 2 DLC
+  1,3 GB) y Celeste (actualización 444 MB). Se identificó descifrando la cabecera de cada NCA con `header_key` de
+  `bios/prod.keys` (AES-XTS, número de sector big-endian; TitleID en 0x210, tipo en 0x205).
+- Wind Waker GameCube "USA" (278 MB) tiene nombre propio "The Legend of Zelda: The Wind Waker Mod": es la versión con
+  mods, no un repetido.
+
 ## Pendiente
 
-- Wind Waker GameCube tiene Europa (en la tablet, con la partida GZLP) y USA (solo PC): elegir en Ordenar.
+- Switch: mostrar en la ficha lo instalado en Eden y, con titledb (blawar/titledb: versions.json, cnmts.json), la
+  última versión y los DLC que existen. Propuesto al usuario.
 - Vaciar las papeleras cuando el usuario confirme que todo anda bien.

@@ -73,9 +73,25 @@ object Backups {
         return b
     }
 
+    /**
+     * Qué respaldos se borran (los más viejos de cada tipo). Antes eran los últimos 30 juntos: uno de un solo juego (6 KB)
+     * gastaba el mismo cupo que uno completo (134 MB) y Dolphin podía llegar a 4 GB.
+     * - completos y automáticos: los últimos [Prefs.keepBackups] (10);
+     * - de un juego: los últimos 5 de CADA juego;
+     * - copias de seguridad (antes de restaurar, traspaso): las últimas 5;
+     * - los marcados "conservar" nunca.
+     */
+    fun toPrune(all: List<SaveBackupInfo>): List<SaveBackupInfo> {
+        val free = all.filter { !it.keep }.sortedByDescending { it.id }
+        val full = free.filter { it.kind == "todo" || it.kind == "auto" || it.kind.isEmpty() }.drop(Prefs.keepBackups)
+        val safety = free.filter { it.kind == "antes" || it.kind == "traspaso" }.drop(5)
+        val perGame = free.filter { it.kind == "juego" }.groupBy { it.keys.sorted().joinToString("|") }.values.flatMap { it.drop(5) }
+        return full + safety + perGame
+    }
+
     private fun prune(c: SftpConn, emu: String) {
         val d = dir(c, emu)
-        list(c, emu).filter { !it.keep }.drop(Prefs.keepBackups).forEach {
+        toPrune(list(c, emu)).forEach {
             c.delete("$d/${it.id}.zip")
             c.delete("$d/${it.id}.json")
         }

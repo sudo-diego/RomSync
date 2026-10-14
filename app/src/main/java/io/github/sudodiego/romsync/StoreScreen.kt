@@ -1,7 +1,9 @@
 package io.github.sudodiego.romsync
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -23,6 +26,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Sort
+import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.RadioButtonUnchecked
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.Button
@@ -64,6 +69,8 @@ object StoreState {
     var query by mutableStateOf("")
     var bySize by mutableStateOf(false)
     var coversHidden by mutableStateOf(false)
+    /** Selección múltiple (mantener presionada una tarjeta): ids de juegos. */
+    var selection by mutableStateOf(setOf<String>())
 }
 
 @Composable
@@ -100,6 +107,7 @@ fun StoreScreen() {
     val systems = remember(all) { all.map { it.system }.distinct().map { Repo.system(it) }.sortedBy { it.name.lowercase() } }
     val wide = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp >= 840
 
+    Box(Modifier.fillMaxSize()) {
     Row(Modifier.fillMaxSize()) {
         // En la tablet, las plataformas en una columna a la izquierda (como en la web) en vez de una fila que se desliza.
         if (wide) SystemList(all, Modifier.width(230.dp).fillMaxHeight())
@@ -122,7 +130,11 @@ fun StoreScreen() {
             item(span = { GridItemSpan(maxLineSpan) }) { EmptyState() }
         }
         items(games, key = { it.id }) { g -> GameCard(g, if (g.kind == "shortcut") 1 else versionCount[Repo.versionKey(g)] ?: 1) }
+        // Espacio para que la barra de selección no tape las últimas tarjetas.
+        if (StoreState.selection.isNotEmpty()) item(span = { GridItemSpan(maxLineSpan) }) { Spacer(Modifier.height(90.dp)) }
     }
+    }
+    if (StoreState.selection.isNotEmpty()) SelectionBar(all.filter { it.id in StoreState.selection })
     }
     if (Art.bulkRunning && !Art.bulkQuiet && !StoreState.coversHidden) CoversDialog()
 }
@@ -291,12 +303,21 @@ private fun EmptyState() {
 }
 
 @Composable
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 private fun GameCard(g: Game, versions: Int = 1) {
     val w = Repo.where(g)
     val dl = DownloadService.items.firstOrNull { it.id == g.id && it.status != DlStatus.DONE }
-    Column(Modifier.clip(RoundedCornerShape(14.dp)).clickable { Nav.game = g }) {
+    val selecting = StoreState.selection.isNotEmpty()
+    val selected = g.id in StoreState.selection
+    fun toggle() { StoreState.selection = if (selected) StoreState.selection - g.id else StoreState.selection + g.id }
+    Column(Modifier.clip(RoundedCornerShape(14.dp))
+        .then(if (selected) Modifier.border(3.dp, Palette.sky, RoundedCornerShape(14.dp)) else Modifier)
+        .combinedClickable(onClick = { if (selecting) toggle() else Nav.game = g }, onLongClick = { toggle() })) {
         Cover(g, Modifier.fillMaxWidth()) {
             Box(Modifier.fillMaxSize().padding(8.dp)) {
+                if (selecting) Icon(if (selected) Icons.Rounded.CheckCircle else Icons.Rounded.RadioButtonUnchecked, null,
+                    Modifier.align(Alignment.BottomEnd).size(30.dp).clip(RoundedCornerShape(99.dp)).background(Color(0xCC0D1220)),
+                    tint = if (selected) Palette.skyLight else Color.White)
                 when {
                     dl != null && dl.status != DlStatus.FAILED -> Pill(
                         if (dl.status == DlStatus.PAUSED) "En pausa" else "${(dl.done * 100 / dl.total.coerceAtLeast(1))} %",
@@ -321,4 +342,60 @@ private fun GameCard(g: Game, versions: Int = 1) {
             if (versions > 1) append(" · $versions versiones")
         }, Modifier.padding(horizontal = 2.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
+}
+
+/** Barra de la selección múltiple: borrar muchos juegos de una vez (de la tablet, del PC o de los dos). */
+@Composable
+private fun SelectionBar(sel: List<Game>) {
+    val ctx = LocalContext.current
+    var ask by remember { mutableStateOf<String?>(null) } // "tablet" o "pc"
+    val onTablet = sel.filter { Repo.where(it).presence != Presence.MISSING }
+    val onPc = sel.filter { Repo.where(it).presence != Presence.TABLET_ONLY }
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
+        androidx.compose.material3.Surface(Modifier.padding(16.dp), shape = RoundedCornerShape(18.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant, shadowElevation = 8.dp) {
+            Row(Modifier.padding(horizontal = 18.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("${sel.size} seleccionado(s)", fontWeight = FontWeight.Bold)
+                androidx.compose.material3.OutlinedButton(enabled = onTablet.isNotEmpty(), onClick = { ask = "tablet" }) {
+                    Text("Borrar de la tablet (${onTablet.size})")
+                }
+                if (Prefs.configured) androidx.compose.material3.OutlinedButton(enabled = onPc.isNotEmpty(), onClick = { ask = "pc" },
+                    colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)) {
+                    Text("Borrar del PC (${onPc.size})")
+                }
+                TextButton(onClick = { StoreState.selection = emptySet() }) { Text("Cancelar") }
+            }
+        }
+    }
+    val where = ask ?: return
+    val list = if (where == "tablet") onTablet else onPc
+    val noCopy = if (where == "tablet") list.filter { Repo.where(it).presence == Presence.TABLET_ONLY } else
+        list.filter { Repo.where(it).presence == Presence.MISSING && it.kind != "shortcut" }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = { ask = null },
+        title = { Text(if (where == "tablet") "¿Borrar ${list.size} de la tablet?" else "¿Borrar ${list.size} del PC?") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                list.take(8).forEach { Text("• ${it.title}") }
+                if (list.size > 8) Muted("y ${list.size - 8} más")
+                Text("Las partidas no se borran.", fontWeight = FontWeight.SemiBold)
+                if (noCopy.isNotEmpty()) Text("${noCopy.size} no tienen otra copia: se pierden del todo (${noCopy.take(3).joinToString { it.title }}).",
+                    color = MaterialTheme.colorScheme.error)
+            }
+        },
+        confirmButton = {
+            androidx.compose.material3.Button(onClick = {
+                ask = null
+                StoreState.selection = emptySet()
+                appScope.launch {
+                    var fails = 0
+                    for (g in list) runCatching { if (where == "tablet") Repo.delete(g) else Repo.deleteFromPc(g) }.onFailure { fails++ }
+                    android.widget.Toast.makeText(ctx, if (fails == 0) "Listo: ${list.size} borrado(s)" else "$fails no se pudieron borrar",
+                        android.widget.Toast.LENGTH_LONG).show()
+                }
+            }, colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) { Text("Borrar") }
+        },
+        dismissButton = { TextButton(onClick = { ask = null }) { Text("Cancelar") } },
+    )
 }

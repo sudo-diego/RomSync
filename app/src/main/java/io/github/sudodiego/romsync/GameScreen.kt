@@ -23,6 +23,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.ArrowDropDown
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Pause
@@ -110,17 +112,7 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
                 Text(g.title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
                 Muted(listOfNotNull(sys.name, Group.ext(g.primary).removePrefix(".").uppercase().ifEmpty { null }, formatSize(g.size), "${g.files.size} archivo(s)", g.serial.ifBlank { null }).joinToString(" · "))
                 val versionList = remember(g, Repo.library, Repo.tabletOnly) { listOf(g) + Repo.versions(g) }
-                if (versionList.size > 1) {
-                    Muted("Versiones de este juego:")
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        versionList.sortedBy { it.name }.forEach { v ->
-                            androidx.compose.material3.FilterChip(selected = v.id == g.id, onClick = { Nav.game = v }, label = {
-                                Text(listOfNotNull(Group.ext(v.primary).removePrefix(".").uppercase().ifEmpty { "Carpeta" },
-                                    v.tags.firstOrNull(), Names.get(v.id)).joinToString(" · "))
-                            })
-                        }
-                    }
-                }
+                if (versionList.size > 1) VersionPicker(g, versionList)
                 if (g.tags.isNotEmpty()) FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     g.tags.forEach { Pill(it, Color(0xFF475569)) }
                 }
@@ -501,4 +493,52 @@ private fun VitaInstallSection(g: Game) {
         },
         dismissButton = { TextButton(onClick = { ask = false }) { Text("Cancelar") } },
     )
+}
+
+/** Cómo se llama una versión para elegirla: región o nombre propio, formato y tamaño ("USA · RVZ · 278 MB"). */
+private fun versionLabel(v: Game): String = listOfNotNull(
+    Names.get(v.id) ?: v.tags.firstOrNull { t -> t.any { it.isLetter() } && t.length <= 24 },
+    Group.ext(v.primary).removePrefix(".").uppercase().ifEmpty { "Carpeta" },
+    formatSize(v.size),
+).joinToString(" · ")
+
+/**
+ * Elegir versión: un botón que dice cuál estás viendo y abre la lista (antes eran chips "RVZ · Europe" y no se
+ * entendía que eran versiones ni cuál estaba en la tablet).
+ */
+@Composable
+private fun VersionPicker(g: Game, versions: List<Game>) {
+    var open by remember { mutableStateOf(false) }
+    val best = remember(versions) { Advice.pick(versions)?.first }
+    Box {
+        OutlinedButton(onClick = { open = true }) {
+            Column {
+                Text("Versión: ${versionLabel(g)}", fontWeight = FontWeight.SemiBold)
+                Text("Tienes ${versions.size} versiones de este juego · tocar para cambiar", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Spacer(Modifier.width(8.dp))
+            Icon(Icons.Rounded.ArrowDropDown, null)
+        }
+        androidx.compose.material3.DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            versions.sortedBy { it.name }.forEach { v ->
+                val p = Repo.where(v).presence
+                androidx.compose.material3.DropdownMenuItem(
+                    text = {
+                        Column {
+                            Text(versionLabel(v), fontWeight = if (v.id == g.id) FontWeight.Bold else FontWeight.Normal)
+                            Muted(listOfNotNull(when (p) {
+                                Presence.INSTALLED -> "En la tablet"
+                                Presence.PARTIAL -> "A medias en la tablet"
+                                Presence.TABLET_ONLY -> "Solo en la tablet"
+                                Presence.MISSING -> "Solo en el PC"
+                            }, if (v.id == best?.id) "recomendada" else null, if (v.id == g.id) "la que estás viendo" else null).joinToString(" · "))
+                        }
+                    },
+                    leadingIcon = { if (v.id == g.id) Icon(Icons.Rounded.Check, null) else Spacer(Modifier.width(24.dp)) },
+                    onClick = { open = false; if (v.id != g.id) Nav.game = v },
+                )
+            }
+        }
+    }
 }

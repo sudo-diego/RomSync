@@ -76,6 +76,15 @@ fun SavesScreen() {
                     }
                     Switch(checked = auto, onCheckedChange = { auto = it; Prefs.autoBackup = it; BackupWorker.schedule(ctx) })
                 }
+                var keep by remember { mutableStateOf(Prefs.keepBackups) }
+                SpacedRow {
+                    Muted("En el PC se guardan, por emulador, los últimos $keep respaldos completos, 5 de cada juego y 5 copias " +
+                        "de seguridad. Los más viejos se borran solos (salvo los marcados «conservar»).", Modifier.weight(1f))
+                    listOf(5, 10, 20).forEach { n ->
+                        androidx.compose.material3.FilterChip(selected = keep == n, onClick = { keep = n; Prefs.keepBackups = n },
+                            label = { Text("$n") })
+                    }
+                }
             }
         }
         if (needShell) item { ShizukuCard() }

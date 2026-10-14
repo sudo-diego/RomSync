@@ -35,13 +35,27 @@ import kotlinx.coroutines.launch
  * "Repetidos" de la tienda: con una biblioteca ordenada no hace falta.
  */
 object Organize {
-    /** Grupos del mismo juego en la misma plataforma (versiones, regiones, formatos). */
+    /**
+     * Grupos del mismo juego en la misma plataforma (versiones, regiones, formatos). Los que el usuario marcó "me quedo
+     * con todas" no cuentan: tener varias versiones en la colección también está bien.
+     */
     fun duplicateGroups(): List<List<Game>> = Repo.allGames().filter { it.kind != "shortcut" }
-        .groupBy { Repo.versionKey(it) }.values.filter { it.size > 1 }.sortedBy { it.first().title.lowercase() }
+        .groupBy { Repo.versionKey(it) }.filter { (k, v) -> v.size > 1 && k !in keptVersions }.values
+        .sortedBy { it.first().title.lowercase() }
+
+    /** Estado para que la tarjeta y la lista se actualicen al marcar un grupo. */
+    var keptVersions by androidx.compose.runtime.mutableStateOf(Prefs.keepAllVersions)
+        private set
+
+    fun keepAll(key: String) {
+        keptVersions = keptVersions + key
+        Prefs.keepAllVersions = keptVersions
+    }
 
     /** Juegos que solo están en la tablet: si se pierde la tablet, se pierden. */
     fun tabletOnly(): List<Game> = if (!Prefs.configured) emptyList()
     else Repo.tabletOnly.filter { it.kind != "shortcut" }
+
 
     fun junkCount() = Repo.localJunk.size + Repo.library?.junk.orEmpty().size
     fun strayBiosCount() = Repo.localStrayBios.size + Repo.library?.strayBios.orEmpty().size
@@ -52,7 +66,7 @@ fun OrganizeCard() {
     var open by remember { mutableStateOf(false) }
     val junk = Organize.junkCount()
     val bios = Organize.strayBiosCount()
-    val dups = remember(Repo.library, Repo.tabletOnly) { Organize.duplicateGroups().size }
+    val dups = remember(Repo.library, Repo.tabletOnly, Organize.keptVersions) { Organize.duplicateGroups().size }
     val only = remember(Repo.tabletOnly) { Organize.tabletOnly().size }
     val parts = listOfNotNull(
         junk.takeIf { it > 0 }?.let { "$it archivo(s) que sobran" },
@@ -118,7 +132,7 @@ private fun Step(n: Int, title: String, desc: String, count: Int, onOpen: () -> 
 @Composable
 private fun DuplicatesDialog(onClose: () -> Unit) {
     val ctx = LocalContext.current
-    val groups = remember(Repo.library, Repo.tabletOnly) { Organize.duplicateGroups() }
+    val groups = remember(Repo.library, Repo.tabletOnly, Organize.keptVersions) { Organize.duplicateGroups() }
     var selected by remember { mutableStateOf(setOf<String>()) }
     var confirm by remember { mutableStateOf(false) }
     val chosen = groups.flatten().filter { it.id in selected }
@@ -160,11 +174,19 @@ private fun DuplicatesDialog(onClose: () -> Unit) {
         title = { Text("Juegos repetidos") },
         text = {
             LazyColumn(Modifier.fillMaxWidth().heightIn(max = 480.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                item { Muted("Marca las versiones que sobran. Si una versión es con mods o en otro idioma que quieras, déjala.") }
+                item { Muted("Marca las versiones que sobran, o toca «Me quedo con todas» si las quieres en tu colección (no se vuelve a preguntar).") }
+                if (groups.isEmpty()) item { Muted("Nada que revisar.") }
                 items(groups, key = { Repo.versionKey(it.first()) }) { vs ->
                     val advice = remember(vs) { Advice.pick(vs) }
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text("${Group.cleanTitle(vs.first().name).first} · ${Repo.system(vs.first().system).short}", fontWeight = FontWeight.Bold)
+                        SpacedRow {
+                            Text("${Group.cleanTitle(vs.first().name).first} · ${Repo.system(vs.first().system).short}",
+                                Modifier.weight(1f), fontWeight = FontWeight.Bold)
+                            TextButton(onClick = {
+                                selected = selected - vs.map { it.id }.toSet()
+                                Organize.keepAll(Repo.versionKey(vs.first()))
+                            }) { Text("Me quedo con todas") }
+                        }
                         advice?.let { (best, why) ->
                             Text("Conviene quedarse con: ${best.name} ($why)", color = Palette.ok, style = MaterialTheme.typography.bodySmall)
                         }

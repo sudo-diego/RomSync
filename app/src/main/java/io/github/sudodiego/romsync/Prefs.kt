@@ -59,7 +59,7 @@ object Prefs {
         else remoteRoms.substringBeforeLast('/').ifEmpty { remoteRoms } + "/RomSync/respaldos"
 
     var keepBackups: Int
-        get() = sp.getInt("keep_backups", 30)
+        get() = sp.getInt("keep_backups", 10)
         set(v) = sp.edit().putInt("keep_backups", v).apply()
 
     /** Clave de la API de SteamGridDB (las carátulas las baja la tablet). */
@@ -107,6 +107,11 @@ object Prefs {
     // TitleID leído de cada .nsp sin código en el nombre ("ruta|tamaño" → id; "" = no se pudo).
     fun switchId(key: String): String? = sp.getString("tid:$key", null)
     fun setSwitchId(key: String, id: String) = sp.edit().putString("tid:$key", id).apply()
+
+    /** Juegos con varias versiones que el usuario quiere tener todas (claves de Repo.versionKey). */
+    var keepAllVersions: Set<String>
+        get() = sp.getStringSet("keep_versions", emptySet()) ?: emptySet()
+        set(v) = sp.edit().putStringSet("keep_versions", v).apply()
 
     var welcomeDone: Boolean
         get() = sp.getBoolean("welcome_done", false)

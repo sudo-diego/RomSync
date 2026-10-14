@@ -147,6 +147,21 @@ nada se borró de verdad. Las partidas de DS reemplazadas también quedaron en `
   Desmarcar todo" y el nombre de cada DLC sacado del archivo. El usuario confirma que Cocoon ignora la carpeta con
   `noload.txt`.
 
+## Limpieza de la tablet (14-10-2026, madrugada)
+
+- Banjo-Kazooie: `Download/…z64` era el mismo juego que `ROMs/n64/….n64` (mismo contenido al normalizar el orden de
+  bytes). Queda el .z64 (formato estándar) en `ROMs/n64` de los dos lados; el .n64 a la papelera.
+- **Partidas de Wii**: el Dolphin actual (reinstalado el 28-09) tenía `Wii/title` vacío; las únicas copias estaban en
+  `Download/dolphin-emu` (una exportación del 05-08: Mario Galaxy 1 y 2, Brawl, Wii Sports/Resort, Mario Party 8,
+  NSMB Wii, Wii Party…). Se copiaron a Dolphin (284 archivos, verificados) y ya salen en los respaldos de Dolphin.
+  La exportación entera quedó en `D:/RomSync/respaldos/TB321FU/dolphin-exportacion-2026-08-05` y se borró de la tablet.
+- Borrado (confirmado por el usuario o copia exacta): Wind Waker .rvz a medias, IPL.bin ×2 (= las de Dolphin, que van
+  en sus respaldos), exportaciones viejas de partidas de Eden (las partidas están en los respaldos de Eden), Celeste en
+  Download, y copias "(1)" de apk/zip/torrent.
+- Cocoon usa hoy `/sdcard/Cucun` (sus capturas son copias de Pictures/Screenshots para su galería: no tocar).
+  `/sdcard/Cocoon Shell` (1,3 GB) es la carpeta vieja, sin cambios desde agosto: no se borró (preguntar).
+- `2S2H/MM.z64` = Majora's Mask de `ROMs/n64`: lo necesita el port 2Ship2Harkinian, se queda.
+
 ## Pendiente
 
 - Switch: mostrar en la ficha lo instalado en Eden y, con titledb (blawar/titledb: versions.json, cnmts.json), la

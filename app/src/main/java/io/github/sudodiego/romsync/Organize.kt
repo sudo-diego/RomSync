@@ -54,7 +54,12 @@ object Organize {
 
     /** Juegos que solo están en la tablet: si se pierde la tablet, se pierden. */
     fun tabletOnly(): List<Game> = if (!Prefs.configured) emptyList()
-    else Repo.tabletOnly.filter { it.kind != "shortcut" }
+    else Repo.tabletOnly.filter { it.kind != "shortcut" } +
+        // Actualizaciones y DLC de Switch solo en la tablet (van con su juego del PC): se copian igual.
+        Repo.tabletExtras.mapNotNull { (id, parts) ->
+            Repo.game(id)?.let { g -> g.copy(id = "extras:$id", title = g.title + " · actualizaciones/DLC", files = parts.flatMap { it.files },
+                size = parts.sumOf { it.size }) }
+        }
 
 
     fun junkCount() = Repo.localJunk.size + Repo.library?.junk.orEmpty().size

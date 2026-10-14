@@ -74,6 +74,18 @@ fun startDownload(ctx: Context, g: Game, files: List<FileEntry>): String? {
 
 private val partNames = mapOf("base" to "Juego base", "update" to "Actualización", "dlc" to "DLC")
 
+/** "DLC · Challenger Pack 1" (el nombre que trae el archivo, sin el del juego) o "Actualización · versión 30". */
+private fun partLabel(g: Game, p: Part): String {
+    if (p.kind == "dlc") {
+        val stem = p.files.firstOrNull()?.path?.let(Group::stem).orEmpty()
+        val title = Group.cleanTitle(stem.replace("[DLC]", "")).first
+        val base = Group.cleanTitle(g.name).first
+        val name = title.removePrefix(base).trim(' ', '-', ':')
+        if (name.isNotEmpty() && !name.equals(title, true)) return "DLC · $name"
+    }
+    return partNames[p.kind] + (if (p.version > 0) " · ${SwitchDb.label(p.version)}" else "")
+}
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun GameScreen(g: Game, onBack: () -> Unit) {
@@ -168,13 +180,20 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
 
                 if (g.parts.size > 1 || g.parts.any { it.kind != "base" }) {
                     Section("Contenido") {
+                        // Smash tiene ~100 DLC: marcar o desmarcar de a uno era imposible.
+                        val missing = g.parts.filter { p -> !p.files.all { Repo.has(it.path) } }.map { it.titleId }.toSet()
+                        if (missing.size > 1) SpacedRow {
+                            Muted("${missing.size} partes que no están en la tablet", Modifier.weight(1f))
+                            TextButton(onClick = { selected = missing }) { Text("Marcar todo") }
+                            TextButton(onClick = { selected = emptySet() }) { Text("Desmarcar todo") }
+                        }
                         g.parts.forEach { p ->
                             val have = p.files.all { Repo.has(it.path) }
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Checkbox(checked = have || p.titleId in selected, enabled = !have,
                                     onCheckedChange = { selected = if (it) selected + p.titleId else selected - p.titleId })
                                 Column(Modifier.weight(1f)) {
-                                    Text(partNames[p.kind] + (if (p.version > 0) " · ${SwitchDb.label(p.version)}" else ""), fontWeight = FontWeight.SemiBold)
+                                    Text(partLabel(g, p), fontWeight = FontWeight.SemiBold)
                                     Muted(p.titleId)
                                 }
                                 Text(formatSize(p.size))
@@ -185,6 +204,7 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
                         Muted("En Eden, deja las actualizaciones y DLC en la carpeta de contenido externo (Ajustes → Carpetas de juegos) para no instalarlas en la NAND.")
                     }
                 }
+                TabletExtras(g)
                 if (g.kind == "switch") SwitchStatus(g)
 
                 VitaInstallSection(g)
@@ -549,5 +569,40 @@ private fun SwitchStatus(g: Game) {
         else Text("DLC: tienes ${info.dlcs.count { it in owned }} de ${info.dlcs.size}" +
             if (info.dlcs.all { it in owned }) " (todos)." else ".", color = if (info.dlcs.all { it in owned }) Palette.ok else MaterialTheme.colorScheme.onSurface)
         Muted("Según titledb, revisado ${formatAgo(SwitchDb.updatedAt)}.")
+    }
+}
+
+/** Actualizaciones o DLC de este juego que están en la tablet pero no en el PC: copiarlos para que queden guardados. */
+@Composable
+private fun TabletExtras(g: Game) {
+    val extras = Repo.tabletExtras[g.id].orEmpty()
+    if (extras.isEmpty()) return
+    val ctx = LocalContext.current
+    val files = extras.flatMap { it.files }
+    val key = "extras:${g.id}"
+    val up = PcEdit.uploading[key]
+    Section("Solo en la tablet") {
+        extras.forEach { p ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(partNames[p.kind] + (if (p.version > 0) " · ${SwitchDb.label(p.version)}" else ""), fontWeight = FontWeight.SemiBold)
+                    Muted(p.titleId)
+                }
+                Text(formatSize(p.size))
+                Spacer(Modifier.width(12.dp))
+                Pill("Solo en la tablet", Palette.warn)
+            }
+        }
+        if (up != null) {
+            LinearProgressIndicator(progress = { up.toFloat() / files.sumOf { it.size }.coerceAtLeast(1) }, Modifier.fillMaxWidth())
+            Muted("Copiando al PC: ${formatSize(up)} de ${formatSize(files.sumOf { it.size })}")
+        } else if (Prefs.configured) Button(onClick = {
+            appScope.launch {
+                val msg = runCatching { PcEdit.uploadFiles(key, files) }.fold({ "Copiado al PC" }, { "No se pudo copiar: ${it.message}" })
+                Toast.makeText(ctx, msg, Toast.LENGTH_LONG).show()
+                Repo.refresh()
+            }
+        }) { Text("Copiar al PC · ${formatSize(files.sumOf { it.size })}") }
+        Muted("Si se pierde la tablet, esto se pierde: en el PC queda guardado y se vuelve a bajar con el juego.")
     }
 }

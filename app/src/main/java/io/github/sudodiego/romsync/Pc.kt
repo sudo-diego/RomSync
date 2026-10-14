@@ -145,13 +145,16 @@ object PcEdit {
      * Copia al PC un juego que solo está en la tablet (así queda guardado y se puede volver a bajar). Va a .part y se
      * renombra al final, como todo lo que se escribe en el PC; un archivo que ya está con el mismo tamaño se salta.
      */
-    suspend fun uploadFromTablet(g: Game) = Pc.io { c ->
+    suspend fun uploadFromTablet(g: Game) = uploadFiles(g.id, g.files)
+
+    /** Copia archivos de la tablet al PC (misma ruta dentro de ROMs). [key] es para la barra de avance. */
+    suspend fun uploadFiles(key: String, files: List<FileEntry>) = Pc.io { c ->
         var done = 0L
-        uploading[g.id] = 0L
+        uploading[key] = 0L
         try {
-            for (f in g.files) {
+            for (f in files) {
                 val remote = SftpConn.join(Prefs.remoteRoms, f.path)
-                if (c.stat(remote)?.size == f.size) { done += f.size; uploading[g.id] = done; continue }
+                if (c.stat(remote)?.size == f.size) { done += f.size; uploading[key] = done; continue }
                 c.upload(remote) { out ->
                     Local.romFile(f.path).inputStream().use { input ->
                         val buf = ByteArray(1 shl 16)
@@ -160,13 +163,13 @@ object PcEdit {
                             if (n < 0) break
                             out.write(buf, 0, n)
                             done += n
-                            uploading[g.id] = done
+                            uploading[key] = done
                         }
                     }
                 }
             }
         } finally {
-            uploading.remove(g.id)
+            uploading.remove(key)
         }
     }
 

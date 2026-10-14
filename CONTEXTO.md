@@ -141,6 +141,12 @@ nada se borró de verdad. Las partidas de DS reemplazadas también quedaron en `
 - Wind Waker GameCube "USA" (278 MB) tiene nombre propio "The Legend of Zelda: The Wind Waker Mod": es la versión con
   mods, no un repetido.
 
+- Actualización o DLC de Switch que está solo en la tablet y cuyo juego está en el PC: sale DENTRO de la ficha de ese
+  juego ("Solo en la tablet" + "Copiar al PC"; `Repo.tabletExtras`) y en Ordenar → sin copia en el PC. Probado con la
+  actualización de Bayonetta 2 (que el usuario había puesto en la tablet). Contenido de Switch: "Marcar todo /
+  Desmarcar todo" y el nombre de cada DLC sacado del archivo. El usuario confirma que Cocoon ignora la carpeta con
+  `noload.txt`.
+
 ## Pendiente
 
 - Switch: mostrar en la ficha lo instalado en Eden y, con titledb (blawar/titledb: versions.json, cnmts.json), la

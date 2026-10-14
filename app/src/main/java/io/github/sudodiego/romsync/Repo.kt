@@ -147,10 +147,34 @@ object Repo {
         val only = Names.apply(Group.all(leftovers, ids).map { g ->
             if (g.id in pcIds) g.copy(id = Group.gameId(g.system, "tablet:${g.primary}")) else g
         }.distinctBy { it.id })
-        tabletOnlyIds = only.map { it.id }.toSet()
-        tabletOnly = only
+        // Switch: una actualización o DLC que solo está en la tablet, pero cuyo juego está en el PC, va dentro de la ficha
+        // de ese juego ("Solo en la tablet · Copiar al PC") en vez de salir como un juego aparte con un nombre raro.
+        val pcByBase = lib?.games.orEmpty().filter { it.kind == "switch" }
+            .mapNotNull { g -> g.parts.firstOrNull { it.kind == "base" }?.titleId?.uppercase()?.let { it to g.id } }.toMap()
+        val extras = HashMap<String, List<Part>>()
+        val rest = only.filter { g ->
+            if (g.kind != "switch" || g.parts.any { it.kind == "base" }) return@filter true
+            val base = g.parts.firstOrNull()?.titleId?.let(::switchBase) ?: return@filter true
+            val pcId = pcByBase[base] ?: return@filter true
+            extras[pcId] = extras[pcId].orEmpty() + g.parts
+            false
+        }
+        tabletExtras = extras
+        tabletOnlyIds = rest.map { it.id }.toSet()
+        tabletOnly = rest
         val have = localBios.map { it.path.lowercase() }.toHashSet()
         biosMissing = lib?.bios.orEmpty().filter { it.path.lowercase() !in have }
+    }
+
+    /** Actualizaciones y DLC de Switch que solo están en la tablet, por id del juego (del PC) al que pertenecen. */
+    var tabletExtras by mutableStateOf<Map<String, List<Part>>>(emptyMap())
+        private set
+
+    /** TitleID del juego base: actualización …800 → …000; DLC base + 0x1000 + n → base. */
+    fun switchBase(tid: String): String? {
+        val n = tid.toULongOrNull(16) ?: return null
+        val b = if (tid.endsWith("800", true)) n - 0x800u else (n - 0x1000u) and 0xFFFFFFFFFFFFF000u
+        return "%016X".format(b.toLong())
     }
 
     /** Borra un juego del disco del PC y lo saca de la biblioteca (sin volver a leer todo el disco). */

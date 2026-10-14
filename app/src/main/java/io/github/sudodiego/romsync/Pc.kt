@@ -56,6 +56,7 @@ object Pc {
                 if (biosRel != null && rel.lowercase().startsWith(biosRel)) continue
                 val dirs = rel.split('/').dropLast(1)
                 if (dirs.first().startsWith(".") || dirs.any { it.lowercase() in Group.ignoredDirs }) continue
+                if (dirs.first().lowercase() in Group.pcOnlySystems) continue
                 val name = rel.substringAfterLast('/')
                 when {
                     !Group.isIgnored(name) -> files += FileEntry(rel, size)
@@ -65,7 +66,7 @@ object Pc {
         } else {
             var dirsRead = 0
             for (e in c.list(root)) {
-                if (!e.isDir || e.name.startsWith(".") || e.name.lowercase() in Group.ignoredDirs) continue
+                if (!e.isDir || e.name.startsWith(".") || e.name.lowercase() in Group.ignoredDirs || e.name.lowercase() in Group.pcOnlySystems) continue
                 val dir = SftpConn.join(root, e.name)
                 if (dir.equals(bios, ignoreCase = true)) continue
                 progress("Leyendo ${e.name}… (${files.size} archivos)")

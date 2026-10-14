@@ -91,6 +91,16 @@ object Prefs {
         set(v) = sp.edit().putBoolean("auto_backup", v).apply()
 
     /** Cada cuántas horas intenta el respaldo automático (solo con WiFi y el PC encendido). */
+    /** Cuándo salió bien el último respaldo automático (si falla, se reintenta cada hora hasta que salga). */
+    var lastAutoBackupOk: Long
+        get() = sp.getLong("last_auto_ok", 0)
+        set(v) = sp.edit().putLong("last_auto_ok", v).apply()
+
+    /** Qué pasó en el último intento (para mostrarlo en Partidas). */
+    var lastAutoBackupNote: String
+        get() = sp.getString("last_auto_note", "") ?: ""
+        set(v) = sp.edit().putString("last_auto_note", v).apply()
+
     var autoBackupHours: Int
         get() = sp.getInt("auto_backup_hours", 12)
         set(v) = sp.edit().putInt("auto_backup_hours", v).apply()

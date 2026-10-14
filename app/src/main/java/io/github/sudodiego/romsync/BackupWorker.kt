@@ -11,17 +11,25 @@ import androidx.work.WorkerParameters
 import java.util.concurrent.TimeUnit
 
 /**
- * Respaldo automático: cada N horas, con WiFi y batería suficiente, si el PC responde. Solo sube lo que cambió.
- * Si el PC está apagado no pasa nada: lo intenta en la próxima vuelta.
+ * Respaldo automático. Android lo despierta cada hora (con WiFi y batería suficiente, sin abrir la app); si pasaron N
+ * horas desde el último respaldo que salió bien y el PC responde, respalda (solo sube lo que cambió). Si el PC estaba
+ * apagado, lo vuelve a intentar a la hora siguiente: antes esperaba otras N horas.
  */
 class BackupWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, params) {
     override suspend fun doWork(): Result {
         Prefs.init(applicationContext)
         Shell.init(applicationContext)
         if (!Prefs.autoBackup || !Prefs.configured) return Result.success()
-        // PC apagado o fuera de casa: se intenta en la próxima vuelta.
-        if (runCatching { Pc.io { } }.isFailure) return Result.success()
-        Saves.backupAll(applicationContext, auto = true)
+        val due = Prefs.lastAutoBackupOk + Prefs.autoBackupHours * 3_600_000L
+        if (System.currentTimeMillis() < due) return Result.success()
+        // PC apagado o fuera de casa: se intenta otra vez en una hora.
+        if (runCatching { Pc.io { } }.isFailure) {
+            Prefs.lastAutoBackupNote = "El PC no respondía; se reintenta cada hora"
+            return Result.success()
+        }
+        val msg = Saves.backupAll(applicationContext, auto = true)
+        if (": " !in msg) Prefs.lastAutoBackupOk = System.currentTimeMillis() // sin errores de ningún emulador
+        Prefs.lastAutoBackupNote = msg
         return Result.success()
     }
 
@@ -34,12 +42,12 @@ class BackupWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx
                 wm.cancelUniqueWork(NAME)
                 return
             }
-            val req = PeriodicWorkRequestBuilder<BackupWorker>(Prefs.autoBackupHours.toLong(), TimeUnit.HOURS)
+            val req = PeriodicWorkRequestBuilder<BackupWorker>(1, TimeUnit.HOURS)
                 .setConstraints(Constraints.Builder()
                     .setRequiredNetworkType(NetworkType.UNMETERED)
                     .setRequiresBatteryNotLow(true)
                     .build())
-                .setInitialDelay(30, TimeUnit.MINUTES)
+                .setInitialDelay(15, TimeUnit.MINUTES)
                 .build()
             wm.enqueueUniquePeriodicWork(NAME, ExistingPeriodicWorkPolicy.UPDATE, req)
         }

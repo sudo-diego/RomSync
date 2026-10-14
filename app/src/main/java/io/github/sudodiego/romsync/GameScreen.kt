@@ -174,7 +174,7 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
                                 Checkbox(checked = have || p.titleId in selected, enabled = !have,
                                     onCheckedChange = { selected = if (it) selected + p.titleId else selected - p.titleId })
                                 Column(Modifier.weight(1f)) {
-                                    Text(partNames[p.kind] + (if (p.version > 0) " v${p.version}" else ""), fontWeight = FontWeight.SemiBold)
+                                    Text(partNames[p.kind] + (if (p.version > 0) " · ${SwitchDb.label(p.version)}" else ""), fontWeight = FontWeight.SemiBold)
                                     Muted(p.titleId)
                                 }
                                 Text(formatSize(p.size))
@@ -185,34 +185,7 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
                         Muted("En Eden, deja las actualizaciones y DLC en la carpeta de contenido externo (Ajustes → Carpetas de juegos) para no instalarlas en la NAND.")
                     }
                 }
-
-                val others = remember(g, Repo.library, Repo.tabletOnly) { Repo.versions(g) }
-                if (others.isNotEmpty()) Section("Otras versiones de este juego") {
-                    val advice = remember(g, others) { Advice.pick(listOf(g) + others) }
-                    if (advice != null) {
-                        val (best, why) = advice
-                        Text("Conviene quedarse con el ${Group.ext(best.primary).removePrefix(".").uppercase().ifEmpty { "de carpeta" }}" +
-                            (if (best.id == g.id) " (este)" else "") + ": $why. Los otros los puedes borrar.",
-                            color = Palette.ok, fontWeight = FontWeight.SemiBold)
-                    } else Muted("Mismo nombre en ${sys.name}: otra región o una versión modificada. Quédate con la que uses.")
-                    (listOf(g) + others).forEach { o ->
-                        val ow = Repo.where(o)
-                        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable(enabled = o.id != g.id) { Nav.game = o }
-                            .padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Pill(Group.ext(o.primary).removePrefix(".").uppercase().ifEmpty { "CARPETA" }, Color(0xFF475569))
-                            Column(Modifier.weight(1f)) {
-                                Text(o.name, fontWeight = if (o.id == g.id) FontWeight.Bold else FontWeight.Normal)
-                                Muted(formatSize(o.size) + (if (o.id == g.id) " · este" else ""))
-                            }
-                            when (ow.presence) {
-                                Presence.INSTALLED -> Pill("En la tablet", Palette.ok)
-                                Presence.PARTIAL -> Pill("A medias", Palette.warn)
-                                Presence.TABLET_ONLY -> Pill("Solo tablet", Color(0xFF475569))
-                                Presence.MISSING -> Pill("Solo PC", Color(0xFF334155))
-                            }
-                        }
-                    }
-                }
+                if (g.kind == "switch") SwitchStatus(g)
 
                 VitaInstallSection(g)
                 GameSavesSection(g)
@@ -509,7 +482,9 @@ private fun versionLabel(v: Game): String = listOfNotNull(
 @Composable
 private fun VersionPicker(g: Game, versions: List<Game>) {
     var open by remember { mutableStateOf(false) }
-    val best = remember(versions) { Advice.pick(versions)?.first }
+    val advice = remember(versions) { Advice.pick(versions) }
+    val best = advice?.first
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
     Box {
         OutlinedButton(onClick = { open = true }) {
             Column {
@@ -520,6 +495,8 @@ private fun VersionPicker(g: Game, versions: List<Game>) {
             Spacer(Modifier.width(8.dp))
             Icon(Icons.Rounded.ArrowDropDown, null)
         }
+        // Lo que antes era la sección "Otras versiones": solo la recomendación, debajo del botón.
+
         androidx.compose.material3.DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             versions.sortedBy { it.name }.forEach { v ->
                 val p = Repo.where(v).presence
@@ -540,5 +517,37 @@ private fun VersionPicker(g: Game, versions: List<Game>) {
                 )
             }
         }
+    }
+    if (best != null) Muted("Recomendada: ${versionLabel(best)} (${advice.second})" + if (best.id == g.id) " · es esta" else "")
+    }
+}
+
+/** Switch: si hay una actualización más nueva y cuántos DLC existen (titledb), comparado con lo que tienes. */
+@Composable
+private fun SwitchStatus(g: Game) {
+    val base = (g.parts.firstOrNull { it.kind == "base" }?.titleId ?: g.serial).takeIf { it.length == 16 } ?: return
+    LaunchedEffect(base) {
+        // Todos los de Switch de una vez: así se baja una sola vez por semana y no por cada ficha.
+        SwitchDb.refresh(Repo.allGames().filter { it.kind == "switch" }
+            .mapNotNull { gg -> (gg.parts.firstOrNull { it.kind == "base" }?.titleId ?: gg.serial).takeIf { it.length == 16 } }.toSet() + base)
+    }
+    val info = remember(base, SwitchDb.updatedAt) { SwitchDb.info(base) }
+    Section("Actualizaciones y DLC") {
+        if (info == null) {
+            Muted(if (SwitchDb.busy) "Buscando qué hay publicado…" else "No se pudo saber qué hay publicado (sin internet).")
+            return@Section
+        }
+        val have = g.parts.filter { it.kind == "update" }.maxOfOrNull { it.version } ?: 0L
+        val upToDate = info.latest == 0L || have >= info.latest
+        Text(when {
+            info.latest == 0L -> "Este juego no tiene actualizaciones."
+            upToDate -> "Actualización: tienes la última (${SwitchDb.label(have)})."
+            else -> "Actualización: tienes ${SwitchDb.label(have)}; la última es la ${SwitchDb.label(info.latest)} (${info.latestDate})."
+        }, color = if (upToDate) Palette.ok else Palette.warn, fontWeight = FontWeight.SemiBold)
+        val owned = g.parts.filter { it.kind == "dlc" }.map { it.titleId.uppercase() }.toSet()
+        if (info.dlcs.isEmpty()) Muted("No tiene DLC.")
+        else Text("DLC: tienes ${info.dlcs.count { it in owned }} de ${info.dlcs.size}" +
+            if (info.dlcs.all { it in owned }) " (todos)." else ".", color = if (info.dlcs.all { it in owned }) Palette.ok else MaterialTheme.colorScheme.onSurface)
+        Muted("Según titledb, revisado ${formatAgo(SwitchDb.updatedAt)}.")
     }
 }

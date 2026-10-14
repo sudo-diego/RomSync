@@ -72,9 +72,28 @@ fun SavesScreen() {
                 SpacedRow {
                     Column(Modifier.weight(1f)) {
                         Text("Respaldo automático", fontWeight = FontWeight.Bold)
-                        Muted("Cada ${Prefs.autoBackupHours} h, con WiFi y el PC encendido. Solo sube lo que cambió.")
+                        Muted("Cada ${Prefs.autoBackupHours} h, sin abrir la app, con WiFi y el PC encendido. Si el PC está apagado, " +
+                            "lo intenta cada hora hasta que responda. Solo sube lo que cambió.")
+                        val last = Prefs.lastAutoBackupOk
+                        if (last > 0 || Prefs.lastAutoBackupNote.isNotEmpty()) Muted(
+                            (if (last > 0) "Último que salió bien: ${formatAgo(last)}" else "Todavía no salió ninguno") +
+                                Prefs.lastAutoBackupNote.takeIf { it.isNotEmpty() }?.let { " · $it" }.orEmpty())
                     }
                     Switch(checked = auto, onCheckedChange = { auto = it; Prefs.autoBackup = it; BackupWorker.schedule(ctx) })
+                }
+                // Sin esto, el ahorro de batería de Android (y el de Lenovo) puede frenar el respaldo con la app cerrada.
+                val pm = ctx.getSystemService(android.os.PowerManager::class.java)
+                var free by remember { mutableStateOf(pm.isIgnoringBatteryOptimizations(ctx.packageName)) }
+                if (auto && !free) SpacedRow {
+                    Text("Android puede frenar el respaldo automático cuando la app está cerrada.", Modifier.weight(1f),
+                        color = Palette.warn, style = MaterialTheme.typography.bodySmall)
+                    androidx.compose.material3.TextButton(onClick = {
+                        runCatching {
+                            ctx.startActivity(android.content.Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                                android.net.Uri.parse("package:${ctx.packageName}")))
+                        }
+                        free = true
+                    }) { Text("Permitir") }
                 }
                 var keep by remember { mutableStateOf(Prefs.keepBackups) }
                 SpacedRow {

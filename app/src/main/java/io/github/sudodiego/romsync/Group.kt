@@ -129,6 +129,9 @@ object Group {
             (sys == "psx" && e == ".bin" && size == 512L * 1024)
     }
 
+    /** Plataformas que solo se juegan en el PC (no hay emulador en Android): no salen en la tienda. */
+    val pcOnlySystems = setOf("ps4", "xboxone", "xbox360")
+
     /** Plataformas de accesos directos (ES-DE, GameNative): no son ROMs, no se "descargan". */
     val shortcutSystems = setOf("androidapps", "androidgames", "android", "steam", "epic", "gog", "lutris", "heroic")
     private val shortcutExt = setOf(".app", ".desktop", ".steam", ".lnk", ".url", ".psvita", ".dpt", ".shortcut")

@@ -110,6 +110,7 @@ private fun EmulatorCard(emu: Emulator, onRestore: () -> Unit) {
     var editPath by remember { mutableStateOf(false) }
     var pickOne by remember { mutableStateOf(false) }
     var askTransfer by remember { mutableStateOf(false) }
+    var transferDone by remember { mutableStateOf(false) }
     var path by remember { mutableStateOf(Prefs.emuPath(emu.id)) }
     Section("") {
         SpacedRow {
@@ -174,11 +175,26 @@ private fun EmulatorCard(emu: Emulator, onRestore: () -> Unit) {
                 askTransfer = false
                 scope.launch {
                     val e = Saves.transferToArmsx2(ctx)
-                    Toast.makeText(ctx, e ?: "Listo: tus tarjetas ya están en ARMSX2", Toast.LENGTH_LONG).show()
+                    if (e != null) Toast.makeText(ctx, e, Toast.LENGTH_LONG).show() else transferDone = true
                 }
             }) { Text("Pasar") }
         },
         dismissButton = { TextButton(onClick = { askTransfer = false }) { Text("Cancelar") } },
+    )
+    // ARMSX2 deja Mcd001.ps2 en el slot 1 aunque tus partidas estén en otra tarjeta (en la tablet del usuario, la de
+    // carpeta "hola123.ps2"): sin elegirla, parece que no se pasó nada.
+    if (transferDone) AlertDialog(
+        onDismissRequest = { transferDone = false },
+        title = { Text("Listo: tus tarjetas ya están en ARMSX2") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("Se pasaron: " + Saves.transferredCards.joinToString(", "))
+                Text("Falta un paso en ARMSX2: menú → Memory Cards → pon en «Slot 1» la tarjeta que usabas en NetherSX2 " +
+                    "(la que tiene tus partidas). ARMSX2 empieza con Mcd001.ps2, que suele estar vacía.",
+                    fontWeight = FontWeight.Bold)
+            }
+        },
+        confirmButton = { TextButton(onClick = { transferDone = false }) { Text("Entendido") } },
     )
 }
 

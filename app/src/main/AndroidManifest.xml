@@ -21,6 +21,7 @@
 
     <application
         android:label="RomSync"
+        android:largeHeap="true"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher"
         android:theme="@style/Theme.RomSync"

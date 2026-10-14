@@ -110,8 +110,9 @@ object Group {
         val name = path.substringAfterLast('/')
         val e = ext(name)
         val sys = path.substringBefore('/').lowercase()
-        return isBios(name) || reBiosVersion.matches(name) ||
-            (e in ps2BiosExt) ||
+        // Lo que está dentro de una carpeta "BIOS" de la plataforma ("ps2/BIOS/ps2 bios usa/…") nunca es un juego.
+        return isBios(name) || reBiosVersion.matches(name) || inBiosDir(path) ||
+            (e in ps2BiosExt) || (e in setOf(".diff", ".inf") && "scph" in name.lowercase()) ||
             (sys == "ps2" && e == ".bin" && size == 4L * 1024 * 1024) ||
             // Un juego de PS2 nunca pesa tan poco: un .bin/.rom chico en ps2 es parte de una BIOS.
             (sys == "ps2" && e in setOf(".bin", ".rom", ".img") && size < 32L * 1024 * 1024) ||
@@ -140,6 +141,20 @@ object Group {
         t = reBracket.replace(t, "")
         t = reSpaces.replace(t.replace('_', ' ').trim(), " ").trimEnd(' ', '-')
         return (t.ifEmpty { name }) to tags
+    }
+
+    private val reThe = Regex("\\bthe\\b")
+    private val seriesPrefixes = listOf("legendofzelda", "zelda")
+
+    /**
+     * Título para juntar versiones: sin etiquetas, sin "The" y sin el prefijo de la saga. Así "THE LEGEND OF ZELDA The
+     * Wind Waker HD [Game] [0005…]" (carpeta de Wii U) y "The Wind Waker HD (US).wua" son el mismo juego. El prefijo
+     * solo se quita si queda un subtítulo ("The Legend of Zelda (USA)" de NES sigue siendo él mismo).
+     */
+    fun versionTitle(name: String): String {
+        val k = reThe.replace(cleanTitle(name).first.lowercase(), "").filter { it.isLetterOrDigit() }
+        val p = seriesPrefixes.firstOrNull { k.startsWith(it) && k.length - it.length >= 4 } ?: return k
+        return k.removePrefix(p)
     }
 
     fun gameId(system: String, key: String): String {

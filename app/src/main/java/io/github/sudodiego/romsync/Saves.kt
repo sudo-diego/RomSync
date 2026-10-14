@@ -270,6 +270,10 @@ object Saves {
      * los DOS emuladores en la tablet (RomSync/antes-del-traspaso) y, si el PC está conectado, un respaldo en el PC.
      * Devuelve null si salió bien o el error.
      */
+    /** Las tarjetas que pasó el último traspaso ("Mcd001.ps2", "hola123.ps2"…), para decir cuál poner en el slot 1. */
+    var transferredCards: List<String> = emptyList()
+        private set
+
     suspend fun transferToArmsx2(ctx: Context): String? = withContext(Dispatchers.IO) {
         val nether = Emulators.byId("nethersx2")!!
         val arm = Emulators.byId("armsx2")!!
@@ -308,6 +312,7 @@ object Saves {
             })
             tmp.deleteRecursively()
             inspect(ctx, arm)
+            transferredCards = cards.mapNotNull { it.rel.split('/').getOrNull(1) }.distinct().sorted()
             null
         } catch (e: Storage.NeedsShizuku) {
             "Necesita Shizuku"

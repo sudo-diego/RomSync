@@ -24,6 +24,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.background
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
@@ -84,7 +85,9 @@ fun ArtPicker(g: Game, onClose: () -> Unit) {
                         horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         items(images!!) { (thumb, url) ->
                             AsyncImage(model = thumb, contentDescription = null, contentScale = ContentScale.Crop,
-                                modifier = Modifier.aspectRatio(2f / 3f).clip(RoundedCornerShape(10.dp)).clickable {
+                                // Fondo mientras baja la miniatura (sin él la ventana parecía vacía varios segundos).
+                                modifier = Modifier.aspectRatio(2f / 3f).clip(RoundedCornerShape(10.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceVariant).clickable {
                                     saving = true
                                     scope.launch {
                                         runCatching { Art.useUrl(g.id, "grid", url) }.onFailure { error = it.message }

@@ -88,6 +88,12 @@ object Emulators {
 
     fun needsShell(path: String) = path.startsWith("$DATA/") || path.startsWith("/sdcard/Android/data/")
 
+    /** Carpeta "vita" de Vita3K: la del almacenamiento si tiene partidas o juegos; si no, la de Android/data. */
+    fun vitaRoot(files: String): String =
+        listOf("$SDCARD/Vita", "$SDCARD/vita3k", "$SDCARD/Vita3K").firstOrNull { d ->
+            listOf("ux0/user", "ux0/app").any { File("$d/$it").list()?.isNotEmpty() == true }
+        } ?: "$files/vita"
+
     /** Las carpetas de partidas de un emulador instalado (vacía si no aplica). */
     suspend fun sources(emu: Emulator, pkg: String): List<SaveSource> {
         val custom = Prefs.emuPath(emu.id)
@@ -101,15 +107,20 @@ object Emulators {
                 listOf(SaveSource("user", root, listOf("GC/**", "Wii/title/*/*/data/**", "StateSaves/**")))
             }
             "armsx2", "nethersx2" -> {
+                // Solo ARMSX2 puede tener su carpeta en el almacenamiento (la elegida en su asistente). NetherSX2 siempre
+                // usa Android/data: si buscara también en /sdcard/ARMSX2, "Pasar tarjetas" copiaría de ARMSX2 a ARMSX2.
                 val root = custom.ifBlank {
-                    listOf("$SDCARD/ARMSX2", "$SDCARD/armsx2").firstOrNull { File("$it/memcards").isDirectory } ?: files
+                    if (emu.id != "armsx2") files
+                    else listOf("$SDCARD/ARMSX2", "$SDCARD/armsx2").firstOrNull { File("$it/memcards").isDirectory } ?: files
                 }
                 listOf(SaveSource("data", root, listOf("memcards/**", "sstates/**")))
             }
             "eden" -> listOf(
                 SaveSource("files", custom.ifBlank { files }, listOf("nand/user/save/**", "nand/system/save/8000000000000010/**")),
             )
-            "vita3k" -> listOf(SaveSource("vita", custom.ifBlank { "$files/vita" }, listOf("ux0/user/**")))
+            // Vita3K deja elegir dónde guarda todo; en la tablet del usuario es /sdcard/Vita (Android/data/…/vita quedó
+            // vacía y los respaldos salían sin partidas). Gana la que tenga algo en ux0/user.
+            "vita3k" -> listOf(SaveSource("vita", custom.ifBlank { vitaRoot(files) }, listOf("ux0/user/**")))
             "watermelonds" -> buildList {
                 add(SaveSource("roms", "${Prefs.romsDir}/nds", listOf("**/*.sav", "**/*.srm", "**/*.dsv", "**/*.ml?")))
                 add(SaveSource("app", custom.ifBlank { files }, listOf("saves/**", "*state*/**", "*State*/**")))

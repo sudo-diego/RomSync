@@ -139,7 +139,12 @@ object Repo {
             }.getOrNull().orEmpty().also { Prefs.setSwitchId(key, it) }
             if (id.isEmpty()) null else f.path to id
         }.toMap()
-        val only = Names.apply(Group.all(leftovers, ids))
+        // Si sale el mismo id que un juego del PC (una actualización de Switch en la tablet cuyo juego base está en el
+        // PC: los dos son "tid:<TitleID>"), se le da otro: la lista de la tienda se caía con ids repetidos.
+        val pcIds = lib?.games?.map { it.id }?.toHashSet() ?: hashSetOf()
+        val only = Names.apply(Group.all(leftovers, ids).map { g ->
+            if (g.id in pcIds) g.copy(id = Group.gameId(g.system, "tablet:${g.primary}")) else g
+        }.distinctBy { it.id })
         tabletOnlyIds = only.map { it.id }.toSet()
         tabletOnly = only
         val have = localBios.map { it.path.lowercase() }.toHashSet()
@@ -233,8 +238,7 @@ object Repo {
      * Clave para juntar versiones del mismo juego: la plataforma y el título que sale del NOMBRE DEL ARCHIVO (no el
      * nombre propio). Así, ponerle "Wind Waker HD Plus" a la versión con mods no la separa de Wind Waker.
      */
-    fun versionKey(g: Game): String =
-        g.system.lowercase() + "|" + Group.cleanTitle(g.name).first.lowercase().filter { it.isLetterOrDigit() }
+    fun versionKey(g: Game): String = g.system.lowercase() + "|" + Group.versionTitle(g.name)
 
     /** Otras versiones del mismo juego (otra región, otro formato, una con mods). */
     fun versions(g: Game): List<Game> {

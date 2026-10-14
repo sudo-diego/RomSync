@@ -147,6 +147,24 @@ class GroupTest {
         val ps2 = Group.system("ps2", listOf(fe("ps2/USA v01.60(07-02-2002).bin", 4194304), fe("ps2/USA v01.60(07-02-2002).MEC", 4),
             fe("ps2/Europe.bin", 4194304), fe("ps2/God of War (USA).iso", 4000000000)))
         assertEquals(listOf("God of War"), ps2.map { it.title })
+        // Lo que queda en ps2/BIOS después de ordenar (en la tablet del usuario): .DIFF de 4 MB y .INF.
+        val left = Group.system("ps2", listOf(
+            fe("ps2/BIOS/ps2 bios usa/SCPH-77001_BIOS_V15_USA_220_(NTSC)/SCPH-77001_BIOS_V15_USA_220.DIFF", 4194304),
+            fe("ps2/BIOS/ps2 bios usa/SCPH-90001_BIOS_V18_USA_230_(NTSC)/SCPH-90001_BIOS_V18_USA_230.INF", 567),
+            fe("ps2/SCPH-90001_BIOS_V18_USA_230.DIFF", 4194304),
+            fe("ps2/Shin Megami Tensei - Persona 3 FES (USA) (patched by XDeltaTool).iso", 4534960128)))
+        assertEquals(listOf("Shin Megami Tensei - Persona 3 FES"), left.map { it.title })
+    }
+
+    @Test fun versionTitles() {
+        // Wii U: la carpeta y el .wua del mismo juego (nombres reales del PC del usuario; Game.name va sin extensión).
+        assertEquals(Group.versionTitle("THE LEGEND OF ZELDA The Wind Waker HD [Game] [0005000010143500]"),
+            Group.versionTitle("The Wind Waker HD (US)"))
+        // GameCube: No-Intro con "The" al final.
+        assertEquals(Group.versionTitle("Legend of Zelda, The - The Wind Waker (USA)"),
+            Group.versionTitle("Legend of Zelda, The - The Wind Waker (Europe) (En,Fr,De,Es,It)"))
+        assertFalse(Group.versionTitle("The Wind Waker HD (US)") == Group.versionTitle("Twilight Princess HD (US)"))
+        assertEquals("legendofzelda", Group.versionTitle("Legend of Zelda, The (USA)"))
     }
 
     @Test fun globs() {

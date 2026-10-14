@@ -54,7 +54,7 @@ fun SavesScreen() {
             SpacedRow(Modifier.fillMaxWidth()) {
                 Column(Modifier.weight(1f)) {
                     Text("Partidas", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-                    Muted("En el servidor: ${Prefs.remoteBackups.removePrefix("/").ifBlank { "sin configurar" }}")
+                    Muted("Una copia de todas las partidas de cada emulador. Para un solo juego, ábrelo en la Tienda.")
                 }
                 if (allBusy) CircularProgressIndicator(Modifier.size(28.dp))
                 else Button(enabled = Prefs.configured, onClick = {
@@ -143,6 +143,7 @@ private fun EmulatorCard(emu: Emulator, onRestore: () -> Unit) {
         SpacedRow {
             Column(Modifier.weight(1f)) {
                 Text(emu.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Muted(consoles[emu.id].orEmpty())
             }
             if (st?.installed != true) Muted("No instalado")
         }
@@ -428,3 +429,11 @@ private fun BackupRow(b: SaveBackupInfo, onClick: () -> Unit) {
         }
     }
 }
+
+/** Qué consolas guarda cada emulador (para entender qué es cada tarjeta). */
+private val consoles = mapOf(
+    "retroarch" to "NES, SNES, Game Boy, GBA, N64, PS1, Saturn, Genesis y más",
+    "dolphin" to "GameCube y Wii", "eden" to "Nintendo Switch", "azahar" to "Nintendo 3DS", "watermelonds" to "Nintendo DS",
+    "armsx2" to "PlayStation 2", "nethersx2" to "PlayStation 2 (el anterior)", "vita3k" to "PlayStation Vita",
+    "gamenative" to "Juegos de PC (Steam)",
+)

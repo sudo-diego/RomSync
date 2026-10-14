@@ -54,6 +54,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AutoFixHigh
 import androidx.compose.material.icons.rounded.CloudSync
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.FolderOpen
@@ -89,6 +90,7 @@ enum class Tab(val label: String, val icon: ImageVector) {
     STORE("Tienda", Icons.Rounded.Storefront),
     DOWNLOADS("Descargas", Icons.Rounded.Download),
     SAVES("Partidas", Icons.Rounded.CloudSync),
+    ORGANIZE("Organizar", Icons.Rounded.AutoFixHigh),
     KITCHEN("Web", Icons.Rounded.Language),
     SETTINGS("Ajustes", Icons.Rounded.Settings),
 }
@@ -149,6 +151,32 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
+        if (event.action == android.view.KeyEvent.ACTION_DOWN) {
+            val step = when (event.keyCode) {
+                android.view.KeyEvent.KEYCODE_BUTTON_L1 -> -1
+                android.view.KeyEvent.KEYCODE_BUTTON_R1 -> 1
+                else -> 0
+            }
+            if (step != 0) {
+                val tabs = Tab.entries
+                Nav.game = null
+                Nav.tab = tabs[(tabs.indexOf(Nav.tab) + step + tabs.size) % tabs.size]
+                Sound.play(Sound.Fx.MOVE)
+                return true
+            }
+        }
+        // A = elegir y B = volver también si el sistema no los traduce solo (algunos controles no lo hacen).
+        val mapped = when (event.keyCode) {
+            android.view.KeyEvent.KEYCODE_BUTTON_A -> android.view.KeyEvent.KEYCODE_DPAD_CENTER
+            android.view.KeyEvent.KEYCODE_BUTTON_B -> android.view.KeyEvent.KEYCODE_BACK
+            else -> 0
+        }
+        if (mapped != 0) return super.dispatchKeyEvent(android.view.KeyEvent(event.downTime, event.eventTime, event.action,
+            mapped, event.repeatCount, event.metaState, event.deviceId, event.scanCode, event.flags, event.source))
+        return super.dispatchKeyEvent(event)
     }
 
     override fun onStart() {
@@ -254,7 +282,7 @@ private fun Sidebar(active: Int, go: (Tab) -> Unit) {
             val scale by animateFloatAsState(if (isPressed) 0.94f else 1f, label = "s")
             Row(
                 Modifier.fillMaxWidth().height(52.dp).graphicsLayer { scaleX = scale; scaleY = scale }
-                    .clip(RoundedCornerShape(16.dp)).background(bg)
+                    .focusHighlight(RoundedCornerShape(16.dp)).clip(RoundedCornerShape(16.dp)).background(bg)
                     .clickable(interactionSource = pressed, indication = null) { go(t) }
                     .padding(horizontal = 16.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -294,6 +322,7 @@ private fun TabContent() {
             game != null -> GameScreen(game) { Sound.play(Sound.Fx.BACK); Nav.game = null }
             tab == Tab.DOWNLOADS -> DownloadsScreen()
             tab == Tab.SAVES -> SavesScreen()
+            tab == Tab.ORGANIZE -> OrganizeScreen()
             tab == Tab.KITCHEN -> KitchenScreen()
             tab == Tab.SETTINGS -> SettingsScreen()
             else -> StoreScreen()

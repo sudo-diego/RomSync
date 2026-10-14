@@ -1,8 +1,8 @@
 """
 Genera la música de fondo y los sonidos de RomSync. Todo es ORIGINAL y sintetizado aquí (sin muestras de nadie).
 Uso: python tools/sintetizar.py   (necesita ffmpeg en el PATH para comprimir la música a .ogg)
-Escribe app/src/main/res/raw/: musica_*.ogg (3 pistas de ~2 min con secciones distintas, que empalman sin corte)
-y sfx_<juego>_<sonido>.wav (3 juegos de sonidos).
+Escribe app/src/main/res/raw/sfx_<juego>_<sonido>.wav (3 juegos de sonidos). Las funciones de música quedan por si
+se quieren volver a usar, pero la app ya no trae música: cada usuario elige su canción.
 """
 import math, random, struct, wave, os, subprocess, tempfile
 
@@ -241,5 +241,5 @@ def sfx():
 
 if __name__ == '__main__':
     for f in os.listdir(OUT):
-        if f.startswith(('musica_', 'sfx_')): os.remove(os.path.join(OUT, f))
-    sfx(); bossa(); lofi(); retro()
+        if f.startswith('sfx_'): os.remove(os.path.join(OUT, f))
+    sfx()  # la música la elige cada usuario (Ajustes → Sonido); aquí solo los sonidos

@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material.icons.rounded.Album
 import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.PlaylistAdd
 import androidx.compose.material.icons.rounded.PlaylistPlay
@@ -169,7 +170,7 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
             Box(Modifier.width(200.dp).graphicsLayer {
                 alpha = enter.value; translationY = (1f - enter.value) * 80f
                 rotationZ = (1f - enter.value) * -4f
-            }.shadow(16.dp, RoundedCornerShape(18.dp)).clip(RoundedCornerShape(18.dp)).pressable { Sound.play(Sound.Fx.OPEN); editing = true }) {
+            }.focusHighlight().shadow(16.dp, RoundedCornerShape(18.dp)).clip(RoundedCornerShape(18.dp)).pressable { Sound.play(Sound.Fx.OPEN); editing = true }) {
                 Cover(g, Modifier.fillMaxWidth())
                 Icon(Icons.Rounded.Edit, "Editar", Modifier.align(Alignment.TopEnd).padding(8.dp).size(34.dp)
                     .clip(RoundedCornerShape(99.dp)).background(Color(0xAA000000)).padding(7.dp), tint = Color.White)
@@ -610,6 +611,12 @@ private fun DeleteDialog(g: Game, w: Repo.Where, onClose: () -> Unit, onGone: ()
         }.getOrDefault(emptyList())
     }
     val lost = (dev || !onDevice) && (srv || !onServer)
+    var confirming by remember { mutableStateOf(false) }
+    if (confirming) {
+        DeleteConfirm(g, w, dev && onDevice, srv && onServer, saves, onDevice, onServer, withSaves,
+            onBack = { confirming = false }, onClose = onClose, onGone = onGone)
+        return
+    }
     AlertDialog(
         onDismissRequest = onClose,
         title = { Text("Borrar ${g.title}") },
@@ -631,12 +638,61 @@ private fun DeleteDialog(g: Game, w: Repo.Where, onClose: () -> Unit, onGone: ()
                 Opt(srv, onServer, "Del servidor", if (onServer) formatSize(g.size) else "No está") { srv = it }
                 if (withSaves.isNotEmpty()) Opt(saves, true, "Sus partidas en el dispositivo",
                     withSaves.joinToString(" · ") { (l, u) -> "${l.emu.name}: ${formatSize(u.bytes)}" } + " (se respaldan antes)") { saves = it }
-                if (lost && (dev || srv)) Text("No va a quedar ninguna copia del juego.", color = MaterialTheme.colorScheme.error,
-                    fontWeight = FontWeight.SemiBold)
             }
         },
         confirmButton = {
-            Button(enabled = dev || srv || saves, onClick = {
+            Button(enabled = dev || srv || saves, onClick = { confirming = true }) { Text("Siguiente") }
+        },
+        dismissButton = { TextButton(onClick = onClose) { Text("Cancelar") } },
+    )
+}
+
+/**
+ * Segundo paso de Borrar: en palabras simples qué va a pasar con el juego y con las partidas. Si algo se pierde para
+ * siempre (no queda ninguna copia, o no hay servidor para respaldar las partidas), lo dice en rojo y pide marcar que se
+ * entiende.
+ */
+@Composable
+private fun DeleteConfirm(
+    g: Game, w: Repo.Where, dev: Boolean, srv: Boolean, saves: Boolean, onDevice: Boolean, onServer: Boolean,
+    withSaves: List<Pair<GameSaves.Link, Saves.Unit>>, onBack: () -> Unit, onClose: () -> Unit, onGone: () -> Unit,
+) {
+    val ctx = LocalContext.current
+    val gameLost = (dev || !onDevice) && (srv || !onServer) && (dev || srv)
+    val savesLost = saves && !Prefs.configured
+    var sure by remember { mutableStateOf(false) }
+    val risky = gameLost || savesLost
+    AlertDialog(
+        onDismissRequest = onClose,
+        title = { Text("¿Seguro?") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                @Composable
+                fun Line(ok: Boolean, text: String) = Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Icon(if (ok) Icons.Rounded.CheckCircle else Icons.Rounded.Warning, null,
+                        tint = if (ok) Palette.ok else MaterialTheme.colorScheme.error)
+                    Text(text, color = if (ok) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.error)
+                }
+                if (dev) Line(true, "Se borra del dispositivo (${formatSize(w.localSize)} libres)." +
+                    if (onServer && !srv) " Sigue en el servidor: lo puedes volver a descargar cuando quieras." else "")
+                if (srv) Line(!gameLost, "Se borra del servidor (${formatSize(g.size)}). No va a la papelera." +
+                    if (onDevice && !dev) " Sigue en el dispositivo." else "")
+                if (gameLost) Line(false, "No vas a tener este juego en ningún lado.")
+                if (saves) {
+                    if (Prefs.configured) Line(true, "Se borran sus partidas del dispositivo (" +
+                        withSaves.joinToString(", ") { it.first.emu.name } + "). Antes se respaldan en el servidor: las recuperas " +
+                        "en la ficha del juego → Partidas → Restaurar.")
+                    else Line(false, "Se borran sus partidas y no hay servidor para respaldarlas: se pierden para siempre.")
+                } else if (withSaves.isNotEmpty()) Line(true, "Tus partidas se quedan en el dispositivo.")
+                if (risky) Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { sure = !sure },
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(sure, { sure = it })
+                    Text("Entiendo que no se puede deshacer", fontWeight = FontWeight.SemiBold)
+                }
+            }
+        },
+        confirmButton = {
+            Button(enabled = !risky || sure, onClick = {
                 onClose()
                 appScope.launch {
                     val msgs = ArrayList<String>()
@@ -645,11 +701,11 @@ private fun DeleteDialog(g: Game, w: Repo.Where, onClose: () -> Unit, onGone: ()
                     if (srv && onServer) msgs += runCatching { "Servidor: ${formatSize(Repo.deleteFromPc(g))}" }.getOrElse { "Servidor: ${it.message}" }
                     Sound.play(Sound.Fx.DONE)
                     Toast.makeText(ctx, msgs.joinToString(" · ").ifEmpty { "Listo" }, Toast.LENGTH_LONG).show()
-                    if (lost && (dev || srv)) onGone()
+                    if (gameLost) onGone()
                 }
             }, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) { Text("Borrar") }
         },
-        dismissButton = { TextButton(onClick = onClose) { Text("Cancelar") } },
+        dismissButton = { TextButton(onClick = onBack) { Text("Atrás") } },
     )
 }
 

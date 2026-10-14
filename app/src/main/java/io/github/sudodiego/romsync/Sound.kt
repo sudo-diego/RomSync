@@ -3,35 +3,22 @@ package io.github.sudodiego.romsync
 import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
-import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioTrack
-import android.media.MediaCodec
-import android.media.MediaExtractor
-import android.media.MediaFormat
 import android.media.MediaPlayer
 import android.media.SoundPool
 import android.net.Uri
 import android.util.Log
-import java.io.ByteArrayOutputStream
 
 /**
- * Música de fondo y sonidos de navegación (las pistas y sonidos incluidos los genera tools/sintetizar.py: originales).
- * - Pistas incluidas: se decodifican (.ogg) una vez a PCM y suenan en un AudioTrack estático con puntos de loop, así
- *   se repiten sin el microcorte de MediaPlayer.
- * - Canción propia (elegida en Ajustes): MediaPlayer en loop (puede ser larga; no se carga entera en memoria).
+ * Música de fondo y sonidos de navegación.
+ * - Música: la canción que elija el usuario (Ajustes), en loop con MediaPlayer. Sin canción elegida, no hay música.
  * - Sonidos: SoundPool, tres juegos (clásico, suave, retro).
  * Respeta el foco de audio y se pausa en segundo plano. Un error de audio nunca cierra la app: se sigue sin sonido.
  */
 object Sound {
     enum class Fx { MOVE, OPEN, BACK, DONE, WARN, TOGGLE }
 
-    /** Pistas incluidas: id → (nombre, recurso). */
-    val tracks = linkedMapOf(
-        "bossa" to ("Bossa de la tienda" to R.raw.musica_bossa),
-        "lofi" to ("Tarde tranquila" to R.raw.musica_lofi),
-        "retro" to ("8 bits" to R.raw.musica_retro),
-    )
     val packs = linkedMapOf("clasico" to "Clásico", "suave" to "Suave", "retro" to "Retro")
 
     private val packRes = mapOf(
@@ -106,29 +93,28 @@ object Sound {
         if (Prefs.musicOn && foreground) startMusic() else pauseMusic(abandon = true)
     }
 
-    private fun wantedTrack() = if (Prefs.musicTrack == "propia" && Prefs.customMusic.isNotBlank()) "propia:" + Prefs.customMusic
-        else Prefs.musicTrack.takeIf { it in tracks } ?: "bossa"
+    /** Solo hay música si el usuario eligió una canción. */
+    private fun wantedTrack() = if (Prefs.customMusic.isNotBlank()) "propia:" + Prefs.customMusic else ""
 
     /** Prepara la pista elegida en otro hilo (decodificar no debe trabar la pantalla). */
     private fun reloadMusic() {
         val want = wantedTrack()
+        if (want.isEmpty()) { synchronized(this) { releaseMusic() }; return }
         Thread {
             synchronized(this) {
                 releaseMusic()
                 runCatching {
-                    if (want.startsWith("propia:")) {
-                        player = MediaPlayer().apply {
-                            setAudioAttributes(attrs())
-                            setDataSource(app, Uri.parse(want.removePrefix("propia:")))
-                            isLooping = true
-                            prepare()
-                        }
-                    } else track = decodeTrack(tracks.getValue(want).second)
+                    player = MediaPlayer().apply {
+                        setAudioAttributes(attrs())
+                        setDataSource(app, Uri.parse(want.removePrefix("propia:")))
+                        isLooping = true
+                        prepare()
+                    }
                     loadedTrack = want
                 }.onFailure {
-                    Log.w("RomSync", "Música ($want): ${it.message}")
-                    // La canción propia ya no se puede abrir (se borró o se movió): volver a la incluida.
-                    if (want.startsWith("propia:")) { Prefs.musicTrack = "bossa"; runCatching { track = decodeTrack(R.raw.musica_bossa); loadedTrack = "bossa" } }
+                    // La canción se borró o se movió: sin música (en Ajustes se ve que hay que elegirla de nuevo).
+                    Log.w("RomSync", "Música: ${it.message}")
+                    Prefs.customMusic = ""; Prefs.customMusicName = ""
                 }
             }
             if (foreground) startMusic()
@@ -139,53 +125,6 @@ object Sound {
         track?.let { runCatching { it.stop() }; runCatching { it.release() } }
         player?.let { runCatching { it.stop() }; runCatching { it.release() } }
         track = null; player = null; loadedTrack = ""
-    }
-
-    /** .ogg de res/raw → PCM 16 bits → AudioTrack estático que se repite solo. */
-    private fun decodeTrack(res: Int): AudioTrack {
-        val ex = MediaExtractor()
-        app.resources.openRawResourceFd(res).use { fd -> ex.setDataSource(fd.fileDescriptor, fd.startOffset, fd.length) }
-        val fmt = ex.getTrackFormat(0)
-        ex.selectTrack(0)
-        val codec = MediaCodec.createDecoderByType(fmt.getString(MediaFormat.KEY_MIME)!!)
-        codec.configure(fmt, null, null, 0)
-        codec.start()
-        val pcm = ByteArrayOutputStream()
-        val info = MediaCodec.BufferInfo()
-        var inDone = false
-        var outFmt = fmt
-        while (true) {
-            if (!inDone) {
-                val i = codec.dequeueInputBuffer(10_000)
-                if (i >= 0) {
-                    val n = ex.readSampleData(codec.getInputBuffer(i)!!, 0)
-                    if (n < 0) { codec.queueInputBuffer(i, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM); inDone = true }
-                    else { codec.queueInputBuffer(i, 0, n, ex.sampleTime, 0); ex.advance() }
-                }
-            }
-            val o = codec.dequeueOutputBuffer(info, 10_000)
-            if (o == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) outFmt = codec.outputFormat
-            if (o >= 0) {
-                val b = codec.getOutputBuffer(o)!!
-                val chunk = ByteArray(info.size); b.position(info.offset); b.get(chunk); pcm.write(chunk)
-                codec.releaseOutputBuffer(o, false)
-                if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) break
-            }
-        }
-        codec.stop(); codec.release(); ex.release()
-        val rate = outFmt.getInteger(MediaFormat.KEY_SAMPLE_RATE)
-        val ch = outFmt.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
-        val bytes = pcm.toByteArray()
-        val t = AudioTrack.Builder()
-            .setAudioAttributes(attrs())
-            .setAudioFormat(AudioFormat.Builder().setSampleRate(rate).setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                .setChannelMask(if (ch == 2) AudioFormat.CHANNEL_OUT_STEREO else AudioFormat.CHANNEL_OUT_MONO).build())
-            .setTransferMode(AudioTrack.MODE_STATIC)
-            .setBufferSizeInBytes(bytes.size)
-            .build()
-        t.write(bytes, 0, bytes.size)
-        t.setLoopPoints(0, bytes.size / (2 * ch), -1)
-        return t
     }
 
     private fun setVolume(v: Float) {

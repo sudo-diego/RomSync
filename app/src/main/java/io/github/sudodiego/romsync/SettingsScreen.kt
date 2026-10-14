@@ -329,7 +329,6 @@ private fun LookAndSoundCard() {
     var sfx by remember { mutableStateOf(Prefs.sfxOn) }
     var musicVol by remember { mutableStateOf(Prefs.musicVolume.toFloat()) }
     var sfxVol by remember { mutableStateOf(Prefs.sfxVolume.toFloat()) }
-    var trackSel by remember { mutableStateOf(Prefs.musicTrack) }
     var pack by remember { mutableStateOf(Prefs.sfxPack) }
     var customName by remember { mutableStateOf(Prefs.customMusicName) }
     // Elegir una canción propia (cualquier audio del dispositivo); se guarda el permiso para leerla siempre.
@@ -343,7 +342,6 @@ private fun LookAndSoundCard() {
                 }
             }.getOrNull() ?: "Canción propia"
             Prefs.customMusic = uri.toString(); Prefs.customMusicName = name; customName = name
-            Prefs.musicTrack = "propia"; trackSel = "propia"
             Sound.musicSettingsChanged()
         }
     }
@@ -357,19 +355,13 @@ private fun LookAndSoundCard() {
                 enabled = music, valueRange = 0f..100f)
             Switch(music, { music = it; Prefs.musicOn = it; Sound.musicSettingsChanged(); Sound.play(Sound.Fx.TOGGLE) })
         }
-        androidx.compose.foundation.layout.FlowRow(Modifier.padding(start = 34.dp), horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Sound.tracks.forEach { (id, v) ->
-                FilterChip(selected = trackSel == id, enabled = music, onClick = {
-                    trackSel = id; Prefs.musicTrack = id; Sound.musicSettingsChanged()
-                }, label = { Text(v.first) }, shape = RoundedCornerShape(99.dp))
-            }
-            FilterChip(selected = trackSel == "propia", enabled = music, onClick = {
-                if (Prefs.customMusic.isBlank()) pick.launch(arrayOf("audio/*"))
-                else { trackSel = "propia"; Prefs.musicTrack = "propia"; Sound.musicSettingsChanged() }
-            }, label = { Text(if (customName.isBlank()) "Elegir canción propia…" else customName.substringBeforeLast('.').take(28)) },
+        SpacedRow(Modifier.padding(start = 34.dp)) {
+            FilterChip(selected = customName.isNotBlank(), enabled = music, onClick = { pick.launch(arrayOf("audio/*")) },
+                label = { Text(if (customName.isBlank()) "Elegir canción…" else customName.substringBeforeLast('.').take(40)) },
                 leadingIcon = { Icon(Icons.Rounded.LibraryMusic, null, Modifier.size(18.dp)) }, shape = RoundedCornerShape(99.dp))
-            if (customName.isNotBlank()) TextButton(enabled = music, onClick = { pick.launch(arrayOf("audio/*")) }) { Text("Cambiar") }
+            if (customName.isNotBlank()) TextButton(onClick = {
+                Prefs.customMusic = ""; Prefs.customMusicName = ""; customName = ""; Sound.musicSettingsChanged()
+            }) { Text("Quitar") }
         }
         SpacedRow {
             Icon(Icons.Rounded.TouchApp, null)

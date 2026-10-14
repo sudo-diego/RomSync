@@ -247,38 +247,54 @@ private fun BubblesCanvas(modifier: Modifier, time: androidx.compose.runtime.Mut
     }
 }
 
-/** Ondas de luz que cruzan la pantalla, como el menú XMB de PlayStation. */
+/**
+ * Ondas como el menú XMB de PlayStation: fondo degradado del color elegido y una "cinta de seda" hecha de muchas
+ * líneas finas que ondulan juntas (se ven como una tela translúcida), más chispas que suben y titilan.
+ */
 @Composable
 private fun WavesCanvas(modifier: Modifier, time: androidx.compose.runtime.MutableFloatState, dark: Boolean, accent: Color, top: Color, bottom: Color) {
-    val tint = if (dark) mix(accent, Color.Black, 0.75f) else mix(accent, Color.White, 0.82f)
+    val bgTop = if (dark) mix(accent, Color.Black, 0.55f) else mix(accent, Color.White, 0.45f)
+    val bgBottom = if (dark) mix(accent, Color.Black, 0.88f) else mix(accent, Color.White, 0.80f)
+    val line = Color.White
     Canvas(modifier.fillMaxSize()) {
         val t = time.floatValue
-        drawRect(Brush.verticalGradient(listOf(top, tint, bottom)))
         val w = size.width; val h = size.height
-        for (k in 0 until 5) {
-            val path = androidx.compose.ui.graphics.Path()
-            val base = h * (0.52f + k * 0.035f)
-            val amp = h * (0.06f + k * 0.015f)
-            val speed = 0.12f + k * 0.035f
-            val freq = 1.6f + k * 0.35f
-            var x = 0f
-            path.moveTo(0f, base)
-            while (x <= w) {
-                val u = x / w
-                path.lineTo(x, base + amp * kotlin.math.sin(u * freq * 6.283f + t * speed + k * 1.3f) *
-                    (0.6f + 0.4f * kotlin.math.sin(u * 3.1f + t * 0.05f)))
-                x += 12f
+        drawRect(Brush.verticalGradient(listOf(bgTop, bgBottom)))
+        // Brillo suave detrás de la cinta.
+        drawRect(Brush.verticalGradient(0f to Color.Transparent, 0.5f to Color.White.copy(alpha = if (dark) 0.06f else 0.18f),
+            1f to Color.Transparent, startY = h * 0.35f, endY = h * 0.75f))
+        val stroke = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.4.dp.toPx())
+        // Dos cintas, cada una de 36 líneas con la fase apenas corrida: juntas parecen una tela que ondula.
+        for (ribbon in 0 until 2) {
+            val base = h * (0.55f + ribbon * 0.04f)
+            val amp = h * (0.10f - ribbon * 0.03f)
+            val spread = h * (0.05f + ribbon * 0.02f)
+            for (i in 0 until 36) {
+                val f = i / 35f
+                val path = androidx.compose.ui.graphics.Path()
+                var x = 0f
+                while (x <= w + 16f) {
+                    val u = x / w
+                    val y = base +
+                        amp * kotlin.math.sin(u * 5.2f + t * (0.22f + ribbon * 0.07f) + f * 1.4f + ribbon * 2f) *
+                            (0.55f + 0.45f * kotlin.math.sin(u * 2.3f - t * 0.11f + ribbon)) +
+                        spread * (f - 0.5f) * kotlin.math.cos(u * 3.1f + t * 0.17f + ribbon * 1.7f)
+                    if (x == 0f) path.moveTo(x, y) else path.lineTo(x, y)
+                    x += 16f
+                }
+                // Más opacas en el centro de la cinta, transparentes en los bordes.
+                val edge = 1f - kotlin.math.abs(f - 0.5f) * 2f
+                drawPath(path, line.copy(alpha = (if (dark) 0.10f else 0.22f) * (0.25f + 0.75f * edge)), style = stroke)
             }
-            // La onda es una cinta: se vuelve por debajo con otra fase.
-            x = w
-            while (x >= 0f) {
-                val u = x / w
-                path.lineTo(x, base + h * 0.02f + amp * 0.8f * kotlin.math.sin(u * freq * 6.283f + t * speed + k * 1.3f + 0.5f))
-                x -= 12f
-            }
-            path.close()
-            drawPath(path, Color.White.copy(alpha = if (dark) 0.04f else 0.35f))
-            drawPath(path, accent.copy(alpha = if (dark) 0.08f else 0.10f))
+        }
+        // Chispas: suben despacio y titilan.
+        for (i in 0 until 28) {
+            val period = 40f + (i % 7) * 6f
+            val y = (((i * 0.37f) % 1f) - t / period) % 1f
+            val yy = ((y + 1f) % 1f) * h
+            val xx = ((i * 0.618f) % 1f) * w + 20f * kotlin.math.sin(t * 0.4f + i)
+            val tw = 0.5f + 0.5f * kotlin.math.sin(t * (1.2f + (i % 4) * 0.3f) + i)
+            drawCircle(Color.White.copy(alpha = (if (dark) 0.35f else 0.6f) * tw), (1.2f + (i % 3)).dp.toPx(), Offset(xx, yy))
         }
     }
 }

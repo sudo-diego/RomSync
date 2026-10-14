@@ -135,7 +135,7 @@ private fun Step(n: Int, title: String, desc: String, count: Int, onOpen: () -> 
 
 /** Cada juego repetido con la versión recomendada; marcas las que sobran y se borran del PC y de la tablet. */
 @Composable
-private fun DuplicatesDialog(onClose: () -> Unit) {
+fun DuplicatesDialog(onClose: () -> Unit) {
     val ctx = LocalContext.current
     val groups = remember(Repo.library, Repo.tabletOnly, Organize.keptVersions) { Organize.duplicateGroups() }
     var selected by remember { mutableStateOf(setOf<String>()) }
@@ -223,7 +223,7 @@ private fun DuplicatesDialog(onClose: () -> Unit) {
 
 /** Los juegos que solo están en la tablet, para copiarlos todos al PC de una vez. */
 @Composable
-private fun TabletOnlyDialog(onClose: () -> Unit) {
+fun TabletOnlyDialog(onClose: () -> Unit) {
     val ctx = LocalContext.current
     val list = remember(Repo.tabletOnly) { Organize.tabletOnly() }
     var selected by remember(list) { mutableStateOf(list.map { it.id }.toSet()) }

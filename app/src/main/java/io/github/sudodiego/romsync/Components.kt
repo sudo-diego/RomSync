@@ -3,8 +3,11 @@ package io.github.sudodiego.romsync
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.composed
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.foundation.border
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -109,3 +112,19 @@ fun Muted(text: String, modifier: Modifier = Modifier) =
 @Composable
 fun SpacedRow(modifier: Modifier = Modifier, content: @Composable RowScope.() -> Unit) =
     Row(modifier, horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically, content = content)
+
+/**
+ * Para el control (Xbox, G9): cuando el elemento tiene el foco se agranda un poco, lleva un borde del color principal
+ * y suena el "tic". Va ANTES del clickable en la cadena de modificadores (así ve el foco del clickable).
+ */
+fun Modifier.focusHighlight(shape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(18.dp)): Modifier = composed {
+    var focused by remember { androidx.compose.runtime.mutableStateOf(false) }
+    val scale by androidx.compose.animation.core.animateFloatAsState(if (focused) 1.05f else 1f,
+        androidx.compose.animation.core.spring(dampingRatio = 0.6f, stiffness = 500f), label = "foco")
+    val color = MaterialTheme.colorScheme.primary
+    this.onFocusChanged {
+        if (it.isFocused && !focused) Sound.play(Sound.Fx.MOVE)
+        focused = it.isFocused
+    }.graphicsLayer { scaleX = scale; scaleY = scale }
+        .then(if (focused) Modifier.border(4.dp, color, shape) else Modifier)
+}

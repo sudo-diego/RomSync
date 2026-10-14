@@ -77,6 +77,7 @@ class DownloadService : Service() {
                 items.clear()
                 for (i in 0 until a.length()) items += Download.fromJson(a.getJSONObject(i))
             }
+            Thread { runCatching { cleanOrphans() } }.start()
         }
 
         fun save() {
@@ -111,15 +112,32 @@ class DownloadService : Service() {
             start(ctx)
         }
 
-        /** Cancela y borra lo descargado a medias (los archivos ya completos de ese juego se quedan). */
+        /**
+         * Cancela y no deja nada a medias: borra los .part y también los archivos que esta descarga alcanzó a completar
+         * (una descarga solo incluye archivos que faltaban, así que no se toca nada que ya estuviera).
+         */
         fun cancel(d: Download) {
             d.status = DlStatus.FAILED
             items.remove(d)
             d.files.forEach { f ->
                 val dest = if (d.bios) Local.biosFile(f.path) else Local.romFile(f.path)
                 File(dest.path + ".part").delete()
+                if (d.bios && dest.isFile && dest.length() == f.size) dest.delete()
             }
+            if (!d.bios) Local.deleteFiles(d.files.filter { f -> Local.romFile(f.path).let { it.isFile && it.length() == f.size } })
             save()
+            appScope.launch { runCatching { Repo.rescanLocal() } }
+        }
+
+        /** .part que no son de ninguna descarga pendiente (una descarga que se cortó o se quitó): se borran al abrir. */
+        private fun cleanOrphans() {
+            val keep = items.flatMap { d -> d.files.map { f -> (if (d.bios) Local.biosFile(f.path) else Local.romFile(f.path)).path + ".part" } }.toHashSet()
+            for (root in listOf(File(Prefs.romsDir), File(Prefs.biosDir))) {
+                if (!root.isDirectory) continue
+                root.walkTopDown().onEnter { !it.name.startsWith(".") || it == root }
+                    .filter { it.isFile && it.name.endsWith(".part") && it.path !in keep }
+                    .forEach { it.delete() }
+            }
         }
 
         fun clearDone() {

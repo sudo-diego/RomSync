@@ -204,6 +204,26 @@ nada se borró de verdad. Las partidas de DS reemplazadas también quedaron en `
   Partidas (está en la ficha).
 - Pruebas: monkey de 400 toques sin cierres; ojo, el monkey puede iniciar descargas (se canceló una de Smash).
 
+## Tercera vuelta (14-10-2026)
+
+- Descargas: Cancelar borra también los archivos que alcanzó a completar (nada a medias); al abrir la app se borran los
+  .part huérfanos. Sin confirmación al descargar (como la eShop); solo avisa si no hay espacio.
+- Destacados al azar en cada apertura (`StoreState.seed`).
+- Música: ya no viene incluida (al usuario le sonaba "a IA"); solo la canción que elija (MediaPlayer en loop).
+  `tools/sintetizar.py` genera solo los sonidos.
+- Ondas: estilo XMB (fondo degradado del color + cinta de 36 líneas finas por onda + chispas).
+- Borrar en dos pasos: el segundo dice qué pasa con el juego y las partidas; si algo se pierde para siempre (sin copia,
+  o partidas sin servidor) va en rojo y pide marcar "Entiendo".
+- Sección nueva **Organizar** (`OrganizeScreen.kt`): almacenamiento + "Por revisar" (sobrantes, BIOS fuera de su
+  carpeta, BIOS que faltan, repetidos, sin copia en el servidor, juegos a medias, sin imágenes) o "Todo en orden".
+  Salió de la Tienda (Ordenar y almacenamiento) y de Descargas (BIOS). Plataformas: tarjetas de color en el inicio de
+  la Tienda; la elegida se ve como chip con ✕.
+- Partidas: cada emulador dice qué consolas cubre.
+- Control (Xbox, G9): `Modifier.focusHighlight()` (borde del color + zoom + tic) en panel, tarjetas, carrusel,
+  plataformas y portada; LB/RB cambian de sección; A/B se traducen a seleccionar/volver si el sistema no lo hace.
+  Probado con eventos de teclas por adb (no con un control físico).
+- Ojo con el monkey: puede iniciar descargas y, ahora, borrados de un toque + confirmación. No usarlo sin cuidado.
+
 ## Pendiente
 
 - Switch: mostrar en la ficha lo instalado en Eden y, con titledb (blawar/titledb: versions.json, cnmts.json), la

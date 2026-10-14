@@ -90,6 +90,8 @@ object StoreState {
     var query by mutableStateOf("")
     var bySize by mutableStateOf(false)
     var coversHidden by mutableStateOf(false)
+    /** Cambia en cada apertura de la app: los destacados salen en otro orden cada vez. */
+    val seed = System.nanoTime()
     /** Selección múltiple (mantener presionada una tarjeta): ids de juegos. */
     var selection by mutableStateOf(setOf<String>())
 }
@@ -146,7 +148,7 @@ fun StoreScreen() {
             if (!browsing && cards.isNotEmpty()) {
                 // Inicio, como la eShop: destacados grandes y filas por tema; la grilla aparece al buscar o filtrar.
                 item(span = { GridItemSpan(maxLineSpan) }, key = "destacados") { FeaturedCarousel(cards) }
-                item(span = { GridItemSpan(maxLineSpan) }, key = "ordenar") { OrganizeCard() }
+                item(span = { GridItemSpan(maxLineSpan) }, key = "plataformas") { PlatformRow(systems) }
                 val onTablet = cards.filter { Repo.where(it).presence.let { p -> p == Presence.INSTALLED || p == Presence.PARTIAL } && it.kind != "shortcut" }
                 val toGet = cards.filter { Repo.where(it).presence == Presence.MISSING && it.kind != "shortcut" }
                 if (onTablet.isNotEmpty()) item(span = { GridItemSpan(maxLineSpan) }, key = "fila-tablet") {
@@ -160,7 +162,6 @@ fun StoreScreen() {
                         ShelfRow(sys.name, cards.filter { it.system == sys.id }, { StoreState.system = sys.id }, ::versionsOf, Color(sys.color))
                     }
                 }
-                item(span = { GridItemSpan(maxLineSpan) }, key = "espacio") { StorageCard() }
             } else {
                 if (games.isEmpty()) item(span = { GridItemSpan(maxLineSpan) }, key = "vacio") { EmptyState() }
                 items(games, key = { it.id }) { g -> GameCard(g, versionsOf(g), Modifier.animateItem()) }
@@ -177,11 +178,10 @@ fun StoreScreen() {
 @Composable
 private fun FeaturedCarousel(cards: List<Game>) {
     val featured = remember(cards, Art.versions.size) {
-        val day = (System.currentTimeMillis() / 86_400_000L).toInt()
         val toGet = cards.filter { it.kind != "shortcut" && Art.cached(it.id, "hero") != null && Repo.where(it).presence == Presence.MISSING }
         // Si ya está todo descargado, se muestran los de siempre para que el inicio no quede vacío.
         (toGet.ifEmpty { cards.filter { it.kind != "shortcut" && Art.cached(it.id, "hero") != null } })
-            .shuffled(java.util.Random(day.toLong())).take(6)
+            .shuffled(java.util.Random(StoreState.seed)).take(6)
     }
     if (featured.isEmpty()) return
     val pager = rememberPagerState { featured.size }
@@ -199,7 +199,7 @@ private fun FeaturedCarousel(cards: List<Game>) {
                 Modifier.fillMaxSize().graphicsLayer {
                     val s = 1f - 0.06f * kotlin.math.abs(offset).coerceAtMost(1f)
                     scaleX = s; scaleY = s
-                }.clip(RoundedCornerShape(26.dp)).pressable { Sound.play(Sound.Fx.OPEN); Nav.game = g },
+                }.focusHighlight(RoundedCornerShape(26.dp)).clip(RoundedCornerShape(26.dp)).pressable { Sound.play(Sound.Fx.OPEN); Nav.game = g },
             ) {
                 Box(Modifier.fillMaxSize().background(Brush.linearGradient(listOf(Color(Repo.system(g.system).color), Color(0xFF0D1220)))))
                 // El fondo se mueve un poco contra el gesto (paralaje).
@@ -404,29 +404,18 @@ private fun Toolbar(systems: List<SystemInfo>) {
                 }
             }
         }
-        var sysOpen by remember { mutableStateOf(false) }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             StoreFilter.entries.forEach { f ->
                 FilterChip(selected = StoreState.filter == f, onClick = { Sound.play(Sound.Fx.MOVE); StoreState.filter = f },
                     label = { Text(f.label) }, shape = RoundedCornerShape(99.dp))
             }
-            Spacer(Modifier.weight(1f))
-            val cur = systems.firstOrNull { it.id == StoreState.system }
-            Box {
-                FilterChip(selected = cur != null, onClick = { Sound.play(Sound.Fx.MOVE); sysOpen = true },
-                    label = { Text(cur?.name ?: "Plataforma") }, shape = RoundedCornerShape(99.dp),
-                    leadingIcon = { if (cur != null) Box(Modifier.size(10.dp).clip(RoundedCornerShape(3.dp)).background(Color(cur.color))) },
-                    trailingIcon = {
-                        if (cur != null) Icon(Icons.Rounded.Close, "Quitar", Modifier.size(18.dp).clickable { StoreState.system = "" })
-                        else Icon(Icons.Rounded.ArrowDropDown, null)
-                    })
-                DropdownMenu(expanded = sysOpen, onDismissRequest = { sysOpen = false }) {
-                    DropdownMenuItem(text = { Text("Todas") }, onClick = { StoreState.system = ""; sysOpen = false })
-                    systems.forEach { sys ->
-                        DropdownMenuItem(text = { Text(sys.name) }, onClick = { StoreState.system = sys.id; sysOpen = false },
-                            leadingIcon = { Box(Modifier.size(12.dp).clip(RoundedCornerShape(4.dp)).background(Color(sys.color))) })
-                    }
-                }
+            // Plataforma elegida (desde las tarjetas del inicio): un chip con su nombre para quitarla.
+            systems.firstOrNull { it.id == StoreState.system }?.let { cur ->
+                Spacer(Modifier.weight(1f))
+                FilterChip(selected = true, onClick = { Sound.play(Sound.Fx.MOVE); StoreState.system = "" },
+                    label = { Text(cur.name) }, shape = RoundedCornerShape(99.dp),
+                    leadingIcon = { Box(Modifier.size(10.dp).clip(RoundedCornerShape(3.dp)).background(Color(cur.color))) },
+                    trailingIcon = { Icon(Icons.Rounded.Close, "Quitar", Modifier.size(18.dp)) })
             }
         }
     }
@@ -464,7 +453,7 @@ private fun GameCard(g: Game, versions: Int = 1, modifier: Modifier = Modifier) 
     Column(modifier.graphicsLayer {
         scaleX = scale; scaleY = scale; alpha = shown.value; translationY = (1f - shown.value) * 24f
     }) {
-        Box(Modifier.shadow(if (pressed) 2.dp else 8.dp, RoundedCornerShape(18.dp)).clip(RoundedCornerShape(18.dp))
+        Box(Modifier.focusHighlight().shadow(if (pressed) 2.dp else 8.dp, RoundedCornerShape(18.dp)).clip(RoundedCornerShape(18.dp))
             .then(if (selected) Modifier.border(3.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(18.dp)) else Modifier)
             .combinedClickable(interactionSource = press, indication = null,
                 onClick = { if (selecting) toggle() else { Sound.play(Sound.Fx.OPEN); Nav.game = g } }, onLongClick = { toggle() })) {
@@ -540,4 +529,24 @@ private fun SelectionBar(sel: List<Game>) {
         },
         dismissButton = { TextButton(onClick = { ask = null }) { Text("Cancelar") } },
     )
+}
+
+/** Plataformas como tarjetas de color (como las categorías de la eShop): tocar una muestra solo sus juegos. */
+@Composable
+private fun PlatformRow(systems: List<Pair<SystemInfo, Int>>) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text("Plataformas", style = MaterialTheme.typography.titleLarge)
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            items(systems.filter { it.first.id !in Group.shortcutSystems }, key = { it.first.id }) { (sys, n) ->
+                Box(Modifier.size(150.dp, 92.dp).focusHighlight().shadow(6.dp, RoundedCornerShape(18.dp)).clip(RoundedCornerShape(18.dp))
+                    .background(Brush.linearGradient(listOf(Color(sys.color), androidx.compose.ui.graphics.lerp(Color(sys.color), Color.Black, 0.25f))))
+                    .pressable { Sound.play(Sound.Fx.OPEN); StoreState.system = sys.id }.padding(14.dp)) {
+                    Text(sys.short, color = Color.White, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.titleLarge,
+                        modifier = Modifier.align(Alignment.TopStart))
+                    Text("$n juegos", color = Color.White.copy(alpha = 0.9f), style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.align(Alignment.BottomStart))
+                }
+            }
+        }
+    }
 }

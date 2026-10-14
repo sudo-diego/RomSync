@@ -80,6 +80,16 @@ object Group {
     /** "Juego.sav (1)", "Juego.SAV(1)(0)": copias que dejan el emulador o Windows al copiar. */
     fun isSaveCopy(name: String) = reSaveCopyName.matches(name)
 
+    /**
+     * Basura del sistema operativo (Windows, macOS). En la carpeta bios es lo único que se ignora: ahí hay archivos de
+     * configuración de los núcleos (Mupen64plus/mupen64plus.ini) que no son BIOS pero hacen falta, y la tablet y el PC
+     * tienen que contar lo mismo (si no, avisa de una "BIOS que falta" que en realidad está).
+     */
+    fun isSystemJunk(name: String): Boolean {
+        val lower = name.lowercase()
+        return lower in setOf("thumbs.db", "desktop.ini", ".ds_store", ".nomedia") || lower.startsWith("._")
+    }
+
     fun isIgnored(name: String): Boolean {
         val lower = name.lowercase()
         if (isSaveCopy(name)) return true
@@ -140,7 +150,20 @@ object Group {
         var t = reParen.replace(name, "")
         t = reBracket.replace(t, "")
         t = reSpaces.replace(t.replace('_', ' ').trim(), " ").trimEnd(' ', '-')
-        return (t.ifEmpty { name }) to tags
+        return (prettyTitle(t).ifEmpty { name }) to tags
+    }
+
+    private val reNumbered = Regex("^\\d{3,4} - ")
+    private val reArticle = Regex("^(.+?), (The|A|An)(?=$| - |: )")
+
+    /**
+     * El nombre como se escribe de verdad: No-Intro pone el artículo al final y separa con guion ("Legend of Zelda,
+     * The - The Wind Waker" → "The Legend of Zelda: The Wind Waker"); algunos sets numeran ("0022 - Juego" → "Juego").
+     */
+    fun prettyTitle(t: String): String {
+        var s = reNumbered.replace(t, "")
+        reArticle.find(s)?.let { m -> s = m.groupValues[2] + " " + m.groupValues[1] + s.substring(m.range.last + 1) }
+        return s.replaceFirst(" - ", ": ")
     }
 
     private val reThe = Regex("\\bthe\\b")

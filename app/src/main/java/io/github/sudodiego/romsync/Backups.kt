@@ -16,11 +16,15 @@ object Backups {
 
     private fun dir(c: SftpConn, emu: String) = "${Prefs.remoteBackups}/${safe(Prefs.deviceName)}/${safe(emu)}"
 
-    private fun meta(o: JSONObject) = SaveBackupInfo(o.optString("id"), o.optString("device"), o.optString("emulator"),
-        o.optString("at"), o.optLong("size"), o.optString("hash"), o.optInt("files"), o.optBoolean("auto"), o.optBoolean("keep"))
+    private fun strings(a: org.json.JSONArray?) = if (a == null) emptyList() else (0 until a.length()).map { a.optString(it) }
 
-    private fun json(b: SaveBackupInfo) = JSONObject().put("id", b.id).put("device", b.device).put("emulator", b.emulator)
+    fun meta(o: JSONObject) = SaveBackupInfo(o.optString("id"), o.optString("device"), o.optString("emulator"),
+        o.optString("at"), o.optLong("size"), o.optString("hash"), o.optInt("files"), o.optBoolean("auto"), o.optBoolean("keep"),
+        o.optString("kind"), strings(o.optJSONArray("games")), strings(o.optJSONArray("keys")))
+
+    fun json(b: SaveBackupInfo): JSONObject = JSONObject().put("id", b.id).put("device", b.device).put("emulator", b.emulator)
         .put("at", b.at).put("size", b.size).put("hash", b.hash).put("files", b.files).put("auto", b.auto).put("keep", b.keep)
+        .put("kind", b.kind).put("games", org.json.JSONArray(b.games)).put("keys", org.json.JSONArray(b.keys))
 
     fun list(c: SftpConn, emu: String): List<SaveBackupInfo> {
         val d = dir(c, emu)
@@ -35,13 +39,35 @@ object Backups {
 
     fun latestHash(c: SftpConn, emu: String): String = list(c, emu).firstOrNull()?.hash.orEmpty()
 
-    fun upload(c: SftpConn, emu: String, zip: File, hash: String, files: Int, auto: Boolean): SaveBackupInfo {
+    /**
+     * Respaldos de antes de que se guardara qué juegos traen: se lee el zip una vez (solo la lista de archivos, al
+     * final del zip) y se anota en su .json. Si trae todo lo que había en ese momento se llama "Completo".
+     */
+    fun describeOld(c: SftpConn, emu: String, list: List<SaveBackupInfo>, cache: java.io.File): List<SaveBackupInfo> =
+        list.map { b ->
+            if (b.kind.isNotEmpty() || b.size > 300L * 1024 * 1024) return@map b
+            runCatching {
+                val tmp = java.io.File(cache, "describir.zip")
+                download(c, emu, b.id, tmp)
+                val names = java.util.zip.ZipFile(tmp).use { z -> z.entries().asSequence().filter { !it.isDirectory && it.name.contains('/') }.map { it.name }.toList() }
+                tmp.delete()
+                val keys = names.groupBy { Saves.unitOf(emu, it).first }
+                val games = keys.map { (k, ns) -> Saves.describeUnit(emu, k, ns) }.sorted()
+                val kind = if (b.auto) "auto" else if (keys.size <= 3 && list.any { o -> o.files > b.files }) "juego" else "todo"
+                b.copy(kind = kind, games = games, keys = keys.keys.toList()).also { nb ->
+                    c.upload("${dir(c, emu)}/${safe(b.id)}.json") { it.write(json(nb).toString(2).toByteArray()) }
+                }
+            }.getOrDefault(b)
+        }
+
+    fun upload(c: SftpConn, emu: String, zip: File, hash: String, files: Int, auto: Boolean,
+               kind: String = "", games: List<String> = emptyList(), keys: List<String> = emptyList()): SaveBackupInfo {
         val d = dir(c, emu)
         val now = Date()
         val id = SimpleDateFormat("yyyy-MM-dd_HHmmss", Locale.ROOT).format(now)
         val at = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.ROOT).format(now)
         c.upload("$d/$id.zip") { out -> zip.inputStream().use { it.copyTo(out, 1 shl 16) } }
-        val b = SaveBackupInfo(id, Prefs.deviceName, emu, at, zip.length(), hash, files, auto, false)
+        val b = SaveBackupInfo(id, Prefs.deviceName, emu, at, zip.length(), hash, files, auto, false, kind, games, keys)
         c.upload("$d/$id.json") { it.write(json(b).toString(2).toByteArray()) }
         prune(c, emu)
         return b

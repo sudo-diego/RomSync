@@ -79,13 +79,16 @@ object Saves {
     suspend fun currentUnits(ctx: Context, emu: Emulator): List<Unit> = withContext(Dispatchers.IO) {
         val pkg = Emulators.installedPackage(ctx, emu) ?: return@withContext emptyList()
         val (_, entries) = collect(emu, pkg)
-        entries.groupBy { (s, f) -> unitOf(emu.id, "${s.label}/${f.rel}") }
-            .map { (k, es) -> Unit(k.first, titleFor(k.first, k.second), es.first().second.rel.substringAfterLast('/'), es.size,
-                es.sumOf { it.second.size }, es.maxOf { it.second.mtime } * 1000) }
+        // Por clave: la partida de la tarjeta (01-GZLP-…gci) y los estados (GZLP01.s00) son del mismo juego.
+        entries.groupBy { (s, f) -> unitOf(emu.id, "${s.label}/${f.rel}").first }
+            .map { (k, es) -> Unit(k, titleFor(k, unitTitle(emu.id, es.map { (s, f) -> "${s.label}/${f.rel}" })),
+                es.first().second.rel.substringAfterLast('/'), es.size, es.sumOf { it.second.size }, es.maxOf { it.second.mtime } * 1000) }
             .sortedBy { it.title.lowercase() }
     }
 
-    suspend fun backup(ctx: Context, emu: Emulator, auto: Boolean, force: Boolean = false, only: Set<String>? = null): Result = withContext(Dispatchers.IO) {
+    /** [reason]: "antes" (antes de restaurar) o "traspaso"; si no, sale de [auto] y [only]. Queda en el respaldo para la lista. */
+    suspend fun backup(ctx: Context, emu: Emulator, auto: Boolean, force: Boolean = false, only: Set<String>? = null,
+                       reason: String = ""): Result = withContext(Dispatchers.IO) {
         val pkg = Emulators.installedPackage(ctx, emu) ?: return@withContext Result.Failed("${emu.name} no está instalado")
         busy[emu.id] = "Leyendo partidas…"
         val zip = File(ctx.cacheDir, "respaldo_${emu.id}.zip")
@@ -126,7 +129,10 @@ object Saves {
                 out.closeEntry()
             }
             busy[emu.id] = "Enviando al PC…"
-            Pc.use { Backups.upload(it, emu.id, zip, hash, entries.size, auto) }
+            val units = entries.groupBy { (s, f) -> unitOf(emu.id, "${s.label}/${f.rel}").first }
+            val kind = reason.ifEmpty { if (only != null) "juego" else if (auto) "auto" else "todo" }
+            val games = units.map { (k, es) -> titleFor(k, unitTitle(emu.id, es.map { (s, f) -> "${s.label}/${f.rel}" })) }.sorted()
+            Pc.use { Backups.upload(it, emu.id, zip, hash, entries.size, auto, kind, games, units.keys.toList()) }
             Prefs.setLastBackup(emu.id, hash, System.currentTimeMillis())
             Result.Done(entries.size, entries.sumOf { it.second.size })
         } catch (e: Storage.NeedsShizuku) {
@@ -152,6 +158,20 @@ object Saves {
         hex.chunked(2).map { it.toInt(16).toChar() }.joinToString("").takeIf { t -> t.all { it.isLetterOrDigit() } } ?: hex
     }.getOrDefault(hex)
 
+    private val reCodeName = Regex("^(GameCube|Wii) · ([A-Z0-9]{4,6})$")
+
+    /** Un nombre guardado en un respaldo como código ("GameCube · GP7P") con el nombre del juego, si ya se conoce. */
+    fun prettyUnitName(s: String): String = reCodeName.matchEntire(s)?.let { titleFor("id:" + it.groupValues[2].take(4), s) } ?: s
+
+    /** Nombre para mostrar de una unidad (para anotar respaldos viejos). */
+    fun describeUnit(emu: String, key: String, names: List<String>) = titleFor(key, unitTitle(emu, names))
+
+    /** Nombre de una unidad con varios archivos: el de la partida ("GameCube · GZLP") antes que el de un estado. */
+    private fun unitTitle(emu: String, names: List<String>): String {
+        val titles = names.map { unitOf(emu, it).second }.distinct()
+        return titles.firstOrNull { !it.startsWith("Estado") } ?: titles.first()
+    }
+
     /** A qué juego pertenece un archivo del respaldo: (clave, nombre para mostrar). */
     fun unitOf(emu: String, name: String): Pair<String, String> {
         val rel = name.substringAfter('/')
@@ -166,6 +186,7 @@ object Saves {
         return when (emu) {
             "dolphin" -> when {
                 parts[0] == "Wii" && parts.size > 3 -> "id:" + hexAscii(parts[3]).take(4) to "Wii · " + hexAscii(parts[3])
+                parts[0] == "StateSaves" && file.startsWith("lastState") -> "otros:laststate" to "Estado al cerrar Dolphin"
                 parts[0] == "StateSaves" -> "id:" + file.take(4) to "Estado · " + file.take(6)
                 parts[0] == "GC" -> Regex("^[0-9A-Fa-f]{2}-([A-Z0-9]{4})").find(file)?.let { "id:" + it.groupValues[1] to "GameCube · " + it.groupValues[1] }
                     ?: ("card:$rel" to "Tarjeta de memoria · " + parts.drop(1).joinToString(" / "))
@@ -189,11 +210,32 @@ object Saves {
         }
     }
 
-    /** Nombre del juego en la biblioteca para un TitleID de Switch o un ID de Vita, si se conoce. */
+    /**
+     * Nombre del juego en la biblioteca para una clave de partidas: el TitleID de Switch, el ID de Vita o el código del
+     * disco de GameCube/Wii ("GP7P" → "Mario Party 7 · GameCube · GP7P"), si el juego está en la tablet.
+     */
     private fun titleFor(key: String, fallback: String): String {
+        if (!key.startsWith("id:") && !key.startsWith("tid:")) return fallback
         val id = key.substringAfter(':')
-        val g = Repo.allGames().firstOrNull { it.serial.isNotEmpty() && it.serial.equals(id, true) }
-        return g?.title?.let { "$it · $id" } ?: fallback
+        val title = Repo.allGames().firstOrNull { it.serial.isNotEmpty() && (it.serial.equals(id, true) ||
+                (id.length == 4 && it.serial.length == 6 && it.serial.startsWith(id, true))) }?.title
+            ?: Repo.allGames().firstOrNull { it.system == "switch" && it.parts.any { p -> p.kind == "base" && p.titleId.equals(id, true) } }?.title
+            ?: discTitles()[id.uppercase()]
+            // Partida de otra región que el disco (GP7P europea, disco GP7E de USA): las 3 primeras letras son el juego.
+            ?: if (id.length == 4) Repo.allGames().firstOrNull { (it.system == "gc" || it.system == "wii") &&
+                it.serial.length == 6 && it.serial.take(3).equals(id.take(3), true) }?.title else null
+        return title?.let { "$it · $fallback" } ?: fallback
+    }
+
+    private var discCache: Pair<Int, Map<String, String>>? = null
+
+    /** Código de 4 letras → nombre, de los juegos de GameCube/Wii que están en la tablet (se lee la cabecera una vez). */
+    private fun discTitles(): Map<String, String> {
+        val games = Repo.allGames().filter { (it.system == "gc" || it.system == "wii") && it.serial.isEmpty() && Repo.has(it.primary) }
+        discCache?.takeIf { it.first == games.size }?.let { return it.second }
+        val map = games.mapNotNull { g -> GameSaves.discId(g)?.take(4)?.let { it.uppercase() to g.title } }.toMap()
+        discCache = games.size to map
+        return map
     }
 
     private fun cachedZip(ctx: Context, emu: Emulator, id: String) = File(ctx.cacheDir, "ver_${emu.id}_${Backups.safe(id)}.zip")
@@ -209,8 +251,8 @@ object Saves {
         }
         ZipFile(zip).use { z ->
             z.entries().asSequence().filter { !it.isDirectory && it.name.contains('/') }
-                .groupBy { unitOf(emu.id, it.name) }
-                .map { (k, es) -> Unit(k.first, titleFor(k.first, k.second), es.first().name.substringAfterLast('/'), es.size,
+                .groupBy { unitOf(emu.id, it.name).first }
+                .map { (k, es) -> Unit(k, titleFor(k, unitTitle(emu.id, es.map { it.name })), es.first().name.substringAfterLast('/'), es.size,
                     es.sumOf { it.size }, es.maxOf { it.time }) }
                 .sortedBy { it.title.lowercase() }
         }
@@ -222,7 +264,7 @@ object Saves {
         val zipFile = File(ctx.cacheDir, "restaurar_${emu.id}.zip")
         try {
             busy[emu.id] = "Respaldando lo actual…"
-            when (val r = backup(ctx, emu, auto = false, force = false)) {
+            when (val r = backup(ctx, emu, auto = false, force = false, reason = "antes")) {
                 is Result.Failed -> return@withContext "No se pudo respaldar lo actual antes de restaurar: ${r.message}"
                 else -> {}
             }
@@ -298,8 +340,8 @@ object Saves {
             }
             if (Prefs.configured) {
                 busy["nethersx2"] = "Respaldando en el PC…"
-                backup(ctx, nether, auto = false, force = true)
-                backup(ctx, arm, auto = false, force = true)
+                backup(ctx, nether, auto = false, force = true, reason = "traspaso")
+                backup(ctx, arm, auto = false, force = true, reason = "traspaso")
             }
             busy["nethersx2"] = "Copiando ${cards.size} tarjeta(s) a ARMSX2…"
             val tmp = File(ctx.cacheDir, "traspaso").apply { deleteRecursively(); mkdirs() }

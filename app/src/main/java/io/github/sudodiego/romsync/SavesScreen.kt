@@ -4,6 +4,7 @@ import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -198,8 +199,9 @@ private fun EmulatorCard(emu: Emulator, onRestore: () -> Unit) {
     )
 }
 
+/** Restaurar desde un respaldo del PC. Con [onlyKey] (desde la ficha de un juego) solo muestra y marca ese juego. */
 @Composable
-private fun RestoreDialog(emu: Emulator, onClose: () -> Unit) {
+fun RestoreDialog(emu: Emulator, onlyKey: String? = null, onClose: () -> Unit) {
     val ctx = LocalContext.current
     val scope = appScope
     var list by remember { mutableStateOf<List<SaveBackupInfo>?>(null) }
@@ -210,11 +212,18 @@ private fun RestoreDialog(emu: Emulator, onClose: () -> Unit) {
     var confirm by remember { mutableStateOf(false) }
     LaunchedEffect(emu) {
         runCatching { Pc.io { Backups.list(it, emu.id) } }.onSuccess { list = it }.onFailure { error = it.message }
+        // Los respaldos viejos no dicen qué traen: se revisan una vez (y queda anotado en el PC).
+        if (list.orEmpty().any { it.kind.isEmpty() }) runCatching {
+            Pc.io { c -> Backups.describeOld(c, emu.id, list.orEmpty(), ctx.cacheDir) }
+        }.onSuccess { list = it }
     }
     LaunchedEffect(picked) {
         val b = picked ?: return@LaunchedEffect
         units = null
-        runCatching { Saves.units(ctx, emu, b.id) }.onSuccess { units = it; selected = emptySet() }.onFailure { error = it.message }
+        runCatching { Saves.units(ctx, emu, b.id) }.onSuccess { all ->
+            units = if (onlyKey == null) all else all.filter { it.key == onlyKey }
+            selected = if (onlyKey == null) emptySet() else units.orEmpty().map { it.key }.toSet()
+        }.onFailure { error = it.message }
     }
     val b = picked
     if (b != null && confirm) {
@@ -246,7 +255,7 @@ private fun RestoreDialog(emu: Emulator, onClose: () -> Unit) {
     }
     AlertDialog(
         onDismissRequest = onClose,
-        title = { Text(if (b == null) "Respaldos de ${emu.name}" else "Respaldo del ${b.at.take(16).replace('T', ' ')}") },
+        title = { Text(if (b == null) "Respaldos de ${emu.name}" else "${backupTitle(b)} · ${friendlyDate(b.at)}") },
         text = {
             LazyColumn(Modifier.fillMaxWidth().heightIn(max = 460.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 when {
@@ -254,15 +263,15 @@ private fun RestoreDialog(emu: Emulator, onClose: () -> Unit) {
                     b == null && list == null -> item { CircularProgressIndicator() }
                     b == null && list!!.isEmpty() -> item { Muted("No hay respaldos en el PC.") }
                     b == null -> {
-                        item { Muted("Elige un respaldo para ver qué juegos trae. Mirar no cambia nada.") }
-                        items(list!!.take(30)) { bk ->
-                            TextButton(onClick = { picked = bk }, Modifier.fillMaxWidth()) {
-                                Text("${bk.at.take(16).replace('T', ' ')} · ${bk.files} archivos · ${formatSize(bk.size)}" +
-                                    (if (bk.auto) " · auto" else "") + (if (bk.keep) " · conservar" else ""), Modifier.weight(1f))
-                            }
-                        }
+                        // Desde la ficha de un juego: solo los respaldos que tienen ese juego (los viejos no lo dicen: se muestran).
+                        val shown = list!!.filter { onlyKey == null || it.keys.isEmpty() || onlyKey in it.keys }.take(30)
+                        item { Muted(if (onlyKey == null) "Elige un respaldo para ver qué trae. Mirar no cambia nada."
+                            else "Respaldos con partidas de este juego. Mirar no cambia nada.") }
+                        if (shown.isEmpty()) item { Muted("Ningún respaldo tiene partidas de este juego todavía.") }
+                        items(shown, key = { it.id }) { bk -> BackupRow(bk) { picked = bk } }
                     }
                     units == null -> item { SpacedRow { CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp); Muted("Abriendo el respaldo…") } }
+                    units!!.isEmpty() -> item { Muted("Este respaldo no tiene partidas de este juego. Prueba con otro.") }
                     else -> {
                         item {
                             SpacedRow {
@@ -340,4 +349,58 @@ private fun BackupOneDialog(emu: Emulator, onClose: () -> Unit) {
         },
         dismissButton = { TextButton(onClick = onClose) { Text("Cancelar") } },
     )
+}
+
+/** Qué es un respaldo, en palabras (antes era "2026-10-13 21:01 · 17 archivos" y no se entendía la diferencia). */
+fun backupTitle(b: SaveBackupInfo): String {
+    val one = b.games.singleOrNull()?.let(Saves::prettyUnitName)
+    return when (b.kind) {
+        "todo" -> "Completo · todas tus partidas"
+        "auto" -> "Automático · todas tus partidas"
+        "juego" -> if (one != null) "Solo $one" else "Solo ${b.games.size} juegos"
+        "antes" -> "Copia de seguridad antes de restaurar"
+        "traspaso" -> "Copia antes de pasar a ARMSX2"
+        else -> if (b.auto) "Automático" else "Respaldo"
+    }
+}
+
+/** "lunes 13 de octubre, 21:01" (o "hoy, 21:01"). */
+fun friendlyDate(at: String): String = runCatching {
+    val d = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", java.util.Locale.ROOT).parse(at)!!
+    val es = java.util.Locale("es")
+    val day = java.text.SimpleDateFormat("yyyyMMdd", es)
+    val today = day.format(java.util.Date())
+    val yesterday = day.format(java.util.Date(System.currentTimeMillis() - 86_400_000))
+    val time = java.text.SimpleDateFormat("HH:mm", es).format(d)
+    when (day.format(d)) {
+        today -> "hoy, $time"
+        yesterday -> "ayer, $time"
+        else -> java.text.SimpleDateFormat("EEEE d 'de' MMMM, HH:mm", es).format(d)
+    }
+}.getOrDefault(at.take(16).replace('T', ' '))
+
+@Composable
+private fun BackupRow(b: SaveBackupInfo, onClick: () -> Unit) {
+    val (icon, color) = when (b.kind) {
+        "todo", "auto" -> "Todo" to Palette.ok
+        "juego" -> "Juego" to Palette.sky
+        "antes", "traspaso" -> "Seguridad" to Palette.warn
+        else -> (if (b.auto) "Auto" else "Respaldo") to androidx.compose.ui.graphics.Color(0xFF475569)
+    }
+    androidx.compose.material3.Surface(onClick = onClick, shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.fillMaxWidth()) {
+        Row(Modifier.padding(12.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Pill(icon, color)
+            Column(Modifier.weight(1f)) {
+                Text(backupTitle(b), fontWeight = FontWeight.SemiBold)
+                Muted(listOfNotNull(friendlyDate(b.at),
+                    if (b.games.isNotEmpty()) "${b.games.size} juego(s)" else "${b.files} archivo(s)",
+                    formatSize(b.size), if (b.keep) "conservar" else null).joinToString(" · "))
+                if (b.kind == "todo" || b.kind == "auto") b.games.map(Saves::prettyUnitName).sorted().take(4).joinToString(", ").takeIf { it.isNotEmpty() }?.let {
+                    Muted(it + if (b.games.size > 4) " y ${b.games.size - 4} más" else "")
+                }
+            }
+        }
+    }
 }

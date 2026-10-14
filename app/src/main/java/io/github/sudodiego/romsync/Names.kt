@@ -20,6 +20,8 @@ object Names {
         sp?.edit()?.apply { if (name.isBlank()) remove(id) else putString(id, name.trim()) }?.apply()
     }
 
-    /** Pone el nombre propio (o vuelve al del archivo si se quitó). */
-    fun apply(games: List<Game>): List<Game> = games.map { g -> g.copy(title = get(g.id) ?: Group.cleanTitle(g.name).first) }
+    /** El nombre que se muestra: el propio; si no, el oficial de SteamGridDB (si coincide con el archivo); si no, el del archivo. */
+    fun apply(games: List<Game>): List<Game> = games.map { g ->
+        g.copy(title = get(g.id) ?: Art.officialName(g.id) ?: Group.cleanTitle(g.name).first)
+    }
 }

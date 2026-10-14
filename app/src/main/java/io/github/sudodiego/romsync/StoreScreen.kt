@@ -54,7 +54,8 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 
 enum class StoreFilter(val label: String) {
-    ALL("Todos"), INSTALLED("En la tablet"), MISSING("No en la tablet"), TABLET_ONLY("Solo en la tablet"), DUPLICATES("Repetidos")
+    // "Repetidos" se fue al asistente Ordenar biblioteca: con la biblioteca ordenada no hace falta como filtro.
+    ALL("Todos"), INSTALLED("En la tablet"), MISSING("Para descargar"), TABLET_ONLY("Sin copia en el PC")
 }
 
 object StoreState {
@@ -72,7 +73,6 @@ fun StoreScreen() {
     val lib = Repo.library
     val all = remember(lib, Repo.tabletOnly) { Repo.allGames() }
     val localFiles = Repo.localFiles
-    val dupes = remember(all) { Repo.duplicateIds() }
     val games = remember(all, localFiles, StoreState.filter, StoreState.system, StoreState.query, StoreState.bySize) {
         val q = StoreState.query.trim().lowercase()
         all.filter { g ->
@@ -85,7 +85,6 @@ fun StoreScreen() {
                 // Un acceso directo (Android, Steam) no es algo que "falte" en la tablet.
                 StoreFilter.MISSING -> (p == Presence.MISSING || p == Presence.PARTIAL) && g.kind != "shortcut"
                 StoreFilter.TABLET_ONLY -> p == Presence.TABLET_ONLY
-                StoreFilter.DUPLICATES -> g.id in dupes
             }
         }.let { list ->
             // Una tarjeta por juego: las versiones (región, formato, con mods) van juntas y se eligen adentro.
@@ -115,8 +114,7 @@ fun StoreScreen() {
             Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 Header(onRefresh = { scope.launch { Repo.refresh() } })
                 StorageCard()
-                CleanupCard()
-                StrayBiosCard()
+                OrganizeCard()
                 Toolbar(systems, showSystems = !wide)
             }
         }
@@ -126,7 +124,7 @@ fun StoreScreen() {
         items(games, key = { it.id }) { g -> GameCard(g, if (g.kind == "shortcut") 1 else versionCount[Repo.versionKey(g)] ?: 1) }
     }
     }
-    if (Art.bulkRunning && !StoreState.coversHidden) CoversDialog()
+    if (Art.bulkRunning && !Art.bulkQuiet && !StoreState.coversHidden) CoversDialog()
 }
 
 /** Lista de plataformas (pantalla ancha): nombre, cuántos juegos y cuánto ocupan en la tablet. */
@@ -195,12 +193,13 @@ private fun Header(onRefresh: () -> Unit) {
             })
         }
         val missingArt = remember(Repo.library, Repo.tabletOnly, Art.versions.size, Art.bulkTotal) {
-            Repo.allGames().count { it.kind != "shortcut" && Art.cached(it.id) == null && !Art.notFound(it.id) }
+            Repo.allGames().count { Art.needsFetch(it) }
         }
         if (Prefs.sgdbKey.isNotBlank() && missingArt > 0 && !Art.bulkRunning) TextButton(onClick = {
             StoreState.coversHidden = false
             Art.startFetchAll(Repo.allGames())
-        }) { Text("Buscar carátulas ($missingArt)") }
+        }) { Text("Buscar imágenes ($missingArt)") }
+        if (Art.bulkRunning && Art.bulkQuiet) Muted("Bajando imágenes ${Art.bulkDone} de ${Art.bulkTotal}…")
         if (Repo.refreshing) CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
         else IconButton(onClick = onRefresh) { Icon(Icons.Rounded.Refresh, "Actualizar") }
     }

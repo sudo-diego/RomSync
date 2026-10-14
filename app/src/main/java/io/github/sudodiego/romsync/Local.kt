@@ -38,15 +38,16 @@ object Local {
         val root = File(biosDir)
         if (!root.isDirectory) return emptyList()
         val out = ArrayList<FileEntry>()
-        walk(root, root, out, skipMedia = false)
+        walk(root, root, out, skipMedia = false, keep = { !Group.isSystemJunk(it) })
         return out
     }
 
-    private fun walk(root: File, dir: File, out: MutableList<FileEntry>, skipMedia: Boolean = true) {
+    private fun walk(root: File, dir: File, out: MutableList<FileEntry>, skipMedia: Boolean = true,
+                     keep: (String) -> Boolean = { !isIgnored(it) }) {
         dir.listFiles()?.forEach { f ->
             if (f.isDirectory) {
-                if (!skipMedia || f.name.lowercase() !in ignoredDirs) walk(root, f, out, skipMedia)
-            } else if (!isIgnored(f.name)) {
+                if (!skipMedia || f.name.lowercase() !in ignoredDirs) walk(root, f, out, skipMedia, keep)
+            } else if (keep(f.name)) {
                 out.add(FileEntry(f.relativeTo(root).path.replace('\\', '/'), f.length()))
             }
         }

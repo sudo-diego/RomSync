@@ -77,8 +77,8 @@ class MainActivity : ComponentActivity() {
         Prefs.init(this)
         Shell.init(this)
         Names.init(this)
+        Art.init(this) // antes que Repo: los nombres oficiales de SteamGridDB se usan al cargar la biblioteca
         Repo.init(this)
-        Art.init(this)
         DownloadService.load(this)
         BackupWorker.schedule(this)
         if (Build.VERSION.SDK_INT >= 33) requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)

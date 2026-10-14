@@ -92,7 +92,11 @@ fun ArtPicker(g: Game, onClose: () -> Unit) {
                                     scope.launch {
                                         runCatching { Art.useUrl(g.id, "grid", url) }.onFailure { error = it.message }
                                         saving = false
-                                        if (error == null) onClose()
+                                        if (error == null) {
+                                            // Elegido a mano: ese es el juego (su nombre oficial y, después, su fondo y logo).
+                                            chosen?.let { (id, name) -> Art.choose(g.id, id, name); Repo.reapplyNames(); Art.startFetchAll(listOf(g), quiet = true) }
+                                            onClose()
+                                        }
                                     }
                                 })
                         }

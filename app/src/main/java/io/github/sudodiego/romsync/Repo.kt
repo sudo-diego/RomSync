@@ -111,6 +111,8 @@ object Repo {
                 conn = Conn.Idle
             }
             compare()
+            // Las carátulas, fondos y logos se bajan solos en segundo plano (antes, solo al abrir la ficha de cada juego).
+            Art.startFetchAll(allGames(), quiet = true)
         } finally {
             refreshing = false
         }
@@ -169,9 +171,14 @@ object Repo {
     /** Pone un nombre propio a un juego (vacío = el del archivo) y vuelve a buscar su carátula con ese nombre. */
     fun rename(g: Game, name: String) {
         Names.set(g.id, name)
+        reapplyNames()
+        Art.forget(g.id)
+    }
+
+    /** Vuelve a calcular los nombres (tras un nombre propio o al llegar los nombres oficiales de SteamGridDB). */
+    fun reapplyNames() {
         library = library?.let { it.copy(games = Names.apply(it.games)) }
         tabletOnly = Names.apply(tabletOnly)
-        Art.forget(g.id)
     }
 
     /** Archivos que sobran en la tablet (descargas a medias, copias de partidas): ver Limpieza. */

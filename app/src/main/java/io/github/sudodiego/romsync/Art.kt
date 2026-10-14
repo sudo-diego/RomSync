@@ -88,12 +88,28 @@ object Art {
         try { return block() } finally { unlock() }
     }
 
+    /** El título que sale del NOMBRE DEL ARCHIVO (no el oficial ni el propio): con eso se valida lo que encuentra. */
+    private fun fileTitle(g: Game) = norm(Group.cleanTitle(g.name).first)
+
+    /**
+     * Si un juego de SteamGridDB es el mismo que el del archivo: mismo nombre, o el nombre completo termina igual
+     * ("The Legend of Zelda: The Wind Waker HD" para "The Wind Waker HD.wua", "Disney's Aladdin" para "Aladdin").
+     */
+    private fun sameGame(sgdbName: String, want: String): Boolean {
+        val n = norm(sgdbName)
+        return n == want || (want.length >= 4 && n.endsWith(want))
+    }
+
     private suspend fun fetch(key: String, g: Game, kind: String, entry: JSONObject): File? = withContext(Dispatchers.IO) {
         var sgdbId = entry.optInt("sgdbId")
         if (sgdbId == 0) {
             val found = search(key, g.title)
-            sgdbId = found.firstOrNull { norm(it.second) == norm(g.title) }?.first ?: found.firstOrNull()?.first ?: -1
+            val want = fileTitle(g)
+            // Antes se tomaba el primero si no había uno idéntico: "Aladdin" daba "Aladdin - Hidden Objects Game".
+            val best = found.firstOrNull { norm(it.second) == want } ?: found.firstOrNull { sameGame(it.second, want) }
+            sgdbId = best?.first ?: found.firstOrNull()?.first ?: -1
             entry.put("sgdbId", sgdbId)
+            if (best != null) entry.put("name", best.second).put("nameOk", true) else entry.put("nameOk", false)
         }
         var out: File? = null
         if (sgdbId > 0) {
@@ -193,24 +209,72 @@ object Art {
 
     private val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.Main)
 
+    /** Lo que se baja de cada juego de una vez: la carátula, el fondo de la ficha y el logo (antes solo la carátula). */
+    private val bulkKinds = listOf("grid", "hero", "logo")
+
+    /** Si a un juego le falta alguna imagen que todavía no se buscó. */
+    fun needsFetch(g: Game) = g.kind != "shortcut" && (needsName(g) || bulkKinds.any { cached(g.id, it) == null && !notFound(g.id, it) })
+
+    /** Búsqueda automática (al terminar de leer la biblioteca): sin ventana, solo un texto en la tienda. */
+    var bulkQuiet by androidx.compose.runtime.mutableStateOf(false)
+        private set
+
     /** Igual que [fetchAll] pero sigue aunque se cambie de pantalla. */
-    fun startFetchAll(games: List<Game>) {
-        if (bulkRunning) return
+    fun startFetchAll(games: List<Game>, quiet: Boolean = false) {
+        if (bulkRunning || Prefs.sgdbKey.isBlank()) return
+        if (games.none { needsFetch(it) }) return
+        bulkQuiet = quiet
         scope.launch { fetchAll(games) }
     }
 
-    /** Busca las carátulas que faltan, varias a la vez. */
+    /** Busca las imágenes que faltan, varios juegos a la vez. */
     suspend fun fetchAll(games: List<Game>) = kotlinx.coroutines.coroutineScope {
-        val todo = games.filter { it.kind != "shortcut" && cached(it.id) == null && !notFound(it.id) }
+        val todo = games.filter { needsFetch(it) }
         bulkDone = 0
         bulkTotal = todo.size
-        todo.map { g -> launch { runCatching { get(g) }; bulkDone++ } }.forEach { it.join() }
+        todo.map { g ->
+            launch {
+                if (needsName(g)) runCatching { sem.withPermit { checkName(Prefs.sgdbKey, g) } }
+                for (k in bulkKinds) runCatching { get(g, k) }
+                bulkDone++
+            }
+        }.forEach { it.join() }
         bulkTotal = 0
+        Repo.reapplyNames()
     }
 
-    /** Fija a mano el juego de SteamGridDB (desde la web) y borra lo descargado. */
-    fun choose(gameId: String, sgdbId: Int) {
-        synchronized(index) { index[gameId] = JSONObject().put("sgdbId", sgdbId) }
+    /** El nombre oficial (de SteamGridDB) si se confirmó que es el mismo juego que el del archivo, o si se eligió a mano. */
+    fun officialName(id: String): String? = synchronized(index) {
+        index[id]?.takeIf { it.optBoolean("nameOk") }?.optString("name")?.takeIf { it.isNotBlank() }
+    }
+
+    /** Coincidencias viejas (de antes de validar el nombre) que todavía no se revisaron. */
+    private fun needsName(g: Game): Boolean = g.kind != "shortcut" && synchronized(index) {
+        index[g.id]?.let { it.optInt("sgdbId") > 0 && !it.has("nameOk") } == true
+    }
+
+    /**
+     * Revisa una coincidencia vieja: pide el nombre del juego a SteamGridDB. Si es el mismo juego, queda como nombre
+     * oficial; si era otro (se tomaba el primer resultado), se olvida y se vuelve a buscar con el criterio nuevo.
+     */
+    private suspend fun checkName(key: String, g: Game) = withContext(Dispatchers.IO) {
+        val entry = synchronized(index) { index[g.id] } ?: return@withContext
+        val name = runCatching { getJson(key, "/games/id/${entry.optInt("sgdbId")}")?.optJSONObject("data")?.optString("name") }
+            .getOrNull() ?: return@withContext
+        if (sameGame(name, fileTitle(g))) entry.put("name", name).put("nameOk", true)
+        else {
+            synchronized(index) { index[g.id] = JSONObject() }
+            kinds.keys.forEach { file(g.id, it).delete() }
+            versions[g.id] = (versions[g.id] ?: 0) + 1
+        }
+        saveIndex()
+    }
+
+    /** Fija a mano el juego de SteamGridDB (desde la ficha o la web) y borra lo descargado. */
+    fun choose(gameId: String, sgdbId: Int, name: String = "") {
+        synchronized(index) {
+            index[gameId] = JSONObject().put("sgdbId", sgdbId).apply { if (name.isNotBlank()) put("name", name).put("nameOk", true) }
+        }
         kinds.keys.forEach { file(gameId, it).delete() }
         saveIndex()
         versions[gameId] = (versions[gameId] ?: 0) + 1

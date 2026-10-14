@@ -141,13 +141,13 @@ class SftpConn private constructor(private val session: Session, val ch: Channel
 
     /** Todos los archivos bajo [dir], con rutas relativas a [root]; sin carpetas de medios ni archivos que no son juegos. */
     fun walk(root: String, dir: String = root, skipMedia: Boolean = true, out: MutableList<FileEntry> = ArrayList(),
-             junk: MutableList<FileEntry>? = null): MutableList<FileEntry> {
+             junk: MutableList<FileEntry>? = null, keep: (String) -> Boolean = { !Group.isIgnored(it) }): MutableList<FileEntry> {
         for (e in list(dir)) {
             val full = join(dir, e.name)
             val rel = full.removePrefix(root.trimEnd('/') + "/")
             if (e.isDir) {
-                if (!skipMedia || e.name.lowercase() !in Group.ignoredDirs) walk(root, full, skipMedia, out, junk)
-            } else if (!Group.isIgnored(e.name)) {
+                if (!skipMedia || e.name.lowercase() !in Group.ignoredDirs) walk(root, full, skipMedia, out, junk, keep)
+            } else if (keep(e.name)) {
                 out += FileEntry(rel, e.size)
             } else if (junk != null && Group.junkKind(e.name) != null && !Group.inBiosDir(rel)) {
                 junk += FileEntry(rel, e.size)

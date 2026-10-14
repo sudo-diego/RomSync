@@ -153,7 +153,16 @@ class GroupTest {
             fe("ps2/BIOS/ps2 bios usa/SCPH-90001_BIOS_V18_USA_230_(NTSC)/SCPH-90001_BIOS_V18_USA_230.INF", 567),
             fe("ps2/SCPH-90001_BIOS_V18_USA_230.DIFF", 4194304),
             fe("ps2/Shin Megami Tensei - Persona 3 FES (USA) (patched by XDeltaTool).iso", 4534960128)))
-        assertEquals(listOf("Shin Megami Tensei - Persona 3 FES"), left.map { it.title })
+        assertEquals(listOf("Shin Megami Tensei: Persona 3 FES"), left.map { it.title })
+    }
+
+    @Test fun prettyTitles() {
+        assertEquals("The Legend of Zelda: The Wind Waker", Group.cleanTitle("Legend of Zelda, The - The Wind Waker (Europe) (En,Fr,De,Es,It)").first)
+        assertEquals("The Legend of Zelda", Group.cleanTitle("Legend of Zelda, The (USA)").first)
+        assertEquals("Mario & Luigi: Superstar Saga", Group.cleanTitle("Mario & Luigi - Superstar Saga (Europe)").first)
+        assertEquals("Super Mario 64 DS", Group.cleanTitle("0022 - Super Mario 64 DS (Europe) (En,Fr,De,Es,It)").first)
+        assertEquals("Sonic & Knuckles + Sonic The Hedgehog 3", Group.cleanTitle("Sonic & Knuckles + Sonic The Hedgehog 3 (USA) (Lock-on Combination)").first)
+        assertEquals("Donkey Kong Country Tropical Freeze", Group.cleanTitle("[Tendoku.com] Donkey Kong Country Tropical Freeze [0100C1F0051B6000][v0]").first)
     }
 
     @Test fun versionTitles() {

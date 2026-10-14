@@ -33,7 +33,12 @@ fun DownloadsScreen() {
         }
         if (Repo.biosMissing.isNotEmpty() && items.none { it.bios && it.status != DlStatus.DONE }) item {
             Section("BIOS") {
-                Muted("En el PC hay ${Repo.biosMissing.size} BIOS que no están en la tablet (${formatSize(Repo.biosMissing.sumOf { it.size })}).")
+                Muted("En el PC hay ${Repo.biosMissing.size} archivo(s) de la carpeta bios que no están en la tablet (${formatSize(Repo.biosMissing.sumOf { it.size })}):")
+                // Que diga cuáles: con solo el número no se sabía qué faltaba.
+                Repo.biosMissing.take(12).forEach { f ->
+                    Text("• bios/${f.path} · ${formatSize(f.size)}", style = MaterialTheme.typography.bodySmall)
+                }
+                if (Repo.biosMissing.size > 12) Muted("y ${Repo.biosMissing.size - 12} más")
                 Button(onClick = { DownloadService.enqueue(ctx, Download("bios", "BIOS", "bios", Repo.biosMissing, bios = true)) }) {
                     Text("Copiar las BIOS que faltan")
                 }

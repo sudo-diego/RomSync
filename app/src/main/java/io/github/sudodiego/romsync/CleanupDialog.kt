@@ -57,7 +57,7 @@ fun CleanupCard() {
 }
 
 @Composable
-private fun CleanupDialog(onClose: () -> Unit) {
+fun CleanupDialog(onClose: () -> Unit) {
     val ctx = LocalContext.current
     val scope = appScope
     val all = remember(Repo.localJunk, Repo.library) {
@@ -151,7 +151,7 @@ fun StrayBiosCard() {
 }
 
 @Composable
-private fun StrayBiosDialog(tablet: List<FileEntry>, pc: List<FileEntry>, onClose: () -> Unit) {
+fun StrayBiosDialog(tablet: List<FileEntry>, pc: List<FileEntry>, onClose: () -> Unit) {
     val ctx = LocalContext.current
     val scope = appScope
     val all = remember(tablet, pc) { tablet.map { Junk(it, false, "") } + pc.map { Junk(it, true, "") } }

@@ -87,11 +87,20 @@ object Pc {
         progress("Armando la biblioteca (${files.size} archivos)…")
         val games = Group.all(files, ids) { p ->
             if (Group.ext(p) in descriptors) c.readText(SftpConn.join(root, p), 256 * 1024) else null
+        }.map { g ->
+            // GameCube/Wii: el código del disco (GP7P01) para poner el nombre del juego a sus partidas. Se lee una vez.
+            if ((g.system == "gc" || g.system == "wii") && g.serial.isEmpty() && g.files.size == 1) {
+                val f = g.files.first()
+                val key = "disc:${f.path}|${f.size}"
+                val id = Prefs.switchId(key) ?: runCatching { GameSaves.discIdOf(c.head(SftpConn.join(root, f.path), 0x60)) }
+                    .getOrNull().orEmpty().also { Prefs.setSwitchId(key, it) }
+                if (id.isNotEmpty()) g.copy(serial = id) else g
+            } else g
         }
         val biosFiles = if (c.stat(bios)?.isDir == true) {
-            listed?.takeIf { biosRel != null }?.filter { it.first.lowercase().startsWith(biosRel!!) }
+            listed?.takeIf { biosRel != null }?.filter { it.first.lowercase().startsWith(biosRel!!) && !Group.isSystemJunk(it.first.substringAfterLast('/')) }
                 ?.map { FileEntry(it.first.substring(biosRel!!.length), it.second) }
-                ?: c.walk(bios, skipMedia = false)
+                ?: c.walk(bios, skipMedia = false, keep = { !Group.isSystemJunk(it) })
         } else emptyList()
         val systems = games.groupBy { it.system }.map { (id, gs) ->
             Systems.get(id).copy(count = gs.size, size = gs.sumOf { it.size })
@@ -128,13 +137,49 @@ object PcEdit {
         freed
     }
 
-    /** Escribe "Juego.m3u" junto a los discos, en el PC (y la tablet lo baja con el juego). */
-    suspend fun createM3u(g: Game): String = Pc.io { c ->
+    /** Juegos que se están copiando de la tablet al PC: id → bytes copiados (para la barra en la ficha). */
+    val uploading = androidx.compose.runtime.mutableStateMapOf<String, Long>()
+
+    /**
+     * Copia al PC un juego que solo está en la tablet (así queda guardado y se puede volver a bajar). Va a .part y se
+     * renombra al final, como todo lo que se escribe en el PC; un archivo que ya está con el mismo tamaño se salta.
+     */
+    suspend fun uploadFromTablet(g: Game) = Pc.io { c ->
+        var done = 0L
+        uploading[g.id] = 0L
+        try {
+            for (f in g.files) {
+                val remote = SftpConn.join(Prefs.remoteRoms, f.path)
+                if (c.stat(remote)?.size == f.size) { done += f.size; uploading[g.id] = done; continue }
+                c.upload(remote) { out ->
+                    Local.romFile(f.path).inputStream().use { input ->
+                        val buf = ByteArray(1 shl 16)
+                        while (true) {
+                            val n = input.read(buf)
+                            if (n < 0) break
+                            out.write(buf, 0, n)
+                            done += n
+                            uploading[g.id] = done
+                        }
+                    }
+                }
+            }
+        } finally {
+            uploading.remove(g.id)
+        }
+    }
+
+    /**
+     * Escribe "Juego.m3u" junto a los discos: en el PC (así queda guardado) y, si los discos están en la tablet, también
+     * ahí. Antes había que "descargar lo que falta" (un archivo de 111 B) para tenerlo en la tablet.
+     */
+    suspend fun createM3u(g: Game, onPc: Boolean = true): String {
         val dir = g.primary.substringBeforeLast('/')
         val name = Group.discOf(Group.stem(g.primary))?.first ?: g.name
         val rel = "$dir/$name.m3u"
         val text = g.files.joinToString("\n") { it.path.removePrefix("$dir/") } + "\n"
-        c.upload(SftpConn.join(Prefs.remoteRoms, rel)) { it.write(text.toByteArray()) }
-        rel
+        if (onPc) Pc.io { c -> c.upload(SftpConn.join(Prefs.remoteRoms, rel)) { it.write(text.toByteArray()) } }
+        if (g.files.any { Repo.has(it.path) }) withContext(Dispatchers.IO) { Local.romFile(rel).writeText(text) }
+        return rel
     }
 }

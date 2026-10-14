@@ -40,6 +40,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -150,6 +151,20 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
                             }
                         }
                     }
+                    // Un juego que solo está en la tablet se puede dejar guardado en el PC desde aquí mismo.
+                    if (w.presence == Presence.TABLET_ONLY && Prefs.configured && g.kind != "shortcut") {
+                        val up = PcEdit.uploading[g.id]
+                        if (up != null) Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            LinearProgressIndicator(progress = { up.toFloat() / g.size.coerceAtLeast(1) }, Modifier.fillMaxWidth())
+                            Muted("Copiando al PC: ${formatSize(up)} de ${formatSize(g.size)}")
+                        } else FilledTonalButton(onClick = {
+                            scope.launch {
+                                val msg = runCatching { PcEdit.uploadFromTablet(g) }.fold({ "${g.title} ya está en el PC" }, { "No se pudo copiar: ${it.message}" })
+                                Toast.makeText(ctx, msg, Toast.LENGTH_LONG).show()
+                                Repo.refresh()
+                            }
+                        }) { Text("Copiar al PC · ${formatSize(g.size)}") }
+                    }
                     if (w.presence != Presence.MISSING && dl?.status != DlStatus.RUNNING) {
                         OutlinedButton(onClick = { askDelete = true },
                             colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)) {
@@ -207,13 +222,17 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
                     }
                 }
 
+                VitaInstallSection(g)
+                GameSavesSection(g)
+
                 Section("Más") {
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedButton(onClick = { renaming = true }) { Text("Cambiar nombre") }
                         OutlinedButton(onClick = { pickArt = true }) { Text("Cambiar carátula") }
-                        if (g.kind == "discs" && w.presence != Presence.TABLET_ONLY) OutlinedButton(onClick = {
+                        if (g.kind == "discs") OutlinedButton(onClick = {
                             scope.launch {
-                                val msg = runCatching { PcEdit.createM3u(g) }.fold({ "Listo: $it. Actualiza la biblioteca para verlo." }, { it.message ?: "Error" })
+                                val msg = runCatching { PcEdit.createM3u(g, onPc = w.presence != Presence.TABLET_ONLY && Prefs.configured) }
+                                    .fold({ "Listo: $it" }, { it.message ?: "Error" })
                                 Toast.makeText(ctx, msg, Toast.LENGTH_LONG).show()
                                 Repo.refresh()
                             }
@@ -377,4 +396,109 @@ private fun StateCard(g: Game, w: Repo.Where, downloadSize: Long) {
             ))
         }
     }
+}
+
+/**
+ * Las partidas de este juego, en cada emulador que lo abre: respaldarlas en el PC o restaurarlas desde un respaldo,
+ * sin ir a la pantalla Partidas (que sigue sirviendo para respaldar todo un emulador).
+ */
+@Composable
+@OptIn(ExperimentalLayoutApi::class)
+private fun GameSavesSection(g: Game) {
+    val ctx = LocalContext.current
+    if (g.system in GameSaves.sharedCards) {
+        Section("Partidas") {
+            Muted("Las partidas de PS2 van en tarjetas de memoria que comparten todos los juegos: se respaldan enteras desde Partidas.")
+        }
+        return
+    }
+    var links by remember(g) { mutableStateOf<List<GameSaves.Link>?>(null) }
+    var units by remember(g) { mutableStateOf<Map<String, Saves.Unit?>>(emptyMap()) }
+    var restoreFor by remember { mutableStateOf<GameSaves.Link?>(null) }
+    var reload by remember { mutableStateOf(0) }
+    LaunchedEffect(g, reload) {
+        val ls = GameSaves.links(ctx, g)
+        links = ls
+        units = ls.associate { l -> l.emu.id to runCatching { Saves.currentUnits(ctx, l.emu).firstOrNull { it.key == l.key } }.getOrNull() }
+    }
+    val ls = links ?: return
+    if (ls.isEmpty()) return
+    Section("Partidas") {
+        ls.forEach { l ->
+            val u = units[l.emu.id]
+            val busy = Saves.busy[l.emu.id]
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(l.emu.name, fontWeight = FontWeight.SemiBold)
+                Muted(when {
+                    busy != null -> busy
+                    u == null -> "No hay partidas de este juego en la tablet."
+                    else -> "${u.files} archivo(s) · ${formatSize(u.bytes)} · " +
+                        java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.SHORT, java.text.DateFormat.SHORT).format(java.util.Date(u.newest))
+                })
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(enabled = u != null && busy == null && Prefs.configured, onClick = {
+                        appScope.launch {
+                            val msg = when (val r = Saves.backup(ctx, l.emu, auto = false, force = true, only = setOf(l.key))) {
+                                is Saves.Result.Done -> "Partidas de ${g.title} respaldadas en el PC"
+                                Saves.Result.Unchanged, Saves.Result.Empty -> "No había nada que respaldar"
+                                is Saves.Result.Failed -> r.message
+                            }
+                            Toast.makeText(ctx, msg, Toast.LENGTH_LONG).show()
+                            reload++
+                        }
+                    }) { Text("Respaldar en el PC") }
+                    OutlinedButton(enabled = busy == null && Prefs.configured, onClick = { restoreFor = l }) { Text("Restaurar…") }
+                }
+            }
+        }
+        Muted("Borrar el juego nunca borra sus partidas.")
+    }
+    restoreFor?.let { l -> RestoreDialog(l.emu, onlyKey = l.key) { restoreFor = null; reload++ } }
+}
+
+/** Vita: el juego se instala DENTRO de Vita3K; el archivo de ROMs es solo el instalador o un acceso directo. */
+@Composable
+private fun VitaInstallSection(g: Game) {
+    if (g.system != "psvita") return
+    val ctx = LocalContext.current
+    var inst by remember(g) { mutableStateOf<Pair<String, Long>?>(null) }
+    var checked by remember(g) { mutableStateOf(false) }
+    var ask by remember { mutableStateOf(false) }
+    var reload by remember { mutableStateOf(0) }
+    LaunchedEffect(g, reload) { inst = runCatching { GameSaves.vitaInstall(ctx, g) }.getOrNull(); checked = true }
+    if (!checked) return
+    Section("Vita3K") {
+        val i = inst
+        if (i == null) Muted("No está instalado en Vita3K. Para jugarlo, instálalo desde Vita3K (Archivo → Instalar .vpk/.pkg).")
+        else {
+            Text("Instalado en Vita3K · ${formatSize(i.second)}", fontWeight = FontWeight.SemiBold, color = Palette.ok)
+            Muted("El juego vive dentro de Vita3K. El archivo de la carpeta de ROMs es solo un acceso directo (o el instalador, que se puede borrar).")
+            OutlinedButton(onClick = { ask = true }, colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)) {
+                Text("Quitar de Vita3K")
+            }
+        }
+    }
+    val i = inst
+    if (ask && i != null) AlertDialog(
+        onDismissRequest = { ask = false },
+        title = { Text("¿Quitar ${g.title} de Vita3K?") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Se liberan ${formatSize(i.second)}.")
+                Text("Tus partidas no se borran (están aparte, en ux0/user).", fontWeight = FontWeight.SemiBold)
+                Muted("Para volver a jugarlo hay que instalarlo otra vez en Vita3K.")
+            }
+        },
+        confirmButton = {
+            Button(onClick = {
+                ask = false
+                appScope.launch {
+                    val msg = runCatching { GameSaves.removeVitaInstall(i.first) }.fold({ "Quitado de Vita3K" }, { it.message ?: "Error" })
+                    Toast.makeText(ctx, msg, Toast.LENGTH_LONG).show()
+                    reload++
+                }
+            }, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) { Text("Quitar") }
+        },
+        dismissButton = { TextButton(onClick = { ask = false }) { Text("Cancelar") } },
+    )
 }

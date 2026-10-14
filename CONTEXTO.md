@@ -58,7 +58,8 @@ Frontends: ES-DE / Cocoon (carpetas `ROMs/<plataforma>` y `bios`).
 
 ## Lo que se vio en la tablet y el PC reales (sesión con adb, 13-10-2026)
 
-- PC: `D:\ROMs` (~60 000 archivos), respaldos en `D:\RomSyncespaldos\TB321FU`. El shell de OpenSSH es cmd (sin
+- PC: `D:\ROMs` (~60 000 archivos), respaldos en `D:\RomSync
+espaldos\TB321FU`. El shell de OpenSSH es cmd (sin
   `DefaultShell`): la lista con PowerShell funciona y la lectura del PC entera tarda < 30 s. Con 60 000 archivos el heap
   llega a ~160 MB: hubo un OutOfMemoryError con el límite de 256 MB → `largeHeap="true"`.
 - Se cayó la tienda con "Key … was already used": un juego solo en la tablet con el mismo id que uno del PC (Switch:
@@ -85,13 +86,48 @@ Frontends: ES-DE / Cocoon (carpetas `ROMs/<plataforma>` y `bios`).
   slot 1: hubo que poner hola123.ps2 en el slot 1 (Memory Cards). Persona 3 FES en ARMSX2 carga la partida
   (Diego, PLV 33, 35 h 25 m). Ahora RomSync lo avisa al terminar. Antes: NetherSX2 buscaba también en /sdcard/ARMSX2
   (habría copiado de ARMSX2 a ARMSX2); ahora solo ARMSX2 lo hace. Respaldo manual en
-  `D:\RomSyncespaldosdb-manual-2026-10-13
+  `D:\RomSync
+espaldosdb-manual-2026-10-13
 ethersx2` (salvo `gamesettings/94A82AAA.ini`, que ni el shell puede leer).
+
+## Limpieza de la biblioteca (14-10-2026, con permiso del usuario)
+
+Todo lo quitado está en `D:\RomSync\papelera-2026-10-13` (26 GB) y `/sdcard/RomSync/papelera-2026-10-13` (92 MB):
+nada se borró de verdad. Las partidas de DS reemplazadas también quedaron en `D:\RomSyncespaldos\limpieza-2026-10-13`.
+- Wii U: 7 carpetas (base/update/DLC, ~60 000 archivos, 23 GB) que estaban completas dentro de los .wua (se comparó
+  el TitleID y la versión de cada carpeta con los que trae cada .wua). La lectura del PC pasa de 60 000 a ~460 archivos.
+- 3DS: `Minerva_Myrient/` (zips cortados de Pokémon Moon y X; los .3ds buenos ya estaban).
+- GameCube: Paper Mario TTYD .iso (está el .rvz) y Twilight Princess Europa (se queda la USA, que está en la tablet).
+- DS: Pokémon Negra "[b]" (dump malo) y partidas viejas numeradas ("4527 - …", "5597 - …", un .sav vacío). Se subieron al
+  PC Pokémon Negra, Oro HeartGold y Perla que solo estaban en la tablet; se renombraron 3 partidas numeradas para que
+  coincidan con su ROM ("0022 - Super Mario 64 DS (Europe)….sav" → "Super Mario 64 DS.sav").
+- BIOS: `ps2/BIOS` entera, PS2 que nadie usa (ARMSX2 usa la SCPH-39001, NetherSX2 tiene las suyas en su carpeta):
+  quedan SCPH-39001 (USA) y SCPH-70004 (Europa) con .MEC/.NVM; `ps-30a.zip` (igual al .bin, mismo CRC).
+  `bios/Mupen64plus/mupen64plus.ini` NO es BIOS pero es la configuración del núcleo de N64: se queda. Tampoco son BIOS
+  pero se quedan: `bios/dc/` (memoria y VMU de Flycast = partidas de Dreamcast) y `bios/swanstation/` (caché).
+- "Falta 1 BIOS en la tablet" era falso: la tablet ignoraba `mupen64plus.ini` (.ini) y el PC no. Ahora en la carpeta
+  bios solo se ignora basura del sistema (`Group.isSystemJunk`), y Descargas dice cuáles faltan.
+
+## Cambios de la app en esa sesión
+
+- Ficha del juego: sección Partidas (respaldar/restaurar SOLO ese juego, por emulador; `GameSaves.kt` sabe la clave de
+  cada juego: código del disco GC/Wii leído de la cabecera —RVZ lo copia en 0x58—, TitleID de Switch/3DS, ID de Vita,
+  o el nombre del archivo); sección Vita3K ("Instalado en Vita3K · 1,4 GB" y "Quitar de Vita3K", solo `ux0/app/<ID>`);
+  "Copiar al PC" para juegos solo en la tablet (`PcEdit.uploadFromTablet`). Las partidas de PS2 son tarjetas compartidas.
+- .m3u: se crea en el PC y también en la tablet si los discos están ahí.
+- Imágenes: al leer la biblioteca se bajan solas carátula, fondo y logo de todo (antes el fondo y el logo solo al abrir
+  la ficha). Nombres oficiales de SteamGridDB si coinciden con el archivo (o si se elige a mano); las coincidencias
+  viejas se revisan con `/games/id` y las que eran otro juego se vuelven a buscar.
+- Nombres: `Group.prettyTitle` ("Legend of Zelda, The - The Wind Waker" → "The Legend of Zelda: The Wind Waker";
+  quita "0022 - "). Wind Waker HD sale "The Legend of Zelda: The Wind Waker HD" (nombre oficial).
+- Tienda: filtros Todos / En la tablet / Para descargar / Sin copia en el PC. "Repetidos" y las tarjetas de sobrantes y
+  BIOS se juntaron en "Ordenar tu biblioteca" (`Organize.kt`: 4 pasos con recomendación de qué versión conservar).
+- Respaldos: cada uno guarda qué es (completo, automático, un juego, antes de restaurar, traspaso) y qué juegos trae;
+  los viejos se leen una vez y se anotan en su .json. La lista muestra "Solo Mario Party 7 · ayer, 22:48". Las partidas
+  de un juego se agrupan por clave (la tarjeta .gci y los estados .s00 de Dolphin juntos). Los códigos de disco del PC
+  se leen al escanear (para nombrar partidas aunque el juego no esté en la tablet; 3 letras = juego, la 4.ª región).
 
 ## Pendiente
 
-- Mostrar en la ficha de un juego de Vita "Instalado en Vita3K (1,4 GB)" leyendo el TitleID del .dpt/.psvita o del
-  nombre (`PCSx#####`) y el tamaño de `<vitaRoot>/ux0/app/<ID>`, con "Borrar de Vita3K" que borre solo `ux0/app/<ID>`
-  (nunca `ux0/user`). Pendiente de que el usuario lo apruebe.
-- Partidas: mostrar nombres de juego en vez de códigos (GP7P → Mario Party 7) y no cortar "lastState.sav" a "lastSt".
-- Ficha: "Ocupa 111 B" debería decir "Falta 111 B" cuando está a medias; "faltan 1 archivo(s)".
+- Wind Waker GameCube tiene Europa (en la tablet, con la partida GZLP) y USA (solo PC): elegir en Ordenar.
+- Vaciar las papeleras cuando el usuario confirme que todo anda bien.

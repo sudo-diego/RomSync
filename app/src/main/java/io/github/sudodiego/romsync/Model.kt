@@ -63,6 +63,11 @@ data class SaveBackupInfo(
     val files: Int,
     val auto: Boolean,
     val keep: Boolean,
+    /** Qué es: "todo", "auto", "juego" (uno o algunos), "antes" (antes de restaurar), "traspaso"; vacío en los viejos. */
+    val kind: String = "",
+    /** Los juegos que trae (nombres) y sus claves de [Saves.unitOf], para decir qué es cada respaldo. */
+    val games: List<String> = emptyList(),
+    val keys: List<String> = emptyList(),
 )
 
 /** Estado de un juego en la tablet, calculado aquí (también sin conexión). */
@@ -120,8 +125,7 @@ object Json {
     )
 
     fun backups(a: JSONArray) = a.objects().map {
-        SaveBackupInfo(it.optString("id"), it.optString("device"), it.optString("emulator"), it.optString("at"),
-            it.optLong("size"), it.optString("hash"), it.optInt("files"), it.optBoolean("auto"), it.optBoolean("keep"))
+        Backups.meta(it)
     }
 
     fun gameJson(g: Game): JSONObject = JSONObject()

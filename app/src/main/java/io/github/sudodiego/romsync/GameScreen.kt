@@ -997,7 +997,7 @@ fun BigDownloadButton(label: String, size: String, modifier: Modifier = Modifier
     val focus = androidx.compose.runtime.remember { androidx.compose.ui.focus.FocusRequester() }
     androidx.compose.runtime.LaunchedEffect(Unit) { if (Nav.keys || Nav.pad) { kotlinx.coroutines.delay(30); runCatching { focus.requestFocus() } } }
     Row(
-        modifier.height(64.dp).focusRequester(focus).focusHighlight(shape, grow = 1.02f).clip(shape).background(brush)
+        modifier.height(64.dp).focusRequester(focus).focusHighlight(shape, grow = 1.02f, ring = MaterialTheme.colorScheme.onSurface).clip(shape).background(brush)
             .border(2.dp, Color.White.copy(alpha = .35f), shape)
             .pressable { onClick() } // clickable ya recibe el foco y responde a A / Enter
             .padding(horizontal = 26.dp),

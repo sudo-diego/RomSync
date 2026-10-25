@@ -390,11 +390,13 @@ fun PadBar(modifier: Modifier = Modifier) {
     }
 }
 
-fun Modifier.focusHighlight(shape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(18.dp), grow: Float = 1.05f): Modifier = composed {
+fun Modifier.focusHighlight(shape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(18.dp), grow: Float = 1.05f,
+                            ring: Color? = null): Modifier = composed {
     var focused by remember { androidx.compose.runtime.mutableStateOf(false) }
     val scale by androidx.compose.animation.core.animateFloatAsState(if (focused) grow else 1f,
         androidx.compose.animation.core.spring(dampingRatio = 0.6f, stiffness = 500f), label = "foco")
-    val color = MaterialTheme.colorScheme.primary
+    // [ring]: otro color para el anillo cuando el elemento ya es del color destacado (si no, no se distingue).
+    val color = ring ?: MaterialTheme.colorScheme.primary
     // Se anota como lo último elegido de su pantalla (al volver del panel con la derecha, el foco vuelve aquí).
     val fr = remember { androidx.compose.ui.focus.FocusRequester() }
     val screen = LocalScreenKey.current

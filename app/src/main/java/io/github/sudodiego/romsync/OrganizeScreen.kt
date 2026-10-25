@@ -228,6 +228,7 @@ private fun TidyDialog(onClose: () -> Unit) {
         G(Tidy.Kind.MOVE, "Mover y poner el nombre correcto", Icons.Rounded.DriveFileRenameOutline, Palette.ok),
         G(Tidy.Kind.RENAME_SERVER, "Renombrar en el servidor", Icons.Rounded.Dns, Palette.indigo),
         G(Tidy.Kind.DELETE, "Copias que sobran", Icons.Rounded.DeleteSweep, Palette.danger),
+        G(Tidy.Kind.DELETE_SERVER, "Comprimidos que sobran en el servidor", Icons.Rounded.DeleteSweep, Palette.danger),
         G(Tidy.Kind.INFO, "Para tener en cuenta (no se cambia nada)", Icons.Rounded.Info, Palette.warn),
     )
     // Los grupos grandes empiezan plegados para que se vea el resumen de todo.
@@ -288,7 +289,8 @@ private fun TidyDialog(onClose: () -> Unit) {
                                 if (it.kind == Tidy.Kind.DELETE) Text(before, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                                 else {
                                     Text(it.title, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-                                    if (before != it.title) Text("antes: $before", style = MaterialTheme.typography.bodySmall,
+                                    // En los consejos no se cambia nada: se muestra el archivo, sin "antes".
+                                    if (before != it.title) Text(if (it.kind == Tidy.Kind.INFO) before else "antes: $before", style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                                 }
                                 Text(it.note + " · " + formatSize(it.size), style = MaterialTheme.typography.bodySmall,

@@ -1,5 +1,7 @@
 package io.github.sudodiego.romsync
 
+import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -78,7 +80,8 @@ fun DownloadOverlay(g: Game, modifier: Modifier = Modifier) {
     val p = DownloadArt.progressOf(g)
     val gift = g.id in DownloadArt.gifts
     if (p == null && !gift) return
-    val shown by animateFloatAsState(p?.first ?: 1f, tween(400), label = "avance")
+    val shown by animateFloatAsState(p?.first ?: 1f,
+        androidx.compose.animation.core.spring(stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow), label = "avance")
     val upload = p?.second == true
     Box(modifier.fillMaxSize()) {
         when {
@@ -115,52 +118,96 @@ private fun SwitchBar(p: Float, upload: Boolean, modifier: Modifier) {
 }
 
 /**
- * Estilo 3DS: el ícono del juego en un cubo que se llena de bloques de abajo hacia arriba según el avance, y arriba
- * una línea con cubitos colgando que van pasando (al subir, los cubitos van en sentido contrario).
+ * Estilo 3DS: fondo claro, un riel arriba con cubitos colgando que avanzan hacia el centro y caen dentro de un cubo
+ * grande en perspectiva; en la cara de adelante del cubo está el ícono del juego, que se va revelando de abajo hacia
+ * arriba según el avance. Al subir al servidor, los cubitos salen del cubo y se van por el riel.
  */
 @Composable
 private fun ThreeDsFill(g: Game, p: Float, upload: Boolean, modifier: Modifier) {
-    val t = rememberInfiniteTransition(label = "linea")
-    val move by t.animateFloat(0f, 1f, infiniteRepeatable(tween(2400, easing = LinearEasing), RepeatMode.Restart), label = "mover")
+    val t = rememberInfiniteTransition(label = "riel")
+    val move by t.animateFloat(0f, 1f, infiniteRepeatable(tween(1800, easing = LinearEasing), RepeatMode.Restart), label = "mover")
     val accent = Color(UiState.accent)
-    BoxWithConstraints(modifier.background(Color(0xB30D1220))) {
-        val side = minOf(maxWidth, maxHeight) * 0.62f
-        // Línea de producción arriba: cubitos colgados que avanzan.
-        Canvas(Modifier.fillMaxWidth().height(maxHeight * 0.25f).align(Alignment.TopCenter)) {
-            val y = size.height * 0.35f
-            drawLine(Color.White.copy(alpha = 0.7f), Offset(0f, y), Offset(size.width, y), 2.dp.toPx())
-            val n = 5
-            val cube = size.height * 0.32f
-            for (i in 0 until n) {
-                var f = ((i.toFloat() / n) + (if (upload) -move else move)) % 1f
-                if (f < 0) f += 1f
-                val x = f * (size.width + cube) - cube
-                drawLine(Color.White.copy(alpha = 0.7f), Offset(x + cube / 2, y), Offset(x + cube / 2, y + cube * 0.5f), 1.5.dp.toPx())
-                drawRoundRect(accent, Offset(x, y + cube * 0.5f), Size(cube, cube), CornerRadius(cube * 0.18f))
-                drawRoundRect(Color.White.copy(alpha = 0.35f), Offset(x, y + cube * 0.5f), Size(cube, cube * 0.3f), CornerRadius(cube * 0.18f))
-            }
-        }
-        // El cubo del ícono, centrado, que se va llenando.
-        Box(Modifier.size(side).align(Alignment.Center).clip(RoundedCornerShape(side * 0.16f))) {
-            val art = listOf("icon", "grid").firstOrNull { Art.cached(g.id, it) != null }
-            if (art != null) ArtImage(g, art, Modifier.fillMaxSize(), ContentScale.Crop)
-            else Box(Modifier.fillMaxSize().background(Color(Repo.system(g.system).color)))
-            Canvas(Modifier.fillMaxSize()) {
-                val cells = 6
-                val c = size.width / cells
-                val filled = (p * cells * cells).toInt()
-                // Se llena de abajo hacia arriba, fila por fila; lo que falta queda tapado.
-                for (row in 0 until cells) for (col in 0 until cells) {
-                    val idx = row * cells + col
-                    if (idx >= filled) drawRect(Color(0xE60D1220), Offset(col * c, size.height - (row + 1) * c), Size(c + 0.5f, c + 0.5f))
+    val light = androidx.compose.ui.graphics.lerp(accent, Color.White, 0.55f)
+    val dark = androidx.compose.ui.graphics.lerp(accent, Color.Black, 0.25f)
+    BoxWithConstraints(modifier.background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color(0xFFF2F9FF), Color(0xFFD6ECFF))))) {
+        val side = minOf(maxWidth, maxHeight) * 0.5f
+        val sidePx = with(androidx.compose.ui.platform.LocalDensity.current) { side.toPx() }
+        // Riel y cubitos (dibujados sobre toda la tarjeta).
+        Canvas(Modifier.fillMaxSize()) {
+            val railY = size.height * 0.16f
+            drawLine(Color(0xFF9AB3C9), Offset(0f, railY), Offset(size.width, railY), 2.dp.toPx())
+            val cube = sidePx * 0.22f
+            val cx = size.width / 2
+            val boxTop = size.height / 2 - sidePx / 2
+            fun isoCube(x: Float, y: Float, s: Float) {
+                val h = s * 0.3f
+                val top = androidx.compose.ui.graphics.Path().apply {
+                    moveTo(x, y + h); lineTo(x + s / 2, y); lineTo(x + s, y + h); lineTo(x + s / 2, y + 2 * h); close()
                 }
-                drawRoundRect(Color.White, Offset.Zero, size, CornerRadius(size.width * 0.16f), style = Stroke(3.dp.toPx()))
+                val left = androidx.compose.ui.graphics.Path().apply {
+                    moveTo(x, y + h); lineTo(x + s / 2, y + 2 * h); lineTo(x + s / 2, y + 2 * h + s * 0.55f); lineTo(x, y + h + s * 0.55f); close()
+                }
+                val right = androidx.compose.ui.graphics.Path().apply {
+                    moveTo(x + s, y + h); lineTo(x + s / 2, y + 2 * h); lineTo(x + s / 2, y + 2 * h + s * 0.55f); lineTo(x + s, y + h + s * 0.55f); close()
+                }
+                drawPath(top, light); drawPath(left, accent); drawPath(right, dark)
+            }
+            // 3 cubitos en el riel: llegan al centro y bajan al cubo (o al revés si se sube).
+            for (i in 0 until 3) {
+                var f = (move + i / 3f) % 1f
+                if (upload) f = 1f - f
+                val x: Float; val y: Float
+                if (f < 0.7f) {
+                    // Por el riel, desde el borde hasta el centro, colgando de un gancho.
+                    val k = f / 0.7f
+                    x = -cube + k * (cx - cube / 2 + cube)
+                    y = railY + 6.dp.toPx()
+                    drawLine(Color(0xFF9AB3C9), Offset(x + cube / 2, railY), Offset(x + cube / 2, y), 1.5.dp.toPx())
+                } else {
+                    // Se suelta y cae dentro del cubo grande.
+                    val k = (f - 0.7f) / 0.3f
+                    x = cx - cube / 2
+                    y = railY + 6.dp.toPx() + k * k * (boxTop - railY)
+                }
+                if (y < boxTop + sidePx * 0.15f) isoCube(x, y, cube)
             }
         }
-        Text("${(p * 100).toInt()}%", Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp), color = Color.White,
+        // El cubo grande: cara de adelante con el ícono que se revela, techo y lado en perspectiva.
+        Box(Modifier.size(side).align(Alignment.Center)) {
+            Canvas(Modifier.fillMaxSize()) {
+                val d = size.width * 0.16f
+                // techo
+                drawPath(androidx.compose.ui.graphics.Path().apply {
+                    moveTo(0f, d); lineTo(d, 0f); lineTo(size.width, 0f); lineTo(size.width - d, d); close()
+                }, light.copy(alpha = 0.9f))
+                // lado derecho
+                drawPath(androidx.compose.ui.graphics.Path().apply {
+                    moveTo(size.width - d, d); lineTo(size.width, 0f); lineTo(size.width, size.height - d); lineTo(size.width - d, size.height); close()
+                }, dark.copy(alpha = 0.9f))
+            }
+            val face = side * 0.84f
+            Box(Modifier.size(face).align(Alignment.BottomStart).clip(RoundedCornerShape(6.dp)).background(Color.White)) {
+                val art = listOf("icon", "grid").firstOrNull { Art.cached(g.id, it) != null }
+                // Lo que falta, gris claro; lo descargado, el ícono a color (se revela de abajo hacia arriba).
+                if (art != null) ArtImage(g, art, Modifier.fillMaxSize().graphicsLayer { alpha = 0.18f }, ContentScale.Crop)
+                Box(Modifier.fillMaxSize().drawWithClipBottom(p)) {
+                    if (art != null) ArtImage(g, art, Modifier.fillMaxSize(), ContentScale.Crop)
+                    else Box(Modifier.fillMaxSize().background(Color(Repo.system(g.system).color)))
+                }
+                Canvas(Modifier.fillMaxSize()) {
+                    drawRect(accent, style = Stroke(3.dp.toPx()))
+                }
+            }
+        }
+        Text("${(p * 100).toInt()}%", Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp), color = Color(0xFF2B3A4A),
             fontWeight = FontWeight.Bold, fontSize = 13.sp)
     }
 }
+
+/** Muestra solo la parte de abajo del contenido (fracción [p] de la altura). */
+private fun Modifier.drawWithClipBottom(p: Float) = this.then(Modifier.drawWithContent {
+    clipRect(top = size.height * (1f - p.coerceIn(0f, 1f))) { this@drawWithContent.drawContent() }
+})
 
 /** El regalo de la 3DS: caja del color destacado con cintas y lazo; se abre (escala y se desvanece) al tocar. */
 @Composable

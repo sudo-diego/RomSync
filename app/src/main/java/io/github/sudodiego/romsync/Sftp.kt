@@ -273,7 +273,7 @@ class SftpConn private constructor(private val session: Session, val ch: Channel
     }
 }
 
-private fun InputStream.readNBytesCompat(max: Int): ByteArray {
+internal fun InputStream.readNBytesCompat(max: Int): ByteArray {
     val buf = java.io.ByteArrayOutputStream()
     val b = ByteArray(8192)
     var total = 0

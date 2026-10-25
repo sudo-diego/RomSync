@@ -152,6 +152,9 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
                     drawContent()
                     drawRect(Brush.verticalGradient(0f to Color.Black, 0.55f to Color.Black, 1f to Color.Transparent),
                         blendMode = androidx.compose.ui.graphics.BlendMode.DstIn)
+                    // Y hacia la izquierda: se funde con la barra lateral en vez de cortarse de golpe.
+                    drawRect(Brush.horizontalGradient(0f to Color.Transparent, 0.07f to Color.Black, 1f to Color.Black),
+                        blendMode = androidx.compose.ui.graphics.BlendMode.DstIn)
                 }
                 .background(Brush.linearGradient(listOf(Color(sys.color), Color(0xFF0D1220))))) {
                 ArtImage(g, "hero", Modifier.fillMaxSize())
@@ -188,10 +191,16 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
         }
         Row(Modifier.padding(horizontal = 28.dp).offset(y = (-100).dp), horizontalArrangement = Arrangement.spacedBy(28.dp)) {
             // Tocar la portada abre el editor (nombre, carátula, fondo y logo).
+            // La sombra crece con la animación, en la misma capa (las sombras de Android no se desvanecen con la
+            // transparencia: se veía una sombra entera bajo una carátula todavía transparente).
             Box(Modifier.width(200.dp).graphicsLayer {
-                alpha = enter.value; translationY = (1f - enter.value) * 80f
-                rotationZ = (1f - enter.value) * -4f
-            }.focusHighlight().shadow(16.dp, RoundedCornerShape(18.dp)).clip(RoundedCornerShape(18.dp)).pressable { Sound.play(Sound.Fx.OPEN); editing = true }) {
+                val k = enter.value.coerceIn(0f, 1f)
+                alpha = k; translationY = (1f - k) * 80f
+                rotationZ = (1f - k) * -4f
+                shadowElevation = 16.dp.toPx() * k * k
+                shape = RoundedCornerShape(18.dp); clip = true
+                compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.ModulateAlpha
+            }.focusHighlight().clip(RoundedCornerShape(18.dp)).pressable { Sound.play(Sound.Fx.OPEN); editing = true }) {
                 Cover(g, Modifier.fillMaxWidth()) {
                     // Estilo 3DS: si llegó envuelto, se desenvuelve al abrir la ficha.
                     if (g.id in DownloadArt.gifts) {
@@ -486,7 +495,7 @@ private fun GameSavesSection(g: Game) {
                     Button(enabled = u != null && busy == null && Prefs.configured, onClick = {
                         appScope.launch {
                             val msg = when (val r = Saves.backup(ctx, l.emu, auto = false, force = true, only = setOf(l.key))) {
-                                is Saves.Result.Done -> "Partidas de ${g.title} respaldadas en el servidor"
+                                is Saves.Result.Done -> { Sound.play(Sound.Fx.JINGLE); "Partidas de ${g.title} respaldadas en el servidor" }
                                 Saves.Result.Unchanged, Saves.Result.Empty -> "No había nada que respaldar"
                                 is Saves.Result.Failed -> r.message
                             }
@@ -672,9 +681,16 @@ private fun SwitchSummary(g: Game) {
         val total = info?.dlcs?.size ?: 0
         val owned = dlcs.map { it.titleId.uppercase() }.toSet()
         val missing = info?.dlcs.orEmpty().filter { it.uppercase() !in owned }
-        if (total > 0 || dlcs.isNotEmpty()) Line(if (total > 0) missing.isEmpty() else null,
-            if (total > 0) "DLC: tienes ${dlcs.size} de $total" else "DLC: tienes ${dlcs.size}",
-            "$dlcOnDevice en el dispositivo" + (if (dlcs.size > dlcOnDevice) " · ${dlcs.size - dlcOnDevice} solo en el servidor" else ""))
+        val where = when {
+            dlcs.isEmpty() -> ""
+            dlcOnDevice == dlcs.size -> if (dlcs.size == 1) "En el dispositivo" else "Todos en el dispositivo"
+            dlcOnDevice == 0 -> "En el servidor (márcalos abajo para descargarlos)"
+            else -> "$dlcOnDevice en el dispositivo · ${dlcs.size - dlcOnDevice} en el servidor"
+        }
+        if (total > 0) Line(missing.isEmpty(), "DLC: tienes ${dlcs.size} de $total", where)
+        // Juegos nuevos: titledb todavía no sabe cuántos DLC existen; se dice eso en vez de un ícono sin explicación.
+        else if (dlcs.isNotEmpty()) Line(true, "DLC: tienes ${dlcs.size}", where +
+            (if (info != null) " · Todavía no se sabe cuántos existen (juego muy nuevo)" else ""))
         else if (info != null) Line(true, "No tiene DLC", "")
         if (missing.isNotEmpty()) {
             SpacedRow(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { showMissing = !showMissing }.padding(vertical = 4.dp)) {
@@ -872,41 +888,78 @@ private fun GameEditor(g: Game, onClose: () -> Unit) {
     var name by remember { mutableStateOf(Names.get(g.id) ?: g.title) }
     var pick by remember { mutableStateOf<String?>(null) }
     pick?.let { k -> ArtPicker(g, k) { pick = null }; return }
-    AlertDialog(
-        onDismissRequest = onClose,
-        title = { Text("Editar") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                androidx.compose.material3.OutlinedTextField(value = name, onValueChange = { name = it }, singleLine = true,
-                    label = { Text("Nombre") }, modifier = Modifier.fillMaxWidth().gamepadText(),
-                    supportingText = { Text("Archivo: ${g.name}") })
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    listOf(Triple("grid", "Carátula", 2f / 3f), Triple("hero", "Fondo", 1.6f), Triple("logo", "Logo", 1.6f)).forEach { (k, label, ratio) ->
-                        Column(Modifier.weight(if (k == "grid") 0.7f else 1f), horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Box(Modifier.fillMaxWidth().aspectRatio(ratio).clip(RoundedCornerShape(14.dp))
-                                .background(MaterialTheme.colorScheme.surfaceVariant).pressable { pick = k }, contentAlignment = Alignment.Center) {
-                                ArtImage(g, k, Modifier.fillMaxSize(), if (k == "logo") ContentScale.Fit else ContentScale.Crop)
-                                Icon(Icons.Rounded.Edit, null, Modifier.align(Alignment.BottomEnd).padding(6.dp).size(28.dp)
-                                    .clip(RoundedCornerShape(99.dp)).background(Color(0xAA000000)).padding(6.dp), tint = Color.White)
-                            }
-                            Text(label, fontWeight = FontWeight.SemiBold)
-                        }
+    fun save() {
+        if (name.trim() != (Names.get(g.id) ?: g.title)) Repo.rename(g, if (name.isBlank()) "" else name)
+        onClose()
+        Nav.game = Repo.game(g.id) ?: g
+    }
+    ReviewSheet("Editar ${g.title}", "El nombre y las imágenes se guardan en este dispositivo; los archivos no cambian.",
+        onClose = onClose,
+        footer = {
+            TextButton(onClick = { Art.forget(g.id); Art.startFetchAll(listOf(g), quiet = true); Notice.info("Buscando las imágenes de nuevo") }) {
+                Text("Buscar todas de nuevo")
+            }
+            Spacer(Modifier.weight(1f))
+            BigActionButton("Listo", Icons.Rounded.Check) { save() }
+        },
+    ) {
+        // Vista previa: cómo se ve en la ficha (fondo, logo y carátula juntos).
+        item {
+            Box(Modifier.fillMaxWidth().height(220.dp).clip(RoundedCornerShape(24.dp))
+                .background(Brush.linearGradient(listOf(Color(Repo.system(g.system).color), Color(0xFF0D1220))))) {
+                ArtImage(g, "hero", Modifier.fillMaxSize())
+                Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(listOf(Color(0xAA000000), Color.Transparent))))
+                Row(Modifier.align(Alignment.BottomStart).padding(18.dp), verticalAlignment = Alignment.Bottom,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Cover(g, Modifier.width(110.dp), showTitle = false)
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Box(Modifier.size(260.dp, 70.dp)) { ArtImage(g, "logo", Modifier.fillMaxSize(), ContentScale.Fit, Alignment.BottomStart) }
+                        Text(name.ifBlank { g.title }, color = Color.White, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                     }
                 }
             }
-        },
-        confirmButton = {
-            Button(onClick = {
-                if (name.trim() != (Names.get(g.id) ?: g.title)) Repo.rename(g, if (name.isBlank()) "" else name)
-                onClose()
-                Nav.game = Repo.game(g.id) ?: g
-            }) { Text("Listo") }
-        },
-        dismissButton = {
-            TextButton(onClick = { Repo.rename(g, ""); onClose(); Nav.game = Repo.game(g.id) ?: g }) { Text("Nombre original") }
-        },
-    )
+        }
+        item {
+            SheetCard {
+                Text("Nombre", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                androidx.compose.material3.OutlinedTextField(value = name, onValueChange = { name = it }, singleLine = true,
+                    modifier = Modifier.fillMaxWidth().gamepadText())
+                SpacedRow {
+                    Muted("Archivo: ${g.name}", Modifier.weight(1f))
+                    TextButton(onClick = { name = g.title.takeIf { Names.get(g.id) == null } ?: Group.cleanTitle(g.name).first; Repo.rename(g, "") }) {
+                        Text("Nombre original")
+                    }
+                }
+            }
+        }
+        item {
+            SheetCard {
+                Text("Imágenes", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    listOf(Triple("grid", "Carátula", 2f / 3f), Triple("icon", "Ícono", 1f), Triple("hero", "Fondo", 1.8f), Triple("logo", "Logo", 1.8f))
+                        .forEach { (k, label, ratio) ->
+                            Column(Modifier.weight(if (k == "grid" || k == "icon") 0.6f else 1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                val file = artFile(g, k)
+                                Box(Modifier.fillMaxWidth().aspectRatio(ratio).focusHighlight(RoundedCornerShape(14.dp), grow = 1.03f)
+                                    .clip(RoundedCornerShape(14.dp)).background(MaterialTheme.colorScheme.surfaceVariant)
+                                    .pressable { Sound.play(Sound.Fx.OPEN); pick = k }, contentAlignment = Alignment.Center) {
+                                    when {
+                                        file != null -> ArtImage(g, k, Modifier.fillMaxSize(), if (k == "logo") ContentScale.Fit else ContentScale.Crop)
+                                        Art.notFound(g.id, k) -> Muted("Sin imagen")
+                                        else -> SkeletonRow(Modifier.fillMaxSize())
+                                    }
+                                }
+                                SpacedRow {
+                                    Text(label, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                                    Icon(Icons.Rounded.Edit, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+                                }
+                            }
+                        }
+                }
+                Muted("Toca una para elegir otra de SteamGridDB. También puedes subir las tuyas desde la Web.")
+            }
+        }
+    }
 }
 
 /**
@@ -962,6 +1015,13 @@ fun CancelDownloadDialog(d: Download, onClose: () -> Unit) {
 private fun DeleteNow(g: Game, w: Repo.Where, what: String, onClose: (gone: Boolean) -> Unit) {
     val onDevice = w.presence != Presence.MISSING
     val onServer = w.presence != Presence.TABLET_ONLY && Prefs.configured
+    val ctx = LocalContext.current
+    var withSaves by remember { mutableStateOf<List<Pair<GameSaves.Link, Saves.Unit>>>(emptyList()) }
+    LaunchedEffect(g.id) {
+        withSaves = runCatching {
+            GameSaves.links(ctx, g).mapNotNull { l -> Saves.currentUnits(ctx, l.emu).firstOrNull { it.key == l.key }?.let { l to it } }
+        }.getOrDefault(emptyList())
+    }
     DeleteConfirm(g, w, dev = what == "dev", srv = what == "srv", saves = false, onDevice = onDevice, onServer = onServer,
-        withSaves = emptyList(), onBack = { onClose(false) }, onClose = { onClose(false) }, onGone = { onClose(true) })
+        withSaves = withSaves, onBack = { onClose(false) }, onClose = { onClose(false) }, onGone = { onClose(true) })
 }

@@ -88,7 +88,7 @@ object Organize {
 
     /** Juegos que solo están en la tablet: si se pierde la tablet, se pierden. */
     fun tabletOnly(): List<Game> = if (!Prefs.configured) emptyList()
-    else Repo.tabletOnly.filter { it.kind != "shortcut" } +
+    else Repo.tabletOnly.filter { it.kind != "shortcut" && !Repo.isArchive(it) } +
         // Actualizaciones y DLC de Switch solo en la tablet (van con su juego del PC): se copian igual.
         Repo.tabletExtras.mapNotNull { (id, parts) ->
             Repo.game(id)?.let { g -> g.copy(id = "extras:$id", title = g.title + " · actualizaciones/DLC", files = parts.flatMap { it.files },
@@ -178,6 +178,13 @@ fun DuplicatesDialog(onClose: () -> Unit) {
     var selected by remember { mutableStateOf(setOf<String>()) }
     var confirm by remember { mutableStateOf(false) }
     val chosen = groups.flatten().filter { it.id in selected }
+    // ¿Alguna de las marcadas tiene partidas en el dispositivo? (si no, no se habla de partidas).
+    var withSaves by remember { mutableStateOf(false) }
+    androidx.compose.runtime.LaunchedEffect(confirm) {
+        if (confirm) withSaves = chosen.any { g ->
+            runCatching { GameSaves.links(ctx, g).any { l -> Saves.currentUnits(ctx, l.emu).any { it.key == l.key } } }.getOrDefault(false)
+        }
+    }
     if (confirm) {
         AlertDialog(
             onDismissRequest = { confirm = false },
@@ -186,8 +193,10 @@ fun DuplicatesDialog(onClose: () -> Unit) {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     chosen.take(8).forEach { Text("• ${it.name} · ${formatSize(it.size)}") }
                     if (chosen.size > 8) Muted("y ${chosen.size - 8} más")
-                    Text("Se borran del servidor y del dispositivo (libera ${formatSize(chosen.sumOf { it.size })}).", fontWeight = FontWeight.SemiBold)
-                    Muted("Las partidas no se borran.")
+                    val where = listOfNotNull(if (chosen.any { Repo.where(it).presence != Presence.TABLET_ONLY }) "del servidor" else null,
+                        if (chosen.any { Repo.where(it).presence != Presence.MISSING }) "del dispositivo" else null).joinToString(" y ")
+                    Text("Se borran $where (libera ${formatSize(chosen.sumOf { it.size })}).", fontWeight = FontWeight.SemiBold)
+                    if (withSaves) Muted("Sus partidas no se borran: quedan en el dispositivo.")
                 }
             },
             confirmButton = {

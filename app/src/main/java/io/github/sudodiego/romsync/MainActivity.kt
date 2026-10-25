@@ -102,6 +102,18 @@ object Nav {
     var hasFilesAccess by mutableStateOf(true)
     /** Se está usando control o teclado (no el dedo): entonces al abrir una pantalla el foco va a su botón principal. */
     var keys by mutableStateOf(false)
+    /** Hay un mando conectado (las guías de botones se muestran solo así). */
+    var pad by mutableStateOf(false)
+    /** El panel lateral dentro de una ficha (empieza cerrado para dejarle espacio al juego). */
+    var sidebarInGame by mutableStateOf(false)
+
+    fun checkPad() {
+        pad = android.view.InputDevice.getDeviceIds().any { id ->
+            val d = android.view.InputDevice.getDevice(id) ?: return@any false
+            !d.isVirtual && (d.sources and android.view.InputDevice.SOURCE_GAMEPAD == android.view.InputDevice.SOURCE_GAMEPAD ||
+                d.sources and android.view.InputDevice.SOURCE_JOYSTICK == android.view.InputDevice.SOURCE_JOYSTICK)
+        }
+    }
 }
 
 class MainActivity : ComponentActivity() {
@@ -145,6 +157,14 @@ class MainActivity : ComponentActivity() {
         UiState.icons = Prefs.icons
         UiState.fullscreen = Prefs.fullscreen
         DownloadArt.init()
+        // Mando conectado o desconectado: se revisa al abrir y cada vez que cambia.
+        Nav.checkPad()
+        getSystemService(android.hardware.input.InputManager::class.java).registerInputDeviceListener(object :
+            android.hardware.input.InputManager.InputDeviceListener {
+            override fun onInputDeviceAdded(id: Int) = Nav.checkPad()
+            override fun onInputDeviceRemoved(id: Int) = Nav.checkPad()
+            override fun onInputDeviceChanged(id: Int) = Nav.checkPad()
+        }, null)
         UiState.sidebarOpen = Prefs.sidebarOpen
         // La tablet baja a 60 Hz cuando no se toca la pantalla y el carrusel automático se veía a saltos: se pide la
         // frecuencia más alta de la pantalla (misma resolución).
@@ -179,7 +199,11 @@ class MainActivity : ComponentActivity() {
             RomSyncTheme {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                     if (!Nav.hasFilesAccess) FilesAccessScreen { openFilesAccess() } else androidx.compose.foundation.layout.Box {
-                        AppShell()
+                        // Sin el "estiramiento" al pasar el borde del scroll: deformaba sombras y carátulas.
+                        @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+                        androidx.compose.runtime.CompositionLocalProvider(androidx.compose.foundation.LocalOverscrollConfiguration provides null) {
+                            AppShell()
+                        }
                         NoticeOverlay()
                     }
                 }
@@ -208,6 +232,12 @@ class MainActivity : ComponentActivity() {
                 return true
             }
         }
+        // Botones del mando de la Tienda (filtros, vista, buscar, ordenar, actualizar).
+        if (event.action == android.view.KeyEvent.ACTION_DOWN && event.repeatCount == 0 && Nav.tab == Tab.STORE && Nav.game == null &&
+            StoreState.onPadButton(event.keyCode)) return true
+        if (event.action == android.view.KeyEvent.ACTION_UP && Nav.tab == Tab.STORE && Nav.game == null && event.keyCode in setOf(
+                android.view.KeyEvent.KEYCODE_BUTTON_L2, android.view.KeyEvent.KEYCODE_BUTTON_R2, android.view.KeyEvent.KEYCODE_BUTTON_Y,
+                android.view.KeyEvent.KEYCODE_BUTTON_X, android.view.KeyEvent.KEYCODE_BUTTON_START, android.view.KeyEvent.KEYCODE_BUTTON_SELECT)) return true
         // A = elegir y B = volver también si el sistema no los traduce solo (algunos controles no lo hacen).
         val mapped = when (event.keyCode) {
             android.view.KeyEvent.KEYCODE_BUTTON_A -> android.view.KeyEvent.KEYCODE_DPAD_CENTER
@@ -282,6 +312,7 @@ fun AppShell() {
                                 label = { Text(t.label) },
                             )
                         }
+        if (Nav.pad) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) { PadHint("R1 ▼") }
                     }
                 }
             }
@@ -295,7 +326,7 @@ fun AppShell() {
  */
 @Composable
 private fun Sidebar(active: Int, go: (Tab) -> Unit) {
-    val open = UiState.sidebarOpen && Nav.game == null
+    val open = if (Nav.game == null) UiState.sidebarOpen else Nav.sidebarInGame
     val width by animateDpAsState(if (open) 232.dp else 84.dp, spring(dampingRatio = 0.8f, stiffness = 400f), label = "panel")
     Column(
         Modifier.width(width).fillMaxHeight().padding(vertical = 14.dp, horizontal = 12.dp),
@@ -304,8 +335,9 @@ private fun Sidebar(active: Int, go: (Tab) -> Unit) {
         Row(Modifier.height(56.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = {
                 Sound.play(Sound.Fx.TOGGLE)
-                if (Nav.game != null) Nav.game = null else UiState.sidebarOpen = !UiState.sidebarOpen
-                Prefs.sidebarOpen = UiState.sidebarOpen
+                // Solo abre o cierra el panel (antes, con una ficha abierta, la cerraba).
+                if (Nav.game != null) Nav.sidebarInGame = !Nav.sidebarInGame
+                else { UiState.sidebarOpen = !UiState.sidebarOpen; Prefs.sidebarOpen = UiState.sidebarOpen }
             }) { Icon(if (open) Icons.AutoMirrored.Rounded.MenuOpen else Icons.Rounded.Menu, "Panel") }
             AnimatedVisibility(open, enter = fadeIn() + expandHorizontally(), exit = fadeOut() + shrinkHorizontally()) {
                 Text("RomSync", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold,
@@ -313,6 +345,8 @@ private fun Sidebar(active: Int, go: (Tab) -> Unit) {
             }
         }
         Spacer(Modifier.height(8.dp))
+        // Con mando: L1 y R1 cambian de sección.
+        if (Nav.pad) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) { PadHint("L1 ▲") }
         Tab.entries.forEach { t ->
             val selected = Nav.tab == t && Nav.game == null
             val bg by animateColorAsState(if (selected) MaterialTheme.colorScheme.primary else Color.Transparent, tween(220), label = "bg")

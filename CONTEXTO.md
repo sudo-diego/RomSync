@@ -29,10 +29,15 @@ neutro en la app y en las respuestas (sin voseo ni modismos).
 
 ## Cómo funciona (por pantalla)
 
+- **Mando** (`MainActivity.dispatchKeyEvent`, `StoreState.onPadButton`): L1/R1 cambian de sección; en la Tienda L2/R2
+  filtros, Y carátulas/íconos, X buscar, Start orden, Select actualizar. Con mando conectado (`Nav.pad`, detectado con
+  InputManager) esos controles salen del recorrido de la cruceta (`notForDpad`) y muestran su botón (`PadHint`). Al abrir
+  una ficha con mando el foco cae en Descargar. Sin "estiramiento" al pasar el borde del scroll en toda la app.
 - **Tienda** (`StoreScreen.kt`): carrusel de destacados (al azar por apertura; la cruceta cambia de página y el foco va
   con ella), plataformas (tarjeta con el ícono del emulador elegido para esa plataforma; se cambia manteniendo
   presionado o con el chip al filtrar), "En tu dispositivo", "Para descargar" en tiles anchos (fondo + logo) y un solo
-  "Explorar" con pestañas de plataforma. Buscar, filtros, orden, vista de carátulas o de íconos (menú Wii U). Sin
+  "Explorar" con pestañas de plataforma, cada uno en su panel con ícono y color (`StorePanel`); hasta 10 juegos por fila y
+  la última tarjeta es "Ver todo"; "En tu dispositivo" y "Explorar" al azar por apertura. Los comprimidos no salen. Buscar, filtros, orden, vista de carátulas o de íconos (menú Wii U). Sin
   conexión se ve la última lista guardada con un aviso y "Reintentar". Los accesos directos del frontend (`.dpt`) de un
   juego que ya está en la biblioteca no salen como otra tarjeta.
 - **Ficha** (`GameScreen.kt`): fondo con paralaje (se desvanece con máscara hacia el fondo de la app), carátula
@@ -123,7 +128,18 @@ neutro en la app y en las respuestas (sin voseo ni modismos).
 - Estado del respaldo en la ficha decía "sin conexión": se consultaba en el hilo principal (`Pc.use`) → `Pc.io`.
 - Línea blanca bajo el fondo de la ficha y sombra deformada al pasar el borde del scroll → máscara y sin estiramiento.
 - Cancelar una subida dejaba `.part` en el PC → `upload`/`uploadFrom` lo borran si se corta.
-- Foco con control: el buscador atrapaba el foco; dos puntos de foco en Descargar; el carrusel se llevaba el foco.
+- Foco con control: el buscador atrapaba el foco; dos puntos de foco en Descargar; el carrusel se llevaba el foco y,
+  si el foco llegaba mientras cambiaba de página, peleaban (ahora se acomoda de una); lo enfocado se salía del borde.
+- Animación de descarga atrasada (10 % con la barra en 50 %): una transición de 400 ms reiniciada ~50 veces por segundo
+  → resorte.
+- Sombras recortadas en rectángulo al pasar rápido y sombra entera bajo la portada transparente al abrir un juego: las
+  sombras de Android no se desvanecen y el desvanecido usaba una capa aparte → sombra que crece con la animación y
+  `CompositingStrategy.ModulateAlpha`.
+- RAR de DLC que quedó en el servidor (Cadence of Hyrule) se veía como otro juego y Organizar no lo notaba → Tidy lee
+  los encabezados de los RAR del servidor por SFTP y propone borrarlos si lo de adentro ya está suelto e idéntico.
+- Mensajes sin sentido: "las partidas no se borran" al borrar una copia sin partidas; "antes:" en consejos que no
+  cambian nada; DLC con ícono "i" cuando titledb aún no sabe cuántos existen.
+- El botón del panel lateral cerraba la ficha en vez de abrir el panel.
 
 ## Pendiente / ideas
 

@@ -1,5 +1,7 @@
 package io.github.sudodiego.romsync
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import android.content.Context
 import androidx.compose.runtime.mutableStateMapOf
 import kotlinx.coroutines.Dispatchers
@@ -35,6 +37,8 @@ object Saves {
 
     /** Lo último que se sabe de cada emulador (para la UI y el reporte al PC). */
     val statuses = mutableStateMapOf<String, Status>()
+    /** Cambia cada vez que se respalda algo: las pantallas que muestran "al día / con cambios" se vuelven a calcular. */
+    var backupTick by androidx.compose.runtime.mutableIntStateOf(0)
     val busy = mutableStateMapOf<String, String>() // emulador → qué está haciendo
 
     private fun hashOf(entries: List<Pair<SaveSource, Storage.Stat>>): String {
@@ -102,6 +106,7 @@ object Saves {
                 val remote = runCatching { Pc.use { Backups.latestHash(it, emu.id) } }.getOrDefault("")
                 if (remote == hash) {
                     Prefs.setLastBackup(emu.id, hash, System.currentTimeMillis())
+            backupTick++
                     return@withContext Result.Unchanged
                 }
             }
@@ -134,6 +139,7 @@ object Saves {
             val games = units.map { (k, es) -> titleFor(k, unitTitle(emu.id, es.map { (s, f) -> "${s.label}/${f.rel}" })) }.sorted()
             Pc.use { Backups.upload(it, emu.id, zip, hash, entries.size, auto, kind, games, units.keys.toList()) }
             Prefs.setLastBackup(emu.id, hash, System.currentTimeMillis())
+            backupTick++
             Result.Done(entries.size, entries.sumOf { it.second.size })
         } catch (e: Storage.NeedsShizuku) {
             Result.Failed("Necesita Shizuku")

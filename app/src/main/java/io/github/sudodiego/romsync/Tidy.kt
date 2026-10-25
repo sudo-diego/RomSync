@@ -24,7 +24,7 @@ import java.util.zip.ZipFile
  * Nada se hace sin que el usuario lo vea y confirme.
  */
 object Tidy {
-    enum class Kind { EXTRACT, MOVE, DELETE, RENAME_SERVER, INFO }
+    enum class Kind { EXTRACT, MOVE, DELETE, RENAME_SERVER, DELETE_SERVER, INFO }
 
     data class Item(
         val id: String,
@@ -379,6 +379,9 @@ object Tidy {
                         serverFrom = f.path)
                 }
             }
+            // Comprimidos en el servidor: si todo lo de adentro ya está en el servidor (mismo nombre de juego, tamaño y
+            // bytes en tres trozos), sobran; si no se puede saber, solo se avisa. Se leen solo los encabezados.
+            runCatching { serverArchives(items) }
             // Formatos que se pueden mejorar (no se cambian solos: se dice cómo).
             Repo.allGames().filter { it.kind != "shortcut" }.forEach { g ->
                 betterFormat(g)?.let { tip -> items += Item("f:${g.id}", Kind.INFO, g.title, g.primary, "", g.size, tip) }
@@ -387,6 +390,45 @@ object Tidy {
         } finally {
             scanning = false
             progress = ""
+        }
+    }
+
+    private suspend fun serverArchives(items: MutableList<Item>) {
+        val lib = Repo.library ?: return
+        val all = lib.games.flatMap { it.files }
+        val archives = all.filter { Group.ext(it.path) == ".rar" }
+        if (archives.isEmpty()) return
+        Pc.io { c ->
+            for (a in archives) {
+                progress = "Revisando ${a.path.substringAfterLast('/')} en el servidor…"
+                val remote = SftpConn.join(Prefs.remoteRoms, a.path)
+                val reader = { pos: Long, n: Int -> c.open(remote, pos).use { i -> i.readNBytesCompat(n) } }
+                val info = runCatching { Rar5.read(a.size, reader) }.getOrNull()
+                val games = info?.entries.orEmpty().filter { !it.dir && Group.ext(it.name) in romExt }
+                if (info == null || games.isEmpty() || info.encrypted || info.multiVolume || games.any { !it.storable }) {
+                    items += Item("is:${a.path}", Kind.INFO, a.path.substringAfterLast('/'), "Servidor: ${a.path}", "", a.size,
+                        "Comprimido en el servidor que no se pudo revisar: ábrelo en el PC")
+                    continue
+                }
+                // Cada juego de adentro tiene que estar suelto en el servidor con el mismo tamaño y los mismos bytes.
+                val copies = games.map { e ->
+                    all.filter { it.size == e.size && it.path != a.path }.firstOrNull { f ->
+                        val other = SftpConn.join(Prefs.remoteRoms, f.path)
+                        runCatching {
+                            listOf(0L, e.size / 2, (e.size - (1 shl 20)).coerceAtLeast(0)).all { off ->
+                                val n = minOf(1L shl 20, e.size - off).toInt()
+                                reader(e.dataOffset + off, n).contentEquals(c.open(other, off).use { it.readNBytesCompat(n) })
+                            }
+                        }.getOrDefault(false)
+                    }
+                }
+                if (copies.all { it != null }) items += Item("ds:${a.path}", Kind.DELETE_SERVER, a.path.substringAfterLast('/'),
+                    "Servidor: ${a.path}", "", a.size,
+                    if (copies.size == 1) "Comprimido que sobra: lo de adentro ya está suelto en el servidor (${copies[0]!!.path.substringAfterLast('/')})"
+                    else "Comprimido que sobra: sus ${copies.size} archivos ya están sueltos en el servidor, idénticos", serverFrom = a.path)
+                else items += Item("is:${a.path}", Kind.INFO, a.path.substringAfterLast('/'), "Servidor: ${a.path}", "", a.size,
+                    "Comprimido en el servidor con cosas que no están sueltas: sácalas en el PC o bájalo y ordénalo aquí")
+            }
         }
     }
 
@@ -449,6 +491,7 @@ object Tidy {
                             removeEmptyParents(f)
                         }
                         Kind.RENAME_SERVER -> Pc.io { c -> c.rename(SftpConn.join(Prefs.remoteRoms, it.serverFrom!!), SftpConn.join(Prefs.remoteRoms, it.to)) }
+                        Kind.DELETE_SERVER -> Pc.io { c -> c.ch.rm(SftpConn.join(Prefs.remoteRoms, it.serverFrom!!)) }
                         Kind.INFO -> {}
                     }
                     ok++

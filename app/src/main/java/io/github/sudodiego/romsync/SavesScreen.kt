@@ -69,7 +69,7 @@ fun SavesScreen() {
 
     val missing = Emulators.all.filter { Saves.statuses[it.id]?.installed == false }
     // Estado de cada emulador instalado: al día (lo mismo que el último respaldo), con cambios, o sin respaldo.
-    val states = installed.associate { it.id to saveState(it) }
+    val states = Saves.backupTick.let { installed.associate { it.id to saveState(it) } }
 
     androidx.compose.foundation.lazy.grid.LazyVerticalGrid(
         androidx.compose.foundation.lazy.grid.GridCells.Adaptive(400.dp), Modifier.fillMaxSize(),
@@ -106,7 +106,7 @@ fun SavesScreen() {
                         scope.launch {
                             val msg = Saves.backupAll(ctx, auto = false)
                             allBusy = false
-                            Sound.play(Sound.Fx.DONE)
+                            Sound.play(Sound.Fx.JINGLE)
                             Notice.info(msg)
                         }
                     }
@@ -216,7 +216,7 @@ private fun EmulatorCard(emu: Emulator, state: SaveState?, onRestore: () -> Unit
                 Button(enabled = busy == null && Prefs.configured && st.error == null, onClick = {
                     scope.launch {
                         val msg = when (val r = Saves.backup(ctx, emu, auto = false)) {
-                            is Saves.Result.Done -> "${emu.name}: ${r.files} archivos respaldados"
+                            is Saves.Result.Done -> { Sound.play(Sound.Fx.JINGLE); "${emu.name}: ${r.files} archivos respaldados" }
                             Saves.Result.Unchanged -> "${emu.name}: sin cambios desde el último respaldo"
                             Saves.Result.Empty -> "${emu.name}: no hay partidas"
                             is Saves.Result.Failed -> "${emu.name}: ${r.message}"
@@ -519,7 +519,7 @@ private fun BackupOneDialog(emu: Emulator, onClose: () -> Unit) {
                 onClose()
                 appScope.launch {
                     val msg = when (val r = Saves.backup(ctx, emu, auto = false, force = true, only = only)) {
-                        is Saves.Result.Done -> "${emu.name}: respaldado (${r.files} archivos)"
+                        is Saves.Result.Done -> { Sound.play(Sound.Fx.JINGLE); "${emu.name}: respaldado (${r.files} archivos)" }
                         Saves.Result.Unchanged, Saves.Result.Empty -> "${emu.name}: no había nada que respaldar"
                         is Saves.Result.Failed -> "${emu.name}: ${r.message}"
                     }
@@ -597,6 +597,7 @@ enum class SaveState { OK, CHANGED, NONE, EMPTY }
 
 /** Al día si lo que hay ahora es igual a lo último respaldado (mismo hash); con cambios si no; sin respaldo si nunca. */
 fun saveState(emu: Emulator): SaveState? {
+    @Suppress("UNUSED_VARIABLE") val tick = Saves.backupTick
     val st = Saves.statuses[emu.id] ?: return null
     if (!st.installed || !st.supported || st.error != null) return null
     if (st.files == 0) return SaveState.EMPTY

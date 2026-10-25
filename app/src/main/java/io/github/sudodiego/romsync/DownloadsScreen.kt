@@ -1,5 +1,6 @@
 package io.github.sudodiego.romsync
 
+import androidx.compose.foundation.clickable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.material.icons.rounded.CloudDone
@@ -114,7 +115,8 @@ private fun NowDownloading(d: Download) {
     val g = Repo.game(d.id)
     var ask by remember { mutableStateOf(false) }
     if (ask) CancelDownloadDialog(d) { ask = false }
-    Box(Modifier.fillMaxWidth().height(220.dp).clip(RoundedCornerShape(26.dp))
+    Box(Modifier.fillMaxWidth().height(220.dp).focusHighlight(RoundedCornerShape(26.dp), grow = 1.01f).clip(RoundedCornerShape(26.dp))
+        .then(if (g != null) Modifier.clickable { Sound.play(Sound.Fx.OPEN); Nav.game = g } else Modifier)
         .background(Brush.linearGradient(listOf(Color(Repo.system(d.system).color), Color(0xFF0D1220))))) {
         if (g != null) ArtImage(g, "hero", Modifier.fillMaxSize())
         Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(listOf(Color(0xE6000000), Color(0x66000000)))))
@@ -154,7 +156,7 @@ private fun DownloadRow(d: Download) {
     val g = Repo.game(d.id)
     var ask by remember { mutableStateOf(false) }
     if (ask) CancelDownloadDialog(d) { ask = false }
-    Section("") {
+    Section("", Modifier.then(if (g != null) Modifier.clip(RoundedCornerShape(20.dp)).clickable { Sound.play(Sound.Fx.OPEN); Nav.game = g } else Modifier)) {
         SpacedRow {
             if (g != null) Cover(g, Modifier.width(56.dp), showTitle = false)
             Column(Modifier.weight(1f)) {

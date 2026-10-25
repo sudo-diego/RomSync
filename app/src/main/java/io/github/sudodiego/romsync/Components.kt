@@ -1,5 +1,6 @@
 package io.github.sudodiego.romsync
 
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.foundation.clickable
@@ -161,6 +162,17 @@ fun Modifier.gamepadText(): Modifier = composed {
             else -> false
         }
     }
+}
+
+/** Con mando, este control no entra al recorrido de la cruceta (se usa con un botón del mando). */
+fun Modifier.notForDpad(): Modifier = this.focusProperties { canFocus = !(Nav.keys || Nav.pad) }
+
+/** El botón del mando que hace esto ("Y", "L2"…), solo cuando se está usando mando. */
+@Composable
+fun PadHint(label: String, modifier: Modifier = Modifier) {
+    if (!Nav.pad) return
+    Text(label, modifier.clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f))
+        .padding(horizontal = 7.dp, vertical = 2.dp), color = MaterialTheme.colorScheme.surface, fontSize = 12.sp, fontWeight = FontWeight.Bold)
 }
 
 fun Modifier.focusHighlight(shape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(18.dp), grow: Float = 1.05f): Modifier = composed {

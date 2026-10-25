@@ -151,7 +151,7 @@ private fun SwitchBar(p: Float, upload: Boolean, modifier: Modifier) {
 
 /** Tiempos de una tanda de 4 bloques (ms): salen con 240 ms de diferencia, viajan por el riel y caen; luego una pausa. */
 private const val CYCLE = 2800L
-private const val GAP = 140L // como en la eShop: caen seguidos, uno cada ~0,13 s
+private const val GAP = 210L // un cubito cada 0,21 s: a 0,14 s los tics se juntaban de a dos y se oían solo dos
 private const val TRAVEL = 900L
 private const val FALL = 300L
 

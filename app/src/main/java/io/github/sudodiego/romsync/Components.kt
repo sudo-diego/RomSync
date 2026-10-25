@@ -61,7 +61,8 @@ fun Cover(game: Game, modifier: Modifier = Modifier, showTitle: Boolean = true, 
         modifier.aspectRatio(2f / 3f).clip(RoundedCornerShape(14.dp))
             .background(Brush.linearGradient(listOf(Color(sys.color), Color(0xFF0D1220))))
     ) {
-        if (showTitle) Column(Modifier.align(Alignment.BottomStart).padding(10.dp)) {
+        // El nombre solo si no hay carátula (antes se veía unos instantes mientras cargaba la imagen).
+        if (showTitle && artFile(game, "grid") == null) Column(Modifier.align(Alignment.BottomStart).padding(10.dp)) {
             Text(sys.short.uppercase(), color = Color.White.copy(alpha = .8f), fontSize = 10.sp, letterSpacing = 1.sp)
             Text(game.title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp, lineHeight = 17.sp,
                 maxLines = 4, overflow = TextOverflow.Ellipsis)

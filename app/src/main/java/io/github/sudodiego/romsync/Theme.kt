@@ -79,7 +79,7 @@ object UiState {
     var showShortcuts by mutableStateOf(false)
     /** Cómo aparece la carátula al abrir una ficha (ver [coverAnims]). */
     var coverAnim by mutableStateOf("subir")
-    val coverAnims = linkedMapOf("subir" to "Subir", "acercar" to "Acercar", "lado" to "Desde el lado", "ninguna" to "Ninguna")
+    val coverAnims = linkedMapOf("subir" to "Subir", "acercar" to "Acercar", "lado" to "Desde el lado", "desvanecer" to "Desvanecer", "ninguna" to "Ninguna")
     /** Juegos como carátulas (eShop) o como íconos cuadrados (menú de Wii U). */
     var icons by mutableStateOf(false)
     /** Panel lateral abierto (con nombres) o colapsado (solo íconos). */

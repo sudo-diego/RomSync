@@ -209,7 +209,7 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
                 when (UiState.coverAnim) {
                     "acercar" -> { val s = 0.8f + 0.2f * k; scaleX = s; scaleY = s }
                     "lado" -> translationX = (1f - k) * -160f
-                    "ninguna" -> {}
+                    "ninguna", "desvanecer" -> {} // solo el fundido
                     else -> { translationY = (1f - k) * 80f; rotationZ = (1f - k) * -4f }
                 }
                 // Sin capa aparte: con ella la sombra quedaba recortada en un rectángulo mientras aparecía.

@@ -162,11 +162,11 @@ fun StoreScreen() {
     val scope = appScope
     val lib = Repo.library
     // Un acceso directo del frontend (GravityRush.dpt) de un juego que ya está en la biblioteca no es otra tarjeta.
-    val all = remember(lib, Repo.tabletOnly) {
+    val all = remember(lib, Repo.tabletOnly, UiState.showShortcuts) {
         val games = Repo.allGames()
         val keys = games.filter { it.kind != "shortcut" }.map { Repo.versionKey(it) }.toSet()
         // Los comprimidos (.rar/.7z) no son juegos que se puedan jugar: se ordenan en Organizar.
-        games.filter { (it.kind != "shortcut" || Repo.versionKey(it) !in keys) && !Repo.isArchive(it) }
+        games.filter { (it.kind != "shortcut" || (UiState.showShortcuts && Repo.versionKey(it) !in keys)) && !Repo.isArchive(it) }
     }
     val localFiles = Repo.localFiles
     // Una tarjeta por juego: las versiones (región, formato, con mods) van juntas y se eligen adentro.

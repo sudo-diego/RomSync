@@ -576,6 +576,17 @@ private fun LookControls() {
             Sound.play(Sound.Fx.TOGGLE); UiState.lightAnim = it; Prefs.lightAnim = it
         })
     }
+    SpacedRow(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).clickable {
+        Sound.play(Sound.Fx.TOGGLE); UiState.showShortcuts = !UiState.showShortcuts; Prefs.showShortcuts = UiState.showShortcuts
+    }.padding(horizontal = 18.dp, vertical = 10.dp)) {
+        Column(Modifier.weight(1f)) {
+            Text("Mostrar accesos directos", fontWeight = FontWeight.SemiBold)
+            Muted("Juegos de Steam y apps que agregan otras apps, como DroiDeck. Se abren en esa app")
+        }
+        androidx.compose.material3.Switch(checked = UiState.showShortcuts, onCheckedChange = {
+            Sound.play(Sound.Fx.TOGGLE); UiState.showShortcuts = it; Prefs.showShortcuts = it
+        })
+    }
     OptionRow("Al abrir una ficha", UiState.openAnims.toList(), UiState.openAnim) { UiState.openAnim = it; Prefs.openAnim = it }
     OptionRow("Animación de descarga", DownloadArt.styles.toList(), DownloadArt.style) { DownloadArt.style = it; Prefs.dlStyle = it }
     Muted(when (DownloadArt.style) {

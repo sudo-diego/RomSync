@@ -90,6 +90,9 @@ object AppsStorage {
     fun openSettings(ctx: Context, pkg: String) =
         ctx.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$pkg")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
 
+    /** La app que creó un acceso directo de Steam (DroiDeck), si está instalada: paquete y nombre. */
+    fun shortcutOwner(ctx: Context): Pair<String, String>? = launchable(ctx).firstOrNull { "droideck" in it.first.lowercase() }
+
     fun open(ctx: Context, pkg: String) {
         ctx.packageManager.getLaunchIntentForPackage(pkg)?.let { ctx.startActivity(it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
     }

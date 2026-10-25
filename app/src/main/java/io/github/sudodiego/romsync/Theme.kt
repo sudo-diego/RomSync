@@ -75,6 +75,8 @@ object UiState {
     var fullscreen by mutableStateOf(false)
     /** Fondo más lento mientras se descarga (gasta menos batería). */
     var lightAnim by mutableStateOf(false)
+    /** Mostrar en la Tienda los accesos directos (juegos de Steam, apps) que crean otras apps. */
+    var showShortcuts by mutableStateOf(false)
     /** Juegos como carátulas (eShop) o como íconos cuadrados (menú de Wii U). */
     var icons by mutableStateOf(false)
     /** Panel lateral abierto (con nombres) o colapsado (solo íconos). */

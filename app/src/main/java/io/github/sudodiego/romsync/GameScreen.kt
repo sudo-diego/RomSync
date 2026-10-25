@@ -196,6 +196,8 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
                 val k = enter.value.coerceIn(0f, 1f)
                 alpha = k; translationY = (1f - k) * 80f
                 rotationZ = (1f - k) * -4f
+                // Sin capa aparte: con ella la sombra quedaba recortada en un rectángulo mientras aparecía.
+                compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.ModulateAlpha
             }.notForDpad().softShadow(18.dp, 16.dp).clip(RoundedCornerShape(18.dp)).pressable { Sound.play(Sound.Fx.OPEN); editing = true }) {
                 Cover(g, Modifier.fillMaxWidth()) {
                     // Un solo dibujo para todo (descarga, final y regalo), así al terminar no se corta nada.
@@ -225,6 +227,11 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
 
                 // Acciones, como en la eShop: el tamaño en el botón.
                 var askCancel by remember { mutableStateOf(false) }
+                if (g.kind == "shortcut") remember { AppsStorage.shortcutOwner(ctx) }?.let { (pkg, name) ->
+                    BigDownloadButton("Abrir en $name", "", Modifier.fillMaxWidth(), icon = Icons.Rounded.PlayArrow) {
+                        Sound.play(Sound.Fx.OPEN); AppsStorage.open(ctx, pkg)
+                    }
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
                     when {
                         dl != null && dl.status != DlStatus.FAILED -> {
@@ -351,7 +358,7 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
                 VitaInstallSection(g)
                 GameSavesSection(g)
 
-                if (g.kind == "shortcut") Muted("Acceso directo (lo crea el frontend o GameNative).")
+                if (g.kind == "shortcut") Muted("Acceso directo creado por otra app")
 
                 var showFiles by remember(g.id) { mutableStateOf(false) }
                 Section("") {
@@ -989,7 +996,8 @@ private fun GameEditor(g: Game, onClose: () -> Unit) {
  * sonido para el control.
  */
 @Composable
-fun BigDownloadButton(label: String, size: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
+fun BigDownloadButton(label: String, size: String, modifier: Modifier = Modifier,
+                      icon: androidx.compose.ui.graphics.vector.ImageVector = Icons.Rounded.Download, onClick: () -> Unit) {
     val shape = RoundedCornerShape(99.dp)
     val accent = Color(UiState.accent)
     val brush = androidx.compose.ui.graphics.SolidColor(accent)
@@ -1003,10 +1011,10 @@ fun BigDownloadButton(label: String, size: String, modifier: Modifier = Modifier
             .padding(horizontal = 26.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        Icon(Icons.Rounded.Download, null, tint = Color.White, modifier = Modifier.size(30.dp))
+        Icon(icon, null, tint = Color.White, modifier = Modifier.size(30.dp))
         Text(label, color = Color.White, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.titleLarge,
             modifier = Modifier.weight(1f))
-        Box(Modifier.clip(shape).background(Color.White.copy(alpha = .25f)).padding(horizontal = 14.dp, vertical = 6.dp)) {
+        if (size.isNotEmpty()) Box(Modifier.clip(shape).background(Color.White.copy(alpha = .25f)).padding(horizontal = 14.dp, vertical = 6.dp)) {
             Text(size, color = Color.White, fontWeight = FontWeight.Bold)
         }
     }

@@ -149,8 +149,11 @@ class MainActivity : ComponentActivity() {
         runCatching {
             val d = if (Build.VERSION.SDK_INT >= 30) display else @Suppress("DEPRECATION") windowManager.defaultDisplay
             val cur = d!!.mode
-            val best = d.supportedModes.filter { it.physicalWidth == cur.physicalWidth && it.physicalHeight == cur.physicalHeight }
-                .maxByOrNull { it.refreshRate }
+            // Nunca más que lo que permite el ajuste del sistema: pedir 165 Hz con el máximo en 120 dejaba la pantalla en 30 Hz.
+            val peak = runCatching { android.provider.Settings.System.getFloat(contentResolver, "peak_refresh_rate") }.getOrDefault(Float.MAX_VALUE)
+                .let { if (it <= 0f) Float.MAX_VALUE else it }
+            val best = d.supportedModes.filter { it.physicalWidth == cur.physicalWidth && it.physicalHeight == cur.physicalHeight &&
+                it.refreshRate <= peak + 0.5f }.maxByOrNull { it.refreshRate }
             if (best != null) window.attributes = window.attributes.apply { preferredDisplayModeId = best.modeId }
         }
         setContent {

@@ -148,6 +148,13 @@ object PcEdit {
 
     /** Juegos que se están copiando de la tablet al PC: id → bytes copiados (para la barra en la ficha). */
     val uploading = androidx.compose.runtime.mutableStateMapOf<String, Long>()
+    /** Velocidad de cada copia (bytes/s, promedio suave como en las descargas) y su total. */
+    val uploadSpeed = androidx.compose.runtime.mutableStateMapOf<String, Long>()
+    val uploadTotal = androidx.compose.runtime.mutableStateMapOf<String, Long>()
+    /** Copias que el usuario pidió cancelar (se cortan en el próximo trozo). */
+    private val cancelled = java.util.Collections.synchronizedSet(HashSet<String>())
+    fun cancelUpload(key: String) { cancelled += key }
+    class UploadCancelled : java.io.IOException("Cancelado")
 
     /**
      * Copia al PC un juego que solo está en la tablet (así queda guardado y se puede volver a bajar). Va a .part y se
@@ -159,6 +166,11 @@ object PcEdit {
     suspend fun uploadFiles(key: String, files: List<FileEntry>) = Pc.io { c ->
         var done = 0L
         uploading[key] = 0L
+        uploadTotal[key] = files.sumOf { it.size }
+        cancelled -= key
+        var lastAt = System.nanoTime()
+        var lastDone = 0L
+        var speed = 0.0
         try {
             for (f in files) {
                 val remote = SftpConn.join(Prefs.remoteRoms, f.path)
@@ -169,15 +181,26 @@ object PcEdit {
                         while (true) {
                             val n = input.read(buf)
                             if (n < 0) break
+                            if (key in cancelled) throw UploadCancelled()
                             out.write(buf, 0, n)
                             done += n
                             uploading[key] = done
+                            val now = System.nanoTime()
+                            if (now - lastAt > 500_000_000L) {
+                                val inst = (done - lastDone) * 1e9 / (now - lastAt)
+                                speed = if (speed == 0.0) inst else speed * 0.7 + inst * 0.3
+                                uploadSpeed[key] = speed.toLong()
+                                lastAt = now; lastDone = done
+                            }
                         }
                     }
                 }
             }
         } finally {
             uploading.remove(key)
+            uploadSpeed.remove(key)
+            uploadTotal.remove(key)
+            cancelled -= key
         }
     }
 

@@ -255,7 +255,6 @@ Descargas, y propone un plan (todo marcado, con "Desmarcar todo"); no cambia nad
 - Switch: mostrar en la ficha lo instalado en Eden y, con titledb (blawar/titledb: versions.json, cnmts.json), la
   última versión y los DLC que existen. Propuesto al usuario.
 - Vaciar las papeleras cuando el usuario confirme que todo anda bien.
-- Revisar: la app a veces queda en 30 Hz (se quitó el límite de 30 cps del fondo, que lo provocaba; confirmar).
 - Cruceta: desde el carrusel, abajo va a la tarjeta de plataforma más centrada, no a la primera.
 
 ## Ronda 0.2.0 (14-10-2026)
@@ -296,3 +295,16 @@ Descargas, y propone un plan (todo marcado, con "Desmarcar todo"); no cambia nad
 - Ficha: sin "Borrar" si el juego no está en el dispositivo (del servidor: menú ⋮ "Borrar del servidor…").
   Las partidas ya no están en el diálogo de Borrar: cada emulador en la sección Partidas tiene "Borrar del dispositivo…"
   (respalda antes con `Saves.deleteUnit`).
+
+## Ronda 25-10-2026 (tarde)
+
+- 30 Hz: la causa era pedir el modo de 165 Hz (Exact) con el ajuste del sistema en 120 máx → SurfaceFlinger quedaba
+  en 30. Ahora se pide el modo más alto ≤ Settings.System peak_refresh_rate. Verificado: 120 Hz estable.
+- Copiar al servidor (Sin copia): velocidad y tiempo por juego y total (`PcEdit.uploadSpeed/uploadTotal`), cancelar con
+  explicación (`PcEdit.cancelUpload`); `SftpConn.upload` borra el .part si se corta por cualquier motivo.
+- Descargas rediseñada: resumen (falta, velocidad, tiempo, espacio que queda, pausar/seguir todo), la activa en grande
+  con el fondo del juego, cola / con problemas / terminadas con miniatura y "Abrir". (La activa no se vio en pantalla.)
+- Tienda (inicio): "Para descargar" en tiles anchos (fondo + logo), y un solo "Explorar" con pestañas de plataforma
+  en vez de hasta 8 filas por plataforma.
+- CHD: no se integra chdman (habría que compilar MAME para Android); los consejos abren CHDroid por nombre o su
+  búsqueda en Google Play (`AppsStorage.openOrFind`), y Dolphin/Cemu para RVZ/WUA.

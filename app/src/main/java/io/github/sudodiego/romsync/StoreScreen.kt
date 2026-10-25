@@ -166,13 +166,14 @@ fun StoreScreen() {
                 if (onTablet.isNotEmpty()) item(span = { GridItemSpan(maxLineSpan) }, key = "fila-tablet") {
                     ShelfRow("En tu dispositivo", onTablet, { StoreState.filter = StoreFilter.INSTALLED }, ::versionsOf)
                 }
+                // Para descargar: tiles anchos con fondo y logo (como las promociones de la eShop), los que tienen imagen primero.
                 if (toGet.isNotEmpty()) item(span = { GridItemSpan(maxLineSpan) }, key = "fila-bajar") {
-                    ShelfRow("Para descargar", toGet.sortedByDescending { Art.cached(it.id, "hero") != null }, { StoreState.filter = StoreFilter.MISSING }, ::versionsOf)
+                    WideShelf("Para descargar", toGet.sortedByDescending { Art.cached(it.id, "hero") != null }) { StoreState.filter = StoreFilter.MISSING }
                 }
-                systems.filter { it.second >= 3 && it.first.id !in Group.shortcutSystems }.take(8).forEach { (sys, _) ->
-                    item(span = { GridItemSpan(maxLineSpan) }, key = "fila-${sys.id}") {
-                        ShelfRow(sys.name, cards.filter { it.system == sys.id }, { StoreState.system = sys.id }, ::versionsOf, Color(sys.color))
-                    }
+                // Una sola sección para explorar por plataforma (antes eran hasta 8 filas seguidas, una por consola).
+                val explore = systems.filter { it.second >= 2 && it.first.id !in Group.shortcutSystems }.map { it.first }
+                if (explore.isNotEmpty()) item(span = { GridItemSpan(maxLineSpan) }, key = "explorar") {
+                    ExploreSection(explore, cards, ::versionsOf)
                 }
             } else {
                 if (games.isEmpty()) item(span = { GridItemSpan(maxLineSpan) }, key = "vacio") { EmptyState() }
@@ -261,6 +262,79 @@ private fun FeaturedCarousel(cards: List<Game>, below: androidx.compose.ui.focus
                 val w by animateDpAsState(if (sel) 22.dp else 8.dp, label = "punto")
                 Box(Modifier.padding(horizontal = 3.dp).height(8.dp).width(w).clip(RoundedCornerShape(99.dp))
                     .background(if (sel) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline))
+            }
+        }
+    }
+}
+
+/** Fila de tiles anchos (fondo + logo + tamaño), como las promociones de la eShop. */
+@Composable
+private fun WideShelf(title: String, games: List<Game>, onAll: () -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        SpacedRow {
+            Text(title, style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+            TextButton(onClick = { Sound.play(Sound.Fx.MOVE); onAll() }) { Text("Ver todo (${games.size})") }
+        }
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(16.dp), contentPadding = PaddingValues(end = 8.dp)) {
+            items(games.take(16), key = { it.id }) { g -> WideTile(g) }
+        }
+    }
+}
+
+@Composable
+private fun WideTile(g: Game) {
+    val sys = Repo.system(g.system)
+    Box(Modifier.size(360.dp, 200.dp).focusHighlight(RoundedCornerShape(22.dp), grow = 1.03f).shadow(8.dp, RoundedCornerShape(22.dp))
+        .clip(RoundedCornerShape(22.dp))
+        .background(Brush.linearGradient(listOf(Color(sys.color), Color(0xFF0D1220))))
+        .pressable { Sound.play(Sound.Fx.OPEN); Nav.game = g }) {
+        ArtImage(g, "hero", Modifier.fillMaxSize())
+        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xCC000000)))))
+        Box(Modifier.align(Alignment.TopStart).padding(16.dp).size(200.dp, 70.dp)) {
+            ArtImage(g, "logo", Modifier.fillMaxSize(), ContentScale.Fit, Alignment.TopStart)
+        }
+        Row(Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(g.title, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f))
+            Pill(sys.short, Color(0x99000000))
+            Pill(formatSize(g.size), Color(UiState.accent))
+        }
+    }
+}
+
+/**
+ * Explorar: pestañas de plataforma (con el ícono de su emulador) y una sola fila de juegos que cambia con la pestaña,
+ * más "Ver todo" para abrir esa plataforma entera.
+ */
+@Composable
+private fun ExploreSection(systems: List<SystemInfo>, cards: List<Game>, versions: (Game) -> Int) {
+    val ctx = LocalContext.current
+    var sel by remember { mutableStateOf(systems.first().id) }
+    if (systems.none { it.id == sel }) sel = systems.first().id
+    val games = remember(sel, cards) { cards.filter { it.system == sel } }
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        SpacedRow {
+            Text("Explorar", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+            TextButton(onClick = { Sound.play(Sound.Fx.MOVE); StoreState.system = sel }) { Text("Ver todo (${games.size})") }
+        }
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(systems, key = { it.id }) { sys ->
+                val emu = remember(sys.id, EmuChoice.version) { EmuChoice.pkg(ctx, sys.id) }
+                FilterChip(selected = sel == sys.id, onClick = { Sound.play(Sound.Fx.MOVE); sel = sys.id }, shape = RoundedCornerShape(99.dp),
+                    label = { Text(sys.short) },
+                    leadingIcon = {
+                        val icon = emu?.let { EmuChoice.icon(ctx, it) }
+                        if (icon != null) androidx.compose.foundation.Image(icon, null, Modifier.size(20.dp).clip(RoundedCornerShape(5.dp)))
+                        else Box(Modifier.size(10.dp).clip(RoundedCornerShape(3.dp)).background(Color(sys.color)))
+                    })
+            }
+        }
+        androidx.compose.animation.AnimatedContent(sel, label = "explorar") { id ->
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(16.dp), contentPadding = PaddingValues(end = 8.dp)) {
+                items(cards.filter { it.system == id }.take(20), key = { it.id }) { g ->
+                    GameCard(g, versions(g), Modifier.width(if (UiState.icons) 124.dp else 158.dp))
+                }
             }
         }
     }

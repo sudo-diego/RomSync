@@ -206,6 +206,10 @@ class SftpConn private constructor(private val session: Session, val ch: Channel
         } catch (e: SftpException) {
             runCatching { ch.rm(tmp) }
             throw IOException("No se pudo guardar en el servidor: ${e.message}", e)
+        } catch (e: Exception) {
+            // Cancelado (o cualquier otro corte): no queda un .part a medias en el servidor.
+            runCatching { ch.rm(tmp) }
+            throw e
         }
     }
 

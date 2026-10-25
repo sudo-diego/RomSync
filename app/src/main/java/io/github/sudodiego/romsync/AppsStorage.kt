@@ -96,6 +96,19 @@ object AppsStorage {
         ctx.packageManager.getLaunchIntentForPackage(pkg)?.let { ctx.startActivity(it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
     }
 
+    /**
+     * Abre una app por su nombre visible (ej. "CHDroid", que no sabemos con qué paquete viene) o por paquete; si no está
+     * instalada, la busca en Google Play.
+     */
+    fun openOrFind(ctx: Context, name: String, pkg: String? = null) {
+        val found = pkg?.takeIf { p -> runCatching { ctx.packageManager.getApplicationInfo(p, 0) }.isSuccess }
+            ?: launchable(ctx).firstOrNull { it.second.contains(name, ignoreCase = true) }?.first
+        if (found != null) { open(ctx, found); return }
+        val q = Uri.encode(name)
+        runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("market://search?q=$q")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+            .onFailure { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/search?q=$q&c=apps")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+    }
+
     fun askAccess(ctx: Context) {
         val i = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS, Uri.parse("package:${ctx.packageName}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         runCatching { ctx.startActivity(i) }.onFailure {

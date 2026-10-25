@@ -280,6 +280,12 @@ private fun TidyDialog(onClose: () -> Unit) {
                                     if (before != it.title) Muted("antes: $before")
                                 }
                                 Muted(it.note + " · " + formatSize(it.size))
+                                // Los consejos de formato llevan a la app que convierte.
+                                if (it.kind == Tidy.Kind.INFO) when {
+                                    "CHDroid" in it.note -> TextButton(onClick = { AppsStorage.openOrFind(ctx, "CHDroid") }) { Text("Abrir CHDroid") }
+                                    "Dolphin" in it.note -> TextButton(onClick = { AppsStorage.openOrFind(ctx, "Dolphin", "org.dolphinemu.dolphinemu") }) { Text("Abrir Dolphin") }
+                                    "Cemu" in it.note -> TextButton(onClick = { AppsStorage.openOrFind(ctx, "Cemu", "info.cemu.cemu") }) { Text("Abrir Cemu") }
+                                }
                             }
                         }
                     }

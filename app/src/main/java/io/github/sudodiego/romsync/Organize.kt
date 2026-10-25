@@ -256,22 +256,77 @@ fun TabletOnlyDialog(onClose: () -> Unit) {
     val ctx = LocalContext.current
     val list = remember(Repo.tabletOnly) { Organize.tabletOnly() }
     var selected by remember(list) { mutableStateOf(list.map { it.id }.toSet()) }
+    var copying by remember { mutableStateOf(false) }
+    var stopAll by remember { mutableStateOf(false) }
+    var queue by remember { mutableStateOf<List<Game>>(emptyList()) }
+    var finished by remember { mutableStateOf(setOf<String>()) }
     val chosen = list.filter { it.id in selected }
-    val busy = PcEdit.uploading.isNotEmpty()
+    val busy = PcEdit.uploading.isNotEmpty() || copying
+    var askCancel by remember { mutableStateOf(false) }
+    if (askCancel) AlertDialog(
+        onDismissRequest = { askCancel = false },
+        title = { Text("¿Cancelar la copia?") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Los juegos que ya terminaron de copiarse quedan en el servidor.")
+                Text("El que se está copiando ahora no queda a medias: se borra lo que alcanzó a subir.", fontWeight = FontWeight.SemiBold)
+                Muted("En el dispositivo no cambia nada. Puedes volver a copiarlos cuando quieras.")
+            }
+        },
+        confirmButton = {
+            Button(onClick = {
+                askCancel = false
+                stopAll = true
+                PcEdit.uploading.keys.toList().forEach { PcEdit.cancelUpload(it) }
+            }, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) { Text("Cancelar copia") }
+        },
+        dismissButton = { TextButton(onClick = { askCancel = false }) { Text("Seguir copiando") } },
+    )
     ReviewSheet("Sin copia en el servidor", "Solo están en este dispositivo: si se pierde o se borra, se pierden. Se copian a la misma carpeta en el servidor; aquí no cambia nada.",
         onClose = onClose,
         footer = {
-            Column(Modifier.weight(1f)) {
-                Text("${chosen.size} juego(s) · ${formatSize(chosen.sumOf { it.size })}", fontWeight = FontWeight.Bold)
-                if (busy) Muted("Copiando…")
-            }
-            BigActionButton("Copiar al servidor", Icons.Rounded.CloudUpload, enabled = chosen.isNotEmpty() && !busy && Prefs.configured) {
-                appScope.launch {
-                    var fails = 0
-                    for (g in chosen) runCatching { PcEdit.uploadFromTablet(g) }.onFailure { fails++ }
-                    Sound.play(Sound.Fx.DONE)
-                    Toast.makeText(ctx, if (fails == 0) "Listo: ${chosen.size} juego(s) copiados al servidor" else "$fails no se pudieron copiar", Toast.LENGTH_LONG).show()
-                    Repo.refresh()
+            if (busy) {
+                // Como en Descargas: cuánto va de todo, a qué velocidad y cuánto falta.
+                val total = queue.sumOf { it.size }
+                val doneAll = queue.sumOf { g -> if (PcEdit.uploading.containsKey(g.id)) PcEdit.uploading[g.id] ?: 0 else if (g.id in finished) g.size else 0L }
+                val speed = PcEdit.uploadSpeed.values.sum()
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("Copiando ${(finished.size + 1).coerceAtMost(queue.size)} de ${queue.size} · ${formatSize(doneAll)} de ${formatSize(total)}",
+                        fontWeight = FontWeight.Bold)
+                    androidx.compose.material3.LinearProgressIndicator(progress = { doneAll.toFloat() / total.coerceAtLeast(1) }, Modifier.fillMaxWidth())
+                    Muted(listOf(formatSpeed(speed), formatEta(total - doneAll, speed)).filter { it.isNotBlank() }.joinToString(" · ")
+                        .ifEmpty { "Empezando…" })
+                }
+                androidx.compose.material3.OutlinedButton(onClick = { Sound.play(Sound.Fx.WARN); askCancel = true },
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)) { Text("Cancelar") }
+            } else {
+                Column(Modifier.weight(1f)) {
+                    Text("${chosen.size} juego(s) · ${formatSize(chosen.sumOf { it.size })}", fontWeight = FontWeight.Bold)
+                    Muted("Se copian a la misma carpeta en el servidor")
+                }
+                BigActionButton("Copiar al servidor", Icons.Rounded.CloudUpload, enabled = chosen.isNotEmpty() && Prefs.configured) {
+                    queue = chosen
+                    finished = emptySet()
+                    stopAll = false
+                    copying = true
+                    appScope.launch {
+                        var fails = 0
+                        var stopped = 0
+                        for (g in queue) {
+                            if (stopAll) { stopped++; continue }
+                            runCatching { PcEdit.uploadFromTablet(g) }
+                                .onSuccess { finished = finished + g.id }
+                                .onFailure { if (it is PcEdit.UploadCancelled) stopped++ else fails++ }
+                        }
+                        copying = false
+                        Sound.play(if (fails == 0 && stopped == 0) Sound.Fx.DONE else Sound.Fx.WARN)
+                        Toast.makeText(ctx, when {
+                            stopped > 0 -> "Cancelado: ${finished.size} copiado(s), $stopped sin copiar"
+                            fails == 0 -> "Listo: ${finished.size} juego(s) copiados al servidor"
+                            else -> "$fails no se pudieron copiar"
+                        }, Toast.LENGTH_LONG).show()
+                        Repo.refresh()
+                    }
                 }
             }
         },
@@ -295,8 +350,13 @@ fun TabletOnlyDialog(onClose: () -> Unit) {
                         }
                         Text(g.title, fontWeight = FontWeight.SemiBold, maxLines = 2, modifier = Modifier.padding(top = 6.dp))
                         Muted("${Repo.system(g.system).short} · ${formatSize(g.size)}")
-                        if (up != null) androidx.compose.material3.LinearProgressIndicator(
-                            progress = { up.toFloat() / g.size.coerceAtLeast(1) }, Modifier.fillMaxWidth().padding(top = 4.dp))
+                        if (up != null) {
+                            val sp = PcEdit.uploadSpeed[g.id] ?: 0L
+                            androidx.compose.material3.LinearProgressIndicator(
+                                progress = { up.toFloat() / g.size.coerceAtLeast(1) }, Modifier.fillMaxWidth().padding(top = 4.dp))
+                            Muted("${formatSize(up)} de ${formatSize(g.size)}" + (if (sp > 0) " · ${formatSpeed(sp)} · ${formatEta(g.size - up, sp)}" else ""))
+                        } else if (g.id in finished) Text("Copiado ✓", color = Palette.ok, fontWeight = FontWeight.SemiBold)
+                        else if (copying && g in queue) Muted("En espera")
                     }
                 }
                 repeat(4 - row.size) { Box(Modifier.weight(1f)) }

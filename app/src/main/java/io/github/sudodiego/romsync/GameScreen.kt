@@ -138,6 +138,8 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
 
     PadHints(listOf("A" to "Elegir", "B" to "Volver", "L R" to "Sección"))
     val scroll = rememberScrollState()
+    // Al entrar con mando, el foco cae en el botón principal pero la ficha queda arriba (carátula y fondo a la vista).
+    LaunchedEffect(g.id) { if (Nav.keys || Nav.pad) { kotlinx.coroutines.delay(150); scroll.scrollTo(0) } }
     val enter = remember(g.id) { Animatable(0f) }
     LaunchedEffect(g.id) { enter.animateTo(1f, spring(dampingRatio = 0.75f, stiffness = 260f)) }
     @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
@@ -208,7 +210,7 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
                         LaunchedEffect(g.id) {
                             kotlinx.coroutines.delay(if (g.id in DownloadArt.wrappedSeen) 500 else 1800)
                             opening = true
-                            kotlinx.coroutines.delay(700); DownloadArt.unwrap(g.id)
+                            kotlinx.coroutines.delay(750); DownloadArt.unwrap(g.id)
                         }
                     } else DownloadOverlay(g)
                 }
@@ -284,7 +286,7 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
                         // Sin nada para descargar, Borrar ocupa el lugar grande (igual que Descargar).
                         val alone = !(w.presence != Presence.INSTALLED && w.presence != Presence.TABLET_ONLY && toDownload.isNotEmpty()) &&
                             dl == null && !(w.presence == Presence.TABLET_ONLY && Prefs.configured && g.kind != "shortcut")
-                        BigDeleteButton(if (alone) Modifier.weight(1f) else Modifier) { Sound.play(Sound.Fx.WARN); askDelete = "dev" }
+                        BigDeleteButton(if (alone) Modifier.weight(1f) else Modifier, autoFocus = alone) { Sound.play(Sound.Fx.WARN); askDelete = "dev" }
                     }
                 }
                 dl?.takeIf { it.status == DlStatus.FAILED }?.let { Text("La descarga falló: ${it.error}", color = MaterialTheme.colorScheme.error) }
@@ -746,11 +748,14 @@ private fun TabletExtras(g: Game) {
 
 /** Borrar, con la misma forma que Descargar (pero con borde rojo, para no confundirlos). */
 @Composable
-fun BigDeleteButton(modifier: Modifier = Modifier, onClick: () -> Unit) {
+fun BigDeleteButton(modifier: Modifier = Modifier, autoFocus: Boolean = false, onClick: () -> Unit) {
     val shape = RoundedCornerShape(99.dp)
     val red = MaterialTheme.colorScheme.error
+    // Con mando, si el juego ya está en el dispositivo el foco empieza aquí (lo que tiene sentido hacer).
+    val focus = androidx.compose.runtime.remember { androidx.compose.ui.focus.FocusRequester() }
+    androidx.compose.runtime.LaunchedEffect(autoFocus) { if (autoFocus && (Nav.keys || Nav.pad)) runCatching { focus.requestFocus() } }
     Row(
-        modifier.height(64.dp).focusHighlight(shape, grow = 1.02f).clip(shape).background(red.copy(alpha = 0.08f))
+        modifier.height(64.dp).focusRequester(focus).focusHighlight(shape, grow = 1.02f).clip(shape).background(red.copy(alpha = 0.08f))
             .border(2.dp, red.copy(alpha = 0.6f), shape).pressable { onClick() }.padding(horizontal = 24.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
@@ -982,7 +987,7 @@ fun BigDownloadButton(label: String, size: String, modifier: Modifier = Modifier
         androidx.compose.ui.graphics.lerp(accent, Color.White, 0.30f), accent, androidx.compose.ui.graphics.lerp(accent, Color.Black, 0.15f)))
     // Con control, al abrir la ficha el foco cae directo aquí (sin recorrer toda la pantalla).
     val focus = androidx.compose.runtime.remember { androidx.compose.ui.focus.FocusRequester() }
-    androidx.compose.runtime.LaunchedEffect(Unit) { if (Nav.keys) runCatching { focus.requestFocus() } }
+    androidx.compose.runtime.LaunchedEffect(Unit) { if (Nav.keys || Nav.pad) runCatching { focus.requestFocus() } }
     Row(
         modifier.height(64.dp).focusRequester(focus).focusHighlight(shape, grow = 1.02f).clip(shape).background(brush)
             .border(2.dp, Color.White.copy(alpha = .35f), shape)

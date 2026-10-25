@@ -29,14 +29,16 @@ neutro en la app y en las respuestas (sin voseo ni modismos).
 
 ## Cómo funciona (por pantalla)
 
-- **Mando** (`MainActivity`, `StoreState.onPadButton`, `Components.kt`): como en Switch/Steam Deck. Barra de botones abajo
-  a la derecha (`PadBar`, cada pantalla pone los suyos con `PadHints`), solo con mando conectado (`Nav.pad`, InputManager);
-  los nombres se adaptan al mando que se usa (`Nav.padStyle`: PlayStation ✕○□△ L1/R1 L2/R2 Create/Options; Xbox/GameSir
-  A B X Y LB/RB LT/RT View/Menu). L/R cambian de sección; ZL/ZR filtros de la Tienda (también como gatillos analógicos,
-  `dispatchGenericMotionEvent`); X buscar, Y vista, − actualizar, + orden; B quita filtros/plataforma. Lo enfocado queda
-  centrado (`CenteredFocus`, `LocalBringIntoViewSpec`); al volver de una ficha con B el foco vuelve a su carátula
-  (`StoreState.returnTo`, listas con estado guardado). Los controles que se usan con botones salen de la cruceta solo
-  mientras se usa mando (`notForDpad` con `Nav.keys`; al tocar la pantalla vuelven).
+- **Mando** (inspirado en Steam Big Picture): todo lo tocable lleva el mismo anillo de foco y suena al llegar (en la
+  `Indication` de `Theme.kt`); barra de botones abajo a la derecha (`PadBar`/`PadHints`) con glifos universales
+  (rombo de 4 puntos con el botón marcado, LB/RB y LT/RT con su forma y letra, View/Menu dibujados), solo con mando
+  conectado (`Nav.pad`). L/R cambian de sección; ZL/ZR (botón o gatillo analógico, sin contar doble) cambian la sección de
+  la Tienda; X buscar, Y vista, − actualizar, + orden. Al entrar a cada sección el foco va a lo principal
+  (`StoreState.focusTarget` + `Modifier.focusWhen`; si no hay nada, a esa sección en el panel). B: de una ficha o una
+  sección (plataforma, "Ver todo", Explorar) vuelve al inicio con el foco donde se entró; de la pantalla principal, al
+  panel lateral; del panel, al contenido. El carrusel es un solo elemento (izquierda/derecha cambian de página, A abre).
+  Filas: lo enfocado centrado a lo ancho (`CenteredFocus`); hacia abajo solo se mueve si no se ve entero (`MarginFocus`).
+  Campos de texto: el teclado sale con A. Ajustes con filas de opciones (`OptionRow`: izquierda/derecha cambian).
 - Sombras: dibujadas como parte del contenido (`Modifier.softShadow`), no las del sistema: las del sistema no se
   desvanecen con las transiciones de pantalla y "saltaban". Las carátulas animan su aparición solo la primera vez.
 - **Tienda** (`StoreScreen.kt`): carrusel de destacados (al azar por apertura; la cruceta cambia de página y el foco va

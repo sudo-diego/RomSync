@@ -101,7 +101,7 @@ fun SavesScreen() {
                         Muted("Para respaldar o restaurar un solo juego, ábrelo en la Tienda.")
                     }
                     if (allBusy) CircularProgressIndicator(Modifier.size(32.dp))
-                    else BigActionButton("Respaldar todo", Icons.Rounded.CloudUpload, enabled = Prefs.configured) {
+                    else BigActionButton("Respaldar todo", Icons.Rounded.CloudUpload, Modifier.focusWhen("entrada:SAVES"), enabled = Prefs.configured) {
                         allBusy = true
                         scope.launch {
                             val msg = Saves.backupAll(ctx, auto = false)

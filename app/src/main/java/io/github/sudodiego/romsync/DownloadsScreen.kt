@@ -87,7 +87,7 @@ fun DownloadsScreen() {
                     FilledTonalButton(onClick = {
                         Sound.play(Sound.Fx.MOVE)
                         if (anyRunning) pending.forEach { DownloadService.pause(it) } else pending.forEach { DownloadService.resume(ctx, it) }
-                    }, modifier = Modifier.focusHighlight(RoundedCornerShape(99.dp))) {
+                    }, modifier = Modifier.focusHighlight(RoundedCornerShape(99.dp)).focusWhen("entrada:DOWNLOADS")) {
                         Icon(if (anyRunning) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, null); Spacer(Modifier.width(6.dp))
                         Text(if (anyRunning) "Pausar todo" else "Seguir todo")
                     }

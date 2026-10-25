@@ -1,5 +1,7 @@
 package io.github.sudodiego.romsync
 
+import androidx.compose.foundation.focusable
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.Explore
@@ -131,6 +133,15 @@ object StoreState {
     fun row(key: String) = rows.getOrPut(key) { androidx.compose.foundation.lazy.LazyListState() }
     /** El juego cuya carátula tenía el foco al abrir una ficha: al volver con B, el foco vuelve ahí. */
     var returnTo by mutableStateOf<String?>(null)
+    /** A qué elemento le toca el foco ahora ("carrusel", "primero", "plataforma:<id>", "vertodo:<fila>"). Ver focusWhen. */
+    var focusTarget by mutableStateOf<String?>("carrusel")
+    /** Dónde volver con B al salir de una plataforma o de "Ver todo". */
+    var backTarget: String? = null
+    /** Abrir una plataforma o "Ver todo" como una sección: el foco va al primer juego y B vuelve a [from]. */
+    fun openSection(system: String = "", filter: StoreFilter = StoreFilter.ALL, from: String) {
+        this.system = system; this.filter = filter; backTarget = from; focusTarget = "primero"
+    }
+    fun home() { system = ""; filter = StoreFilter.ALL; query = ""; focusTarget = backTarget ?: "carrusel"; backTarget = null }
     /** Carátulas que ya aparecieron (su animación de entrada es solo la primera vez, no cada vez que se vuelve). */
     val appeared = HashSet<String>()
     /** Selección múltiple (mantener presionada una tarjeta): ids de juegos. */
@@ -181,12 +192,15 @@ fun StoreScreen() {
     // Con la cruceta, abajo desde el carrusel va a la PRIMERA plataforma (no a la que quede más al centro).
     val firstPlatform = remember { androidx.compose.ui.focus.FocusRequester() }
     val filtered = StoreState.system.isNotEmpty() || StoreState.filter != StoreFilter.ALL || StoreState.query.isNotEmpty()
-    androidx.activity.compose.BackHandler(enabled = filtered && Nav.game == null) {
-        Sound.play(Sound.Fx.BACK); StoreState.system = ""; StoreState.filter = StoreFilter.ALL; StoreState.query = ""
+    androidx.activity.compose.BackHandler(enabled = filtered && Nav.game == null) { Sound.play(Sound.Fx.BACK); StoreState.home() }
+    // Al empezar a usar el mando sin nada enfocado en la Tienda, el foco va al carrusel (no al botón del panel).
+    var storeHasFocus by remember { mutableStateOf(false) }
+    LaunchedEffect(Nav.keys) {
+        if (Nav.keys && !storeHasFocus && Nav.game == null && StoreState.focusTarget == null) StoreState.focusTarget = if (filtered) "primero" else "carrusel"
     }
-    PadHints(listOfNotNull("A" to "Abrir", (if (filtered) "B" to "Quitar filtros" else null), "X" to "Buscar", "Y" to "Vista",
+    PadHints(listOfNotNull("A" to "Abrir", (if (filtered) "B" to "Inicio" else null), "X" to "Buscar", "Y" to "Vista",
         "ZL ZR" to "Filtro", "−" to "Actualizar", "+" to "Orden", "L R" to "Sección"))
-    Box(Modifier.fillMaxSize()) {
+    Box(Modifier.fillMaxSize().onFocusChanged { storeHasFocus = it.hasFocus }) {
         LazyVerticalGrid(
             state = StoreState.grid,
             columns = GridCells.Adaptive(if (UiState.icons) 124.dp else 158.dp),
@@ -215,25 +229,36 @@ fun StoreScreen() {
                 val toGet = cards.filter { Repo.where(it).presence == Presence.MISSING && it.kind != "shortcut" }
                 if (onTablet.isNotEmpty()) item(span = { GridItemSpan(maxLineSpan) }, key = "fila-tablet") {
                     StorePanel("En tu dispositivo", Icons.Rounded.TabletAndroid, Palette.ok) {
-                        ShelfRow(onTablet.shuffled(java.util.Random(StoreState.seed)), { StoreState.filter = StoreFilter.INSTALLED }, ::versionsOf, "tablet")
+                        ShelfRow(onTablet.shuffled(java.util.Random(StoreState.seed)), { StoreState.openSection(filter = StoreFilter.INSTALLED, from = "vertodo:tablet") }, ::versionsOf, "tablet")
                     }
                 }
                 // Para descargar: tiles anchos con fondo y logo (como las promociones de la eShop), los que tienen imagen primero.
                 if (toGet.isNotEmpty()) item(span = { GridItemSpan(maxLineSpan) }, key = "fila-bajar") {
                     StorePanel("Para descargar", Icons.Rounded.CloudDownload, Color(UiState.accent)) {
                         WideShelf(toGet.shuffled(java.util.Random(StoreState.seed + 1)).sortedByDescending { Art.cached(it.id, "hero") != null }) {
-                            StoreState.filter = StoreFilter.MISSING
+                            StoreState.openSection(filter = StoreFilter.MISSING, from = "vertodo:bajar")
                         }
                     }
                 }
                 // Una sola sección para explorar por plataforma (antes eran hasta 8 filas seguidas, una por consola).
                 val explore = systems.filter { it.second >= 2 && it.first.id !in Group.shortcutSystems }.map { it.first }
                 if (explore.isNotEmpty()) item(span = { GridItemSpan(maxLineSpan) }, key = "explorar") {
-                    StorePanel("Explorar", Icons.Rounded.Explore, Palette.blue) { ExploreSection(explore, cards, ::versionsOf) }
+                    StorePanel("Explorar", Icons.Rounded.Explore, Palette.blue) { SectionTiles(cards) }
                 }
             } else {
+                systems.firstOrNull { it.first.id == StoreState.system }?.let { (sys, n) ->
+                    item(span = { GridItemSpan(maxLineSpan) }, key = "titulo-plataforma") {
+                        SpacedRow(Modifier.padding(top = 4.dp)) {
+                            Box(Modifier.size(18.dp).clip(RoundedCornerShape(6.dp)).background(Color(sys.color)))
+                            Text(sys.name, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                            Muted("$n juegos")
+                        }
+                    }
+                }
                 if (games.isEmpty()) item(span = { GridItemSpan(maxLineSpan) }, key = "vacio") { EmptyState() }
-                items(games, key = { it.id }) { g -> GameCard(g, versionsOf(g), Modifier.animateItem()) }
+                itemsIndexed(games, key = { _, it -> it.id }) { idx, g ->
+                    GameCard(g, versionsOf(g), Modifier.animateItem().then(if (idx == 0) Modifier.focusWhen("primero") else Modifier))
+                }
             }
             // Espacio para que la barra de selección no tape las últimas tarjetas.
             if (StoreState.selection.isNotEmpty()) item(span = { GridItemSpan(maxLineSpan) }, key = "pie") { Spacer(Modifier.height(90.dp)) }
@@ -254,11 +279,14 @@ private fun FeaturedCarousel(cards: List<Game>, below: androidx.compose.ui.focus
     }
     if (featured.isEmpty()) return
     val pager = rememberPagerState { featured.size }
-    val pageFocus = remember(featured.size) { List(featured.size) { androidx.compose.ui.focus.FocusRequester() } }
+    // El carrusel es UN solo elemento para el mando: izquierda/derecha cambian de página y A abre la que se ve.
+    // (Mover el foco de página en página hacía pelear al foco, a la animación y al reacomodo de la lista.)
+    val carouselFocus = remember { androidx.compose.ui.focus.FocusRequester() }
     LaunchedEffect(Nav.game) {
         val i = featured.indexOfFirst { it.id == StoreState.returnTo }
-        if (Nav.game == null && i >= 0) { pager.scrollToPage(i); kotlinx.coroutines.delay(60); runCatching { pageFocus[i].requestFocus() }; StoreState.returnTo = null }
+        if (Nav.game == null && i >= 0) { pager.scrollToPage(i); kotlinx.coroutines.delay(60); runCatching { carouselFocus.requestFocus() }; StoreState.returnTo = null }
     }
+    var target by remember { mutableStateOf(0) }
     val carouselScope = androidx.compose.runtime.rememberCoroutineScope()
     // Con el foco del control encima, no pasa solo (si no, se lleva el foco a otra página).
     var focusedIn by remember { mutableStateOf(false) }
@@ -270,8 +298,32 @@ private fun FeaturedCarousel(cards: List<Game>, below: androidx.compose.ui.focus
         }
     }
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        HorizontalPager(pager, Modifier.fillMaxWidth().height(260.dp).onFocusChanged { focusedIn = it.hasFocus }
-            .focusProperties { canFocus = false } /* el carrusel no, la página sí */, pageSpacing = 16.dp,
+        HorizontalPager(pager, Modifier.fillMaxWidth().height(260.dp)
+            .focusRequester(carouselFocus).focusWhen("carrusel")
+            .onFocusChanged { focusedIn = it.isFocused }
+            .focusProperties { down = below }
+            .onPreviewKeyEvent { e ->
+                if (e.type != androidx.compose.ui.input.key.KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                when (e.nativeKeyEvent.keyCode) {
+                    android.view.KeyEvent.KEYCODE_DPAD_RIGHT, android.view.KeyEvent.KEYCODE_DPAD_LEFT -> {
+                        val step = if (e.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_RIGHT) 1 else -1
+                        // Desde la página a la que ya va: dos toques seguidos saltan dos páginas.
+                        val from = if (pager.isScrollInProgress) target else pager.currentPage
+                        if (from + step < 0) return@onPreviewKeyEvent false // a la izquierda del primero: el panel lateral
+                        target = (from + step) % featured.size
+                        Sound.play(Sound.Fx.MOVE)
+                        carouselScope.launch { pager.animateScrollToPage(target, animationSpec = tween(260)) }
+                        true
+                    }
+                    android.view.KeyEvent.KEYCODE_DPAD_CENTER, android.view.KeyEvent.KEYCODE_ENTER -> {
+                        val g = featured[pager.currentPage]
+                        Sound.play(Sound.Fx.OPEN); StoreState.returnTo = g.id; Nav.game = g
+                        true
+                    }
+                    else -> false
+                }
+            }
+            .focusHighlight(RoundedCornerShape(26.dp), grow = 1f).focusable(), pageSpacing = 16.dp,
             beyondViewportPageCount = 1) { i ->
             val g = featured[i]
             val offset = (pager.currentPage - i) + pager.currentPageOffsetFraction
@@ -279,28 +331,10 @@ private fun FeaturedCarousel(cards: List<Game>, below: androidx.compose.ui.focus
                 Modifier.fillMaxSize().graphicsLayer {
                     val s = 1f - 0.06f * kotlin.math.abs(offset).coerceAtMost(1f)
                     scaleX = s; scaleY = s
-                }.focusRequester(pageFocus[i])
-                    .focusProperties { down = below }
-                    // Izquierda/derecha cambian de página y el foco va con ella (antes se perdía o saltaba fuera).
-                    .onPreviewKeyEvent { e ->
-                        if (e.type != androidx.compose.ui.input.key.KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                        val step = when (e.nativeKeyEvent.keyCode) {
-                            android.view.KeyEvent.KEYCODE_DPAD_RIGHT -> 1
-                            android.view.KeyEvent.KEYCODE_DPAD_LEFT -> -1
-                            else -> return@onPreviewKeyEvent false
-                        }
-                        val to = i + step
-                        if (to < 0) return@onPreviewKeyEvent false // a la izquierda del primero: el panel lateral
-                        val target = if (to >= featured.size) 0 else to
-                        Sound.play(Sound.Fx.MOVE)
-                        carouselScope.launch {
-                            pager.animateScrollToPage(target, animationSpec = tween(350))
-                            runCatching { pageFocus[target].requestFocus() }
-                        }
-                        true
-                    }
-                    .onFocusChanged { if (it.isFocused && (pager.currentPage != i || pager.isScrollInProgress)) carouselScope.launch { pager.scrollToPage(i) } }
-                    .focusHighlight(RoundedCornerShape(26.dp), grow = 1f).clip(RoundedCornerShape(26.dp)).pressable { Sound.play(Sound.Fx.OPEN); StoreState.returnTo = g.id; Nav.game = g },
+                }.clip(RoundedCornerShape(26.dp))
+                    // Con el dedo se toca la página; con el mando se usa el carrusel entero (las páginas no reciben foco).
+                    .focusProperties { canFocus = false }
+                    .pressable { Sound.play(Sound.Fx.OPEN); StoreState.returnTo = g.id; Nav.game = g },
             ) {
                 Box(Modifier.fillMaxSize().background(Brush.linearGradient(listOf(Color(Repo.system(g.system).color), Color(0xFF0D1220)))))
                 // El fondo se mueve un poco contra el gesto (paralaje).
@@ -331,10 +365,10 @@ private fun FeaturedCarousel(cards: List<Game>, below: androidx.compose.ui.focus
 /** Fila de tiles anchos (fondo + logo + tamaño), como las promociones de la eShop; al final "Ver todo". */
 @Composable
 private fun WideShelf(games: List<Game>, onAll: () -> Unit) {
-    LazyRow(state = StoreState.row("bajar"), horizontalArrangement = Arrangement.spacedBy(16.dp), contentPadding = PaddingValues(horizontal = 18.dp, vertical = 10.dp)) {
+    CenterRow { LazyRow(state = StoreState.row("bajar"), horizontalArrangement = Arrangement.spacedBy(16.dp), contentPadding = PaddingValues(horizontal = 18.dp, vertical = 18.dp)) {
         items(games.take(10), key = { it.id }) { g -> WideTile(g) }
-        if (games.size > 10) item(key = "ver-todo") { SeeAllCard(games.size, Modifier.size(200.dp, 200.dp), onAll) }
-    }
+        if (games.size > 10) item(key = "ver-todo") { SeeAllCard(games.size, Modifier.size(200.dp, 200.dp).focusWhen("vertodo:bajar"), onAll) }
+    } }
 }
 
 @Composable
@@ -383,10 +417,55 @@ private fun ExploreSection(systems: List<SystemInfo>, cards: List<Game>, version
             }
         }
         androidx.compose.animation.AnimatedContent(sel, label = "explorar") { id ->
-            ShelfRow(cards.filter { it.system == id }.shuffled(java.util.Random(StoreState.seed + id.hashCode())), { StoreState.system = id }, versions, "explorar-$id")
+            ShelfRow(cards.filter { it.system == id }.shuffled(java.util.Random(StoreState.seed + id.hashCode())),
+                { StoreState.openSection(system = id, from = "vertodo:explorar-$id") }, versions, "explorar-$id")
         }
     }
 }
+
+/** Explorar: una tarjeta por sección (todos, en el dispositivo, para descargar, sin copia); abre esa sección. */
+@Composable
+private fun SectionTiles(cards: List<Game>) {
+    val counts = StoreFilter.entries.associateWith { f ->
+        cards.count { g ->
+            val p = Repo.where(g).presence
+            when (f) {
+                StoreFilter.ALL -> true
+                StoreFilter.INSTALLED -> p == Presence.INSTALLED || p == Presence.PARTIAL || p == Presence.TABLET_ONLY
+                StoreFilter.MISSING -> (p == Presence.MISSING || p == Presence.PARTIAL) && g.kind != "shortcut"
+                StoreFilter.TABLET_ONLY -> p == Presence.TABLET_ONLY
+            }
+        }
+    }
+    val look = mapOf(
+        StoreFilter.ALL to (Icons.Rounded.GridView to Palette.blue), StoreFilter.INSTALLED to (Icons.Rounded.TabletAndroid to Palette.ok),
+        StoreFilter.MISSING to (Icons.Rounded.CloudDownload to Color(UiState.accent)), StoreFilter.TABLET_ONLY to (Icons.Rounded.CloudOff to Palette.warn),
+    )
+    CenterRow { LazyRow(state = StoreState.row("secciones"), horizontalArrangement = Arrangement.spacedBy(14.dp),
+        contentPadding = PaddingValues(horizontal = 18.dp, vertical = 16.dp)) {
+        items(StoreFilter.entries.filter { (counts[it] ?: 0) > 0 }, key = { it.name }) { f ->
+            val (icon, tint) = look.getValue(f)
+            Column(Modifier.size(220.dp, 120.dp).focusWhen("seccion:${f.name}").focusHighlight(RoundedCornerShape(20.dp), grow = 1.04f)
+                .softShadow(20.dp, 6.dp).clip(RoundedCornerShape(20.dp))
+                .background(androidx.compose.ui.graphics.Brush.linearGradient(listOf(tint, androidx.compose.ui.graphics.lerp(tint, Color.Black, 0.35f))))
+                .pressable { Sound.play(Sound.Fx.OPEN); StoreState.openSection(filter = f, from = "seccion:${f.name}") }
+                .padding(16.dp), verticalArrangement = Arrangement.SpaceBetween) {
+                Icon(icon, null, tint = Color.White, modifier = Modifier.size(30.dp))
+                Column {
+                    Text(if (f == StoreFilter.ALL) "Todos los juegos" else if (f == StoreFilter.TABLET_ONLY) "Sin copia en el servidor" else f.label,
+                        color = Color.White, fontWeight = FontWeight.Bold)
+                    Text("${counts[f]} juegos", color = Color.White.copy(alpha = 0.85f), style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+    } }
+}
+
+/** Dentro de una fila (de lado), lo enfocado queda centrado. */
+@Composable
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+private fun CenterRow(content: @Composable () -> Unit) =
+    androidx.compose.runtime.CompositionLocalProvider(androidx.compose.foundation.gestures.LocalBringIntoViewSpec provides CenteredFocus) { content() }
 
 /** Un panel del inicio: título con ícono de color y su contenido, para que cada sección se distinga. */
 @Composable
@@ -421,12 +500,12 @@ private fun SeeAllCard(count: Int, modifier: Modifier, onClick: () -> Unit) {
 @Composable
 private fun ShelfRow(games: List<Game>, onAll: () -> Unit, versions: (Game) -> Int, key: String = "") {
     val w = if (UiState.icons) 124.dp else 158.dp
-    LazyRow(state = StoreState.row("fila-$key"), horizontalArrangement = Arrangement.spacedBy(16.dp), contentPadding = PaddingValues(horizontal = 18.dp, vertical = 10.dp)) {
+    CenterRow { LazyRow(state = StoreState.row("fila-$key"), horizontalArrangement = Arrangement.spacedBy(16.dp), contentPadding = PaddingValues(horizontal = 18.dp, vertical = 18.dp)) {
         items(games.take(10), key = { it.id }) { g -> GameCard(g, versions(g), Modifier.width(w)) }
         if (games.size > 10) item(key = "ver-todo") {
-            SeeAllCard(games.size, Modifier.width(w).aspectRatio(if (UiState.icons) 1f else 2f / 3f), onAll)
+            SeeAllCard(games.size, Modifier.width(w).aspectRatio(if (UiState.icons) 1f else 2f / 3f).focusWhen("vertodo:$key"), onAll)
         }
-    }
+    } }
 }
 
 /** Estado en la tarjeta, sin texto: ✓ verde en la tablet, medio ámbar a medias, % descargando, tablet gris solo ahí. */
@@ -595,7 +674,7 @@ private fun Toolbar(systems: List<SystemInfo>) {
                     .focusProperties { canFocus = !Nav.keys || StoreState.searchArmed }
                     // Mientras se usa, sigue activo (si no, al escribir con teclado o mando perdía el foco).
                     .onFocusChanged { StoreState.searchArmed = it.isFocused }
-                    .gamepadText(), singleLine = true, placeholder = { Text(if (Nav.pad) "Buscar (X)" else "Buscar") },
+                    .gamepadText(), singleLine = true, placeholder = { Text("Buscar") },
                 leadingIcon = { Icon(Icons.Rounded.Search, null) },
                 trailingIcon = {
                     if (StoreState.query.isNotEmpty()) IconButton(onClick = { StoreState.query = "" }) { Icon(Icons.Rounded.Close, "Borrar") }
@@ -622,14 +701,16 @@ private fun Toolbar(systems: List<SystemInfo>) {
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            StoreFilter.entries.forEach { f ->
-                FilterChip(selected = StoreState.filter == f, onClick = { Sound.play(Sound.Fx.MOVE); StoreState.filter = f },
-                    label = { Text(f.label) }, shape = RoundedCornerShape(99.dp), modifier = Modifier.notForDpad())
-            }
+            // Las secciones (todos, descargados, para descargar, sin copia) se abren desde "Explorar" en el inicio; aquí solo
+            // se ve en cuál se está, y ZL/ZR cambian de una a otra.
+            if (StoreState.filter != StoreFilter.ALL || StoreState.system.isNotEmpty())
+                FilterChip(selected = true, onClick = { Sound.play(Sound.Fx.MOVE); StoreState.home() },
+                    label = { Text(if (StoreState.system.isNotEmpty()) "Inicio" else StoreState.filter.label) }, shape = RoundedCornerShape(99.dp),
+                    modifier = Modifier.notForDpad(), trailingIcon = { Icon(Icons.Rounded.Close, "Volver al inicio", Modifier.size(18.dp)) })
             // Plataforma elegida (desde las tarjetas del inicio): un chip con su nombre para quitarla.
             systems.firstOrNull { it.id == StoreState.system }?.let { cur ->
                 Spacer(Modifier.weight(1f))
-                FilterChip(selected = true, onClick = { Sound.play(Sound.Fx.MOVE); StoreState.system = "" },
+                FilterChip(selected = true, onClick = { Sound.play(Sound.Fx.MOVE); StoreState.home() }, modifier = Modifier.notForDpad(),
                     label = { Text(cur.name) }, shape = RoundedCornerShape(99.dp),
                     leadingIcon = { Box(Modifier.size(10.dp).clip(RoundedCornerShape(3.dp)).background(Color(cur.color))) },
                     trailingIcon = { Icon(Icons.Rounded.Close, "Quitar", Modifier.size(18.dp)) })
@@ -637,7 +718,7 @@ private fun Toolbar(systems: List<SystemInfo>) {
                 val ctx = LocalContext.current
                 var pick by remember { mutableStateOf(false) }
                 val emu = remember(cur.id, EmuChoice.version) { EmuChoice.pkg(ctx, cur.id) }
-                FilterChip(selected = false, onClick = { Sound.play(Sound.Fx.MOVE); pick = true }, shape = RoundedCornerShape(99.dp),
+                FilterChip(selected = false, onClick = { Sound.play(Sound.Fx.MOVE); pick = true }, shape = RoundedCornerShape(99.dp), modifier = Modifier.notForDpad(),
                     label = { Text(emu?.let { runCatching { ctx.packageManager.getApplicationLabel(ctx.packageManager.getApplicationInfo(it, 0)).toString() }.getOrNull() }
                         ?: "Elegir emulador") },
                     leadingIcon = { emu?.let { EmuChoice.icon(ctx, it) }?.let { androidx.compose.foundation.Image(it, null, Modifier.size(20.dp).clip(RoundedCornerShape(5.dp))) } })
@@ -781,8 +862,8 @@ private fun PlatformRow(systems: List<Pair<SystemInfo, Int>>, first: androidx.co
             Text("Plataformas", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
             Muted("Mantén presionada una para elegir su emulador")
         }
-        LazyRow(state = StoreState.row("plataformas"), horizontalArrangement = Arrangement.spacedBy(12.dp),
-            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp)) {
+        CenterRow { LazyRow(state = StoreState.row("plataformas"), horizontalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 16.dp)) {
             itemsIndexed(systems.filter { it.first.id !in Group.shortcutSystems }, key = { _, it -> it.first.id }) { idx, (sys, n) ->
                 // El fondo es el ícono de la app con que se juega (elegida por el usuario; se cambia manteniendo presionado).
                 val ctx = LocalContext.current
@@ -791,7 +872,8 @@ private fun PlatformRow(systems: List<Pair<SystemInfo, Int>>, first: androidx.co
                 Box(Modifier.size(190.dp, 100.dp).then(if (idx == 0) Modifier.focusRequester(first) else Modifier).focusHighlight(RoundedCornerShape(18.dp), grow = 1.04f).softShadow(18.dp, 6.dp).clip(RoundedCornerShape(18.dp))
                     .background(Brush.linearGradient(listOf(androidx.compose.ui.graphics.lerp(Color(sys.color), Color.Black, 0.15f),
                         androidx.compose.ui.graphics.lerp(Color(sys.color), Color.Black, 0.55f))))
-                    .combinedClickable(onClick = { Sound.play(Sound.Fx.OPEN); StoreState.system = sys.id },
+                    .focusWhen("plataforma:${sys.id}")
+                    .combinedClickable(onClick = { Sound.play(Sound.Fx.OPEN); StoreState.openSection(system = sys.id, from = "plataforma:${sys.id}") },
                         onLongClick = { Sound.play(Sound.Fx.MOVE); pickEmu = sys })) {
                     // El ícono grande, girado y recortado a la derecha, como marca de agua.
                     if (icon != null) androidx.compose.foundation.Image(icon, null,
@@ -807,6 +889,6 @@ private fun PlatformRow(systems: List<Pair<SystemInfo, Int>>, first: androidx.co
                     }
                 }
             }
-        }
+        } }
     }
 }

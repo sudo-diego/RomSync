@@ -1,5 +1,9 @@
 package io.github.sudodiego.romsync
 
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.ChevronLeft
 import androidx.compose.material.icons.rounded.TabletAndroid
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.foundation.layout.Row
@@ -500,12 +504,7 @@ private fun LookAndSoundCard() {
                 onValueChangeFinished = { Sound.play(Sound.Fx.MOVE) })
             Switch(sfx, { sfx = it; Prefs.sfxOn = it; Sound.play(Sound.Fx.TOGGLE) })
         }
-        androidx.compose.foundation.layout.FlowRow(Modifier.padding(start = 34.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Sound.packs.forEach { (id, label) ->
-                FilterChip(selected = pack == id, enabled = sfx, onClick = { pack = id; Prefs.sfxPack = id; Sound.preview(id) },
-                    label = { Text(label) }, shape = RoundedCornerShape(99.dp))
-            }
-        }
+        OptionRow("Juego de sonidos", Sound.packs.toList(), pack, enabled = sfx) { pack = it; Prefs.sfxPack = it; Sound.preview(it) }
     }
 }
 
@@ -517,43 +516,42 @@ private fun LookControls() {
     fun setAccent(v: Long) {
         UiState.accent = v; Prefs.accent = v; hex = "%06X".format(v and 0xFFFFFF); Sound.play(Sound.Fx.TOGGLE)
     }
-    SpacedRow {
-        Text("Tema", Modifier.width(110.dp), fontWeight = FontWeight.SemiBold)
-        listOf("claro" to "Claro", "oscuro" to "Oscuro", "sistema" to "Del sistema").forEach { (id, label) ->
-            FilterChip(selected = UiState.theme == id, onClick = {
-                Sound.play(Sound.Fx.TOGGLE); UiState.theme = id; Prefs.theme = id
-            }, label = { Text(label) }, shape = RoundedCornerShape(99.dp))
-        }
-    }
-    SpacedRow {
-        Text("Color", Modifier.width(110.dp), fontWeight = FontWeight.SemiBold)
-        androidx.compose.foundation.layout.FlowRow(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    OptionRow("Tema", listOf("claro" to "Claro", "oscuro" to "Oscuro", "sistema" to "Del sistema"), UiState.theme,
+        Modifier.focusWhen("entrada:SETTINGS")) { UiState.theme = it; Prefs.theme = it }
+    // Color: muestras grandes; la elegida con un anillo y ✓; con mando se recorren con la cruceta.
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Color destacado", fontWeight = FontWeight.SemiBold)
+        androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             accentPresets.forEach { (name, v) ->
                 val sel = UiState.accent == v
-                androidx.compose.foundation.layout.Box(
-                    Modifier.size(40.dp).clip(RoundedCornerShape(99.dp)).background(Color(v))
-                        .then(if (sel) Modifier.border(3.dp, MaterialTheme.colorScheme.onSurface, RoundedCornerShape(99.dp)) else Modifier)
-                        .clickable { setAccent(v) },
-                    contentAlignment = Alignment.Center,
-                ) { if (sel) Icon(Icons.Rounded.Check, name, tint = Color.White) }
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    androidx.compose.foundation.layout.Box(
+                        Modifier.size(52.dp).clip(RoundedCornerShape(99.dp))
+                            .border(if (sel) 4.dp else 0.dp, MaterialTheme.colorScheme.onSurface, RoundedCornerShape(99.dp))
+                            .padding(if (sel) 6.dp else 0.dp).clip(RoundedCornerShape(99.dp)).background(Color(v))
+                            .clickable { setAccent(v) },
+                        contentAlignment = Alignment.Center,
+                    ) { if (sel) Icon(Icons.Rounded.Check, name, tint = Color.White) }
+                    Text(name.substringBefore(' '), style = MaterialTheme.typography.labelSmall,
+                        fontWeight = if (sel) FontWeight.Bold else FontWeight.Normal)
+                }
             }
         }
-        OutlinedTextField(hex, { v ->
-            hex = v.uppercase().filter { it in "0123456789ABCDEF" }.take(6)
-            if (hex.length == 6) { UiState.accent = 0xFF000000L or hex.toLong(16); Prefs.accent = UiState.accent }
-        }, Modifier.width(150.dp).gamepadText(), singleLine = true, prefix = { Text("#") }, label = { Text("Código") },
-            leadingIcon = { androidx.compose.foundation.layout.Box(Modifier.size(18.dp).clip(RoundedCornerShape(99.dp)).background(Color(UiState.accent))) })
-    }
-    SpacedRow {
-        Text("Fondo", Modifier.width(110.dp), fontWeight = FontWeight.SemiBold)
-        listOf("burbujas" to "Burbujas", "ondas" to "Ondas", "ninguno" to "Sin animación").forEach { (id, label) ->
-            FilterChip(selected = UiState.background == id, onClick = {
-                Sound.play(Sound.Fx.TOGGLE); UiState.background = id; Prefs.background = id
-            }, label = { Text(label) }, shape = RoundedCornerShape(99.dp))
+        SpacedRow {
+            Muted("O escribe un código:")
+            OutlinedTextField(hex, { v ->
+                hex = v.uppercase().filter { it in "0123456789ABCDEF" }.take(6)
+                if (hex.length == 6) { UiState.accent = 0xFF000000L or hex.toLong(16); Prefs.accent = UiState.accent }
+            }, Modifier.width(150.dp).gamepadText(), singleLine = true, prefix = { Text("#") },
+                leadingIcon = { androidx.compose.foundation.layout.Box(Modifier.size(18.dp).clip(RoundedCornerShape(99.dp)).background(Color(UiState.accent))) })
         }
     }
-    SpacedRow {
+    OptionRow("Fondo", listOf("burbujas" to "Burbujas", "ondas" to "Ondas", "ninguno" to "Sin animación"), UiState.background) {
+        UiState.background = it; Prefs.background = it
+    }
+    SpacedRow(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).clickable {
+        Sound.play(Sound.Fx.TOGGLE); UiState.fullscreen = !UiState.fullscreen; Prefs.fullscreen = UiState.fullscreen
+    }.padding(horizontal = 18.dp, vertical = 10.dp)) {
         Column(Modifier.weight(1f)) {
             Text("Pantalla completa", fontWeight = FontWeight.SemiBold)
             Muted("Oculta la barra de arriba y los botones de Android; aparecen deslizando desde el borde.")
@@ -562,19 +560,57 @@ private fun LookControls() {
             Sound.play(Sound.Fx.TOGGLE); UiState.fullscreen = it; Prefs.fullscreen = it
         })
     }
-    SpacedRow {
-        Text("Descargas", Modifier.width(110.dp), fontWeight = FontWeight.SemiBold)
-        DownloadArt.styles.forEach { (id, label) ->
-            FilterChip(selected = DownloadArt.style == id, onClick = {
-                Sound.play(Sound.Fx.TOGGLE); DownloadArt.style = id; Prefs.dlStyle = id
-            }, label = { Text(label) }, shape = RoundedCornerShape(99.dp))
-        }
-    }
+    OptionRow("Animación de descarga", DownloadArt.styles.toList(), DownloadArt.style) { DownloadArt.style = it; Prefs.dlStyle = it }
     Muted(when (DownloadArt.style) {
         "3ds" -> "Bloques que llenan el cubo del ícono y, al terminar, un regalo que se abre al entrar al juego."
         "switch" -> "La carátula con una barra de avance abajo, como el menú de Switch."
         else -> "Un anillo con el porcentaje sobre la carátula."
     })
+}
+
+/**
+ * Una opción como en Steam Big Picture: el nombre y el valor elegido con flechas a los lados. Con mando, izquierda/derecha
+ * cambian el valor (con sonido) y A pasa al siguiente; con el dedo se tocan las flechas o el valor.
+ */
+@Composable
+fun OptionRow(label: String, options: List<Pair<String, String>>, selected: String, modifier: Modifier = Modifier,
+              enabled: Boolean = true, onChange: (String) -> Unit) {
+    val i = options.indexOfFirst { it.first == selected }.coerceAtLeast(0)
+    fun move(step: Int) {
+        if (!enabled) return
+        Sound.play(Sound.Fx.TOGGLE)
+        onChange(options[(i + step + options.size) % options.size].first)
+    }
+    Row(modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
+        .onPreviewKeyEvent { e ->
+            if (e.type != androidx.compose.ui.input.key.KeyEventType.KeyDown) return@onPreviewKeyEvent false
+            when (e.nativeKeyEvent.keyCode) {
+                android.view.KeyEvent.KEYCODE_DPAD_LEFT -> { move(-1); true }
+                android.view.KeyEvent.KEYCODE_DPAD_RIGHT -> { move(1); true }
+                else -> false
+            }
+        }
+        .clickable(enabled = enabled) { move(1) }.padding(horizontal = 18.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically) {
+        Text(label, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f),
+            color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
+        androidx.compose.material3.IconButton(onClick = { move(-1) }, enabled = enabled, modifier = Modifier.notForDpad()) {
+            Icon(Icons.Rounded.ChevronLeft, "Anterior")
+        }
+        Column(Modifier.width(150.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(options[i].second, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+            // Puntos: cuántas opciones hay y cuál está elegida.
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.padding(top = 4.dp)) {
+                options.indices.forEach { k ->
+                    androidx.compose.foundation.layout.Box(Modifier.size(if (k == i) 14.dp else 6.dp, 6.dp).clip(RoundedCornerShape(99.dp))
+                        .background(if (k == i) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline))
+                }
+            }
+        }
+        androidx.compose.material3.IconButton(onClick = { move(1) }, enabled = enabled, modifier = Modifier.notForDpad()) {
+            Icon(Icons.Rounded.ChevronRight, "Siguiente")
+        }
+    }
 }
 
 /** Medir la velocidad con el servidor (bajada y subida), sin tocar los juegos. */

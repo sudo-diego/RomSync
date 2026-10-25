@@ -1,5 +1,6 @@
 package io.github.sudodiego.romsync
 
+import androidx.compose.ui.node.invalidateDraw
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.withFrameNanos
@@ -179,11 +180,37 @@ private class SoundIndication(private val base: androidx.compose.foundation.Indi
     androidx.compose.foundation.IndicationNodeFactory {
     override fun create(interactionSource: androidx.compose.foundation.interaction.InteractionSource): androidx.compose.ui.node.DelegatableNode {
         val node = base.create(interactionSource)
-        return object : androidx.compose.ui.node.DelegatingNode() {
+        // Además del sonido al tocar: con mando, todo lo que tiene el foco lleva el mismo anillo y suena al llegar
+        // (como en Steam Big Picture), sin tener que acordarse de ponerlo en cada botón, chip o fila.
+        return object : androidx.compose.ui.node.DelegatingNode(), androidx.compose.ui.node.DrawModifierNode {
+            var focused = false
+            fun redraw() = invalidateDraw()
             init { delegate(node) }
             override fun onAttach() {
                 coroutineScope.launch {
-                    interactionSource.interactions.collect { if (it is androidx.compose.foundation.interaction.PressInteraction.Release) Sound.play(Sound.Fx.MOVE) }
+                    interactionSource.interactions.collect {
+                        when (it) {
+                            is androidx.compose.foundation.interaction.PressInteraction.Release -> Sound.play(Sound.Fx.MOVE)
+                            is androidx.compose.foundation.interaction.FocusInteraction.Focus -> {
+                                focused = true; if (Nav.keys) Sound.play(Sound.Fx.MOVE)
+                                redraw()
+                            }
+                            is androidx.compose.foundation.interaction.FocusInteraction.Unfocus -> {
+                                focused = false
+                                redraw()
+                            }
+                        }
+                    }
+                }
+            }
+            override fun androidx.compose.ui.graphics.drawscope.ContentDrawScope.draw() {
+                drawContent()
+                if (focused && Nav.keys) {
+                    val w = 3.dp.toPx()
+                    val r = minOf(size.height / 2, 18.dp.toPx())
+                    drawRoundRect(Color(UiState.accent), topLeft = androidx.compose.ui.geometry.Offset(w / 2, w / 2),
+                        size = androidx.compose.ui.geometry.Size(size.width - w, size.height - w),
+                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(r), style = androidx.compose.ui.graphics.drawscope.Stroke(w))
                 }
             }
         }

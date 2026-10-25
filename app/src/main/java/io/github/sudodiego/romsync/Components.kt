@@ -1,5 +1,6 @@
 package io.github.sudodiego.romsync
 
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.height
@@ -157,9 +158,11 @@ fun SpacedRow(modifier: Modifier = Modifier, content: @Composable RowScope.() ->
 fun Modifier.gamepadText(): Modifier = composed {
     val fm = androidx.compose.ui.platform.LocalFocusManager.current
     val kb = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
-    this.onPreviewKeyEvent { e ->
+    this.onFocusChanged { if (it.isFocused && Nav.keys) kb?.hide() }.onPreviewKeyEvent { e ->
         if (e.type != androidx.compose.ui.input.key.KeyEventType.KeyDown) return@onPreviewKeyEvent false
         when (e.nativeKeyEvent.keyCode) {
+            // Con mando el campo se enfoca como cualquier opción; A (o Enter) abre el teclado para escribir.
+            android.view.KeyEvent.KEYCODE_DPAD_CENTER, android.view.KeyEvent.KEYCODE_BUTTON_A -> { kb?.show(); true }
             android.view.KeyEvent.KEYCODE_DPAD_DOWN -> { kb?.hide(); fm.moveFocus(androidx.compose.ui.focus.FocusDirection.Down) }
             android.view.KeyEvent.KEYCODE_DPAD_UP -> { kb?.hide(); fm.moveFocus(androidx.compose.ui.focus.FocusDirection.Up) }
             android.view.KeyEvent.KEYCODE_BACK, android.view.KeyEvent.KEYCODE_BUTTON_B, android.view.KeyEvent.KEYCODE_ESCAPE -> {
@@ -170,6 +173,22 @@ fun Modifier.gamepadText(): Modifier = composed {
     }
 }
 
+/**
+ * Pedir el foco cuando la pantalla dice que le toca a este elemento ([StoreState.focusTarget] == [key]) y se está usando
+ * mando o teclado. Así al abrir la app, entrar a una plataforma o volver de una ficha, el foco cae donde corresponde.
+ */
+@Composable
+fun Modifier.focusWhen(key: String): Modifier {
+    val fr = androidx.compose.runtime.remember { androidx.compose.ui.focus.FocusRequester() }
+    androidx.compose.runtime.LaunchedEffect(StoreState.focusTarget, Nav.keys, Nav.pad) {
+        if (StoreState.focusTarget == key && (Nav.keys || Nav.pad) && Nav.game == null) {
+            kotlinx.coroutines.delay(80)
+            if (runCatching { fr.requestFocus() }.isSuccess) StoreState.focusTarget = null
+        }
+    }
+    return this.focusRequester(fr)
+}
+
 /** Con mando, este control no entra al recorrido de la cruceta (se usa con un botón del mando). */
 fun Modifier.notForDpad(): Modifier = this.focusProperties { canFocus = !Nav.keys } // con el dedo (Nav.keys = false) se puede tocar siempre
 
@@ -177,13 +196,13 @@ fun Modifier.notForDpad(): Modifier = this.focusProperties { canFocus = !Nav.key
  * Sombra dibujada como parte del contenido (no la del sistema). Las sombras de Android se dibujan aparte y no se
  * desvanecen con la pantalla: al entrar o salir de una pantalla con carátulas "saltaban". Esta se desvanece con todo.
  */
-fun Modifier.softShadow(radius: androidx.compose.ui.unit.Dp, elevation: androidx.compose.ui.unit.Dp = 8.dp, strength: Float = 0.28f): Modifier =
+fun Modifier.softShadow(radius: androidx.compose.ui.unit.Dp, elevation: androidx.compose.ui.unit.Dp = 8.dp, strength: Float = 0.22f): Modifier =
     this.drawBehind {
         if (elevation.value <= 0f) return@drawBehind
         drawIntoCanvas { c ->
             val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
                 color = android.graphics.Color.TRANSPARENT
-                setShadowLayer(elevation.toPx() * 1.4f, 0f, elevation.toPx() * 0.45f,
+                setShadowLayer(elevation.toPx() * 1.1f, 0f, elevation.toPx() * 0.35f,
                     android.graphics.Color.argb((255 * strength).toInt(), 0, 0, 0))
             }
             val r = radius.toPx()
@@ -191,24 +210,72 @@ fun Modifier.softShadow(radius: androidx.compose.ui.unit.Dp, elevation: androidx
         }
     }
 
-/** Un botón del mando dibujado como en consola: círculo con la letra (o una píldora para L, R, ZL, ZR, −, +). */
+/**
+ * Un botón del mando dibujado igual para cualquier mando (como Steam Big Picture): los 4 botones de la cara son un rombo
+ * de puntos con el que corresponde lleno (A abajo, B derecha, X izquierda, Y arriba); L/R son hombros, ZL/ZR gatillos,
+ * − y + los botones del centro. Sin letras, así sirve para PlayStation, Xbox o Nintendo.
+ */
 @Composable
 fun PadGlyph(logical: String) {
-    // Los nombres internos (los de Nintendo) se muestran como los del mando que se está usando.
-    val ps = Nav.padStyle == "ps"
-    val label = when (logical) {
-        "A" -> if (ps) "✕" else "A"; "B" -> if (ps) "○" else "B"; "X" -> if (ps) "□" else "X"; "Y" -> if (ps) "△" else "Y"
-        "L" -> if (ps) "L1" else "LB"; "R" -> if (ps) "R1" else "RB"; "ZL" -> if (ps) "L2" else "LT"; "ZR" -> if (ps) "R2" else "RT"
-        "−" -> if (ps) "Create" else "View"; "+" -> if (ps) "Options" else "Menu"
-        else -> logical
+    val fg = MaterialTheme.colorScheme.onSurface
+    val accent = MaterialTheme.colorScheme.primary
+    val w = if (logical in setOf("L", "R", "ZL", "ZR")) 30.dp else 22.dp
+    // Hombros y gatillos: la forma con la letra adentro (L o R), como en Steam; solo la forma no se entendía.
+    if (logical in setOf("L", "R", "ZL", "ZR")) {
+        val trigger = logical.startsWith("Z")
+        val letter = logical.takeLast(1)
+        Box(Modifier.size(w, 22.dp).clip(if (trigger) RoundedCornerShape(topStart = 11.dp, topEnd = 11.dp, bottomStart = 4.dp, bottomEnd = 4.dp)
+            else RoundedCornerShape(6.dp)).background(fg), contentAlignment = Alignment.Center) {
+            Text(letter + if (trigger) "T" else "B", color = MaterialTheme.colorScheme.surface, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+        }
+        return
     }
-    val tint = if (!ps) Color.White else when (logical) {
-        "A" -> Color(0xFF8FB4FF); "B" -> Color(0xFFFF7B7B); "X" -> Color(0xFFF5A3D6); "Y" -> Color(0xFF6FE3B4); else -> Color.White
-    }
-    val round = label.length == 1
-    Box(Modifier.then(if (round) Modifier.size(20.dp) else Modifier.height(20.dp)).clip(RoundedCornerShape(99.dp))
-        .background(Color(0xFF2B2F36)).padding(horizontal = if (round) 0.dp else 6.dp), contentAlignment = Alignment.Center) {
-        Text(label, color = tint, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+    androidx.compose.foundation.Canvas(Modifier.size(w, 22.dp)) {
+        val stroke = androidx.compose.ui.graphics.drawscope.Stroke(1.6.dp.toPx())
+        when (logical) {
+            "A", "B", "X", "Y" -> {
+                val c = androidx.compose.ui.geometry.Offset(size.width / 2, size.height / 2)
+                val d = size.height * 0.32f
+                val r = size.height * 0.15f
+                val pos = mapOf("A" to androidx.compose.ui.geometry.Offset(0f, d), "B" to androidx.compose.ui.geometry.Offset(d, 0f),
+                    "X" to androidx.compose.ui.geometry.Offset(-d, 0f), "Y" to androidx.compose.ui.geometry.Offset(0f, -d))
+                pos.forEach { (k, o) ->
+                    if (k == logical) drawCircle(accent, r * 1.25f, c + o) else drawCircle(fg.copy(alpha = 0.5f), r, c + o, style = stroke)
+                }
+            }
+            "L", "R" -> {
+                // Hombro: una barra redondeada, con el lado marcado.
+                drawRoundRect(fg, androidx.compose.ui.geometry.Offset(1f, size.height * 0.3f),
+                    androidx.compose.ui.geometry.Size(size.width - 2f, size.height * 0.42f), androidx.compose.ui.geometry.CornerRadius(size.height * 0.2f))
+                val x = if (logical == "L") size.width * 0.25f else size.width * 0.75f
+                drawCircle(accent, size.height * 0.12f, androidx.compose.ui.geometry.Offset(x, size.height * 0.51f))
+            }
+            "ZL", "ZR" -> {
+                // Gatillo: forma alta y redondeada arriba, con el lado marcado.
+                val left = logical == "ZL"
+                val path = androidx.compose.ui.graphics.Path().apply {
+                    addRoundRect(androidx.compose.ui.geometry.RoundRect(size.width * 0.2f, 1f, size.width * 0.8f, size.height - 1f,
+                        topLeftCornerRadius = androidx.compose.ui.geometry.CornerRadius(size.height * 0.45f),
+                        topRightCornerRadius = androidx.compose.ui.geometry.CornerRadius(size.height * 0.45f),
+                        bottomLeftCornerRadius = androidx.compose.ui.geometry.CornerRadius(3f), bottomRightCornerRadius = androidx.compose.ui.geometry.CornerRadius(3f)))
+                }
+                drawPath(path, fg)
+                drawCircle(accent, size.height * 0.12f, androidx.compose.ui.geometry.Offset(if (left) size.width * 0.38f else size.width * 0.62f, size.height * 0.62f))
+            }
+            "−" -> {
+                // Botón de vista: dos rectángulos superpuestos.
+                drawRoundRect(fg, androidx.compose.ui.geometry.Offset(size.width * 0.18f, size.height * 0.22f),
+                    androidx.compose.ui.geometry.Size(size.width * 0.45f, size.height * 0.38f), androidx.compose.ui.geometry.CornerRadius(3f), style = stroke)
+                drawRoundRect(fg, androidx.compose.ui.geometry.Offset(size.width * 0.38f, size.height * 0.42f),
+                    androidx.compose.ui.geometry.Size(size.width * 0.45f, size.height * 0.38f), androidx.compose.ui.geometry.CornerRadius(3f), style = stroke)
+            }
+            "+" -> {
+                // Botón de menú: tres rayas.
+                for (k in 0 until 3) drawLine(fg, androidx.compose.ui.geometry.Offset(size.width * 0.2f, size.height * (0.3f + k * 0.2f)),
+                    androidx.compose.ui.geometry.Offset(size.width * 0.8f, size.height * (0.3f + k * 0.2f)), 1.8.dp.toPx(),
+                    androidx.compose.ui.graphics.StrokeCap.Round)
+            }
+        }
     }
 }
 
@@ -230,7 +297,7 @@ fun PadHints(hints: List<Pair<String, String>>) {
 fun PadBar(modifier: Modifier = Modifier) {
     if (!Nav.pad) return
     androidx.compose.foundation.layout.FlowRow(
-        modifier.widthIn(max = 900.dp).clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.surface.copy(alpha = 0.92f))
+        modifier.widthIn(max = 900.dp).softShadow(16.dp, 6.dp, 0.18f).clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.surface.copy(alpha = 0.95f))
             .padding(horizontal = 12.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {

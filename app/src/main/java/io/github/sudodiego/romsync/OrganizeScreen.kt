@@ -206,7 +206,7 @@ private fun Fix(icon: ImageVector, title: String, detail: String, count: Int, ac
             Text("$title ($count)", fontWeight = FontWeight.Bold)
             if (detail.isNotBlank()) Muted(detail)
         }
-        FilledTonalButton(onClick = { Sound.play(Sound.Fx.MOVE); onClick() }) { Text(action) }
+        FilledTonalButton(onClick = { Sound.play(Sound.Fx.MOVE); onClick() }, modifier = Modifier.focusWhen("entrada:ORGANIZE")) { Text(action) }
     }
 }
 

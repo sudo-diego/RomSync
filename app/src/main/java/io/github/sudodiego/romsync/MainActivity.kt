@@ -1,5 +1,7 @@
 package io.github.sudodiego.romsync
 
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.focus.focusRequester
 import android.Manifest
 import android.content.Intent
 import android.net.Uri
@@ -96,15 +98,27 @@ enum class Tab(val label: String, val icon: ImageVector) {
 }
 
 /** Estado de navegación de la app (pestaña y juego abierto). */
-/** Al moverse con la cruceta, el elemento enfocado queda centrado en la lista (si no, quedaba pegado al borde). */
+/** En las filas (de lado): lo enfocado queda centrado, como en consola. */
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 val CenteredFocus = object : androidx.compose.foundation.gestures.BringIntoViewSpec {
+    override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float =
+        if (Nav.keys) offset - (containerSize - size) / 2f else MarginFocus.calculateScrollDistance(offset, size, containerSize)
+}
+
+/**
+ * Hacia arriba y abajo: solo se mueve si lo enfocado no se ve entero (con un margen). Centrar también en vertical hacía
+ * que la pantalla subiera y bajara un poco al pasar de un juego a otro (las tarjetas no miden todas lo mismo).
+ */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+val MarginFocus = object : androidx.compose.foundation.gestures.BringIntoViewSpec {
     override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float {
-        // Si ya se ve entero con un margen, no se mueve (así el dedo no hace saltar la lista).
-        val margin = containerSize * 0.08f
-        if (!Nav.keys && offset >= 0 && offset + size <= containerSize) return 0f
-        if (Nav.keys) return offset - (containerSize - size) / 2f
-        return if (offset < margin) offset - margin else if (offset + size > containerSize - margin) offset + size - (containerSize - margin) else 0f
+        val margin = containerSize * 0.1f
+        return when {
+            size > containerSize - 2 * margin -> offset - margin
+            offset < margin -> offset - margin
+            offset + size > containerSize - margin -> offset + size - (containerSize - margin)
+            else -> 0f
+        }
     }
 }
 
@@ -119,6 +133,12 @@ object Nav {
     /** Cómo se llaman sus botones: "ps" (✕ ○ □ △) o "xbox" (A B X Y). Sale del último mando que se usó. */
     var padStyle by mutableStateOf("xbox")
     fun styleOf(d: android.view.InputDevice?): String? = d?.let { if (it.vendorId == 0x054C) "ps" else "xbox" }
+    /** Foco del panel lateral (para volver a él con B desde la pantalla principal de una sección). */
+    private val sidebar = HashMap<Tab, androidx.compose.ui.focus.FocusRequester>()
+    fun sidebarFocus(t: Tab) = sidebar.getOrPut(t) { androidx.compose.ui.focus.FocusRequester() }
+    var inSidebar by mutableStateOf(false)
+    /** Al entrar a una sección con mando, el foco va a lo principal de esa pantalla. */
+    fun entryOf(t: Tab) = if (t == Tab.STORE) "carrusel" else "entrada:${t.name}"
     /** El panel lateral dentro de una ficha (empieza cerrado para dejarle espacio al juego). */
     var sidebarInGame by mutableStateOf(false)
 
@@ -230,7 +250,7 @@ class MainActivity : ComponentActivity() {
                         @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
                         androidx.compose.runtime.CompositionLocalProvider(
                             androidx.compose.foundation.LocalOverscrollConfiguration provides null,
-                            androidx.compose.foundation.gestures.LocalBringIntoViewSpec provides CenteredFocus,
+                            androidx.compose.foundation.gestures.LocalBringIntoViewSpec provides MarginFocus,
                         ) {
                             AppShell()
                         }
@@ -250,12 +270,18 @@ class MainActivity : ComponentActivity() {
     /** Gatillos analógicos (ZL/ZR en muchos mandos no son botones sino ejes): se tratan como L2/R2 al pasar la mitad. */
     private var lt = false
     private var rt = false
+    /** El mando manda L2/R2 como botones (además del eje): entonces el eje se ignora. */
+    private var triggerKeys = false
+    private var lastTrigger = 0L
     override fun dispatchGenericMotionEvent(ev: android.view.MotionEvent): Boolean {
         if (ev.source and android.view.InputDevice.SOURCE_JOYSTICK == android.view.InputDevice.SOURCE_JOYSTICK) {
             val l = maxOf(ev.getAxisValue(android.view.MotionEvent.AXIS_LTRIGGER), ev.getAxisValue(android.view.MotionEvent.AXIS_BRAKE))
             val r = maxOf(ev.getAxisValue(android.view.MotionEvent.AXIS_RTRIGGER), ev.getAxisValue(android.view.MotionEvent.AXIS_GAS))
-            if (l > 0.6f && !lt) { lt = true; padButton(android.view.KeyEvent.KEYCODE_BUTTON_L2) } else if (l < 0.3f) lt = false
-            if (r > 0.6f && !rt) { rt = true; padButton(android.view.KeyEvent.KEYCODE_BUTTON_R2) } else if (r < 0.3f) rt = false
+            // Si el mando también manda los gatillos como botones, se usan esos (si no, un apretón contaba dos veces).
+            if (!triggerKeys) {
+                if (l > 0.6f && !lt) { lt = true; padButton(android.view.KeyEvent.KEYCODE_BUTTON_L2) } else if (l < 0.3f) lt = false
+                if (r > 0.6f && !rt) { rt = true; padButton(android.view.KeyEvent.KEYCODE_BUTTON_R2) } else if (r < 0.3f) rt = false
+            }
         }
         return super.dispatchGenericMotionEvent(ev)
     }
@@ -263,12 +289,19 @@ class MainActivity : ComponentActivity() {
     /** Botones del mando que no son de la cruceta (devuelve true si se usaron). */
     private fun padButton(code: Int): Boolean {
         Nav.keys = true
+        // Un gatillo, una vez: nada de dos cambios seguidos por el mismo apretón.
+        if (code == android.view.KeyEvent.KEYCODE_BUTTON_L2 || code == android.view.KeyEvent.KEYCODE_BUTTON_R2) {
+            val now = android.os.SystemClock.uptimeMillis()
+            if (now - lastTrigger < 300) return true
+            lastTrigger = now
+        }
         when (code) {
             android.view.KeyEvent.KEYCODE_BUTTON_L1, android.view.KeyEvent.KEYCODE_BUTTON_R1 -> {
                 val tabs = Tab.entries
                 val step = if (code == android.view.KeyEvent.KEYCODE_BUTTON_R1) 1 else -1
                 Nav.game = null
                 Nav.tab = tabs[(tabs.indexOf(Nav.tab) + step + tabs.size) % tabs.size]
+                StoreState.focusTarget = Nav.entryOf(Nav.tab)
                 Sound.play(Sound.Fx.MOVE)
                 return true
             }
@@ -284,6 +317,7 @@ class MainActivity : ComponentActivity() {
         val padKeys = setOf(android.view.KeyEvent.KEYCODE_BUTTON_L1, android.view.KeyEvent.KEYCODE_BUTTON_R1,
             android.view.KeyEvent.KEYCODE_BUTTON_L2, android.view.KeyEvent.KEYCODE_BUTTON_R2, android.view.KeyEvent.KEYCODE_BUTTON_Y,
             android.view.KeyEvent.KEYCODE_BUTTON_X, android.view.KeyEvent.KEYCODE_BUTTON_START, android.view.KeyEvent.KEYCODE_BUTTON_SELECT)
+        if (event.keyCode == android.view.KeyEvent.KEYCODE_BUTTON_L2 || event.keyCode == android.view.KeyEvent.KEYCODE_BUTTON_R2) triggerKeys = true
         if (event.keyCode in padKeys) {
             if (event.action == android.view.KeyEvent.ACTION_DOWN && event.repeatCount == 0 && padButton(event.keyCode)) return true
             if (event.action == android.view.KeyEvent.ACTION_UP) return true
@@ -332,13 +366,26 @@ class MainActivity : ComponentActivity() {
 fun AppShell() {
     val wide = LocalConfiguration.current.screenWidthDp >= 600
     val active = DownloadService.items.count { it.status == DlStatus.RUNNING || it.status == DlStatus.QUEUED }
-    BackHandler(enabled = Nav.game != null) { Sound.play(Sound.Fx.BACK); Nav.game = null }
-
     fun go(t: Tab) {
         if (Nav.tab != t || Nav.game != null) Sound.play(Sound.Fx.MOVE)
         Nav.tab = t; Nav.game = null
+        StoreState.focusTarget = Nav.entryOf(t)
+    }
+    // Si nadie tomó el foco de entrada (sección vacía, como Descargas sin nada), va a la sección en el panel lateral.
+    androidx.compose.runtime.LaunchedEffect(StoreState.focusTarget) {
+        val t = StoreState.focusTarget ?: return@LaunchedEffect
+        if (!t.startsWith("entrada:")) return@LaunchedEffect
+        kotlinx.coroutines.delay(450)
+        if (StoreState.focusTarget == t && (Nav.keys || Nav.pad)) { runCatching { Nav.sidebarFocus(Nav.tab).requestFocus() }; StoreState.focusTarget = null }
+    }
+    // B en la pantalla principal de una sección: al panel lateral (no sale de la app); B en el panel: de vuelta al contenido.
+    BackHandler(enabled = Nav.game == null && (Nav.keys || Nav.pad)) {
+        Sound.play(Sound.Fx.BACK)
+        if (Nav.inSidebar) StoreState.focusTarget = Nav.entryOf(Nav.tab)
+        else runCatching { Nav.sidebarFocus(Nav.tab).requestFocus() }
     }
 
+    BackHandler(enabled = Nav.game != null) { Sound.play(Sound.Fx.BACK); Nav.game = null }
     Box(Modifier.fillMaxSize()) {
         AppBackground()
         // En pantalla completa no se reserva el espacio de las barras de Android (quedaba un hueco arriba).
@@ -379,7 +426,7 @@ private fun Sidebar(active: Int, go: (Tab) -> Unit) {
     val open = if (Nav.game == null) UiState.sidebarOpen else Nav.sidebarInGame
     val width by animateDpAsState(if (open) 232.dp else 84.dp, spring(dampingRatio = 0.8f, stiffness = 400f), label = "panel")
     Column(
-        Modifier.width(width).fillMaxHeight().padding(vertical = 14.dp, horizontal = 12.dp),
+        Modifier.width(width).fillMaxHeight().onFocusChanged { Nav.inSidebar = it.hasFocus }.padding(vertical = 14.dp, horizontal = 12.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Row(Modifier.height(56.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -402,12 +449,14 @@ private fun Sidebar(active: Int, go: (Tab) -> Unit) {
             val pressed = remember { MutableInteractionSource() }
             val isPressed by pressed.collectIsPressedAsState()
             val scale by animateFloatAsState(if (isPressed) 0.94f else 1f, label = "s")
+            // Cerrado: el ícono centrado (con el margen del panel abierto, el recuadro de foco quedaba corrido).
             Row(
-                Modifier.fillMaxWidth().height(52.dp).graphicsLayer { scaleX = scale; scaleY = scale }
+                Modifier.fillMaxWidth().height(52.dp).focusRequester(Nav.sidebarFocus(t)).graphicsLayer { scaleX = scale; scaleY = scale }
                     .focusHighlight(RoundedCornerShape(16.dp)).clip(RoundedCornerShape(16.dp)).background(bg)
                     .clickable(interactionSource = pressed, indication = null) { go(t) }
-                    .padding(horizontal = 16.dp),
+                    .padding(horizontal = if (open) 16.dp else 0.dp),
                 verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = if (open) Arrangement.Start else Arrangement.Center,
             ) {
                 CompositionLocalProvider(LocalContentColor provides fg) {
                     if (t == Tab.DOWNLOADS && active > 0) BadgedBox(badge = { Badge { Text("$active") } }) { Icon(t.icon, null) }

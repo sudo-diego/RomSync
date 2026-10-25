@@ -83,53 +83,82 @@ fun OrganizeScreen() {
     }
     val noArt = remember(Repo.library, Repo.tabletOnly, Art.versions.size, Art.bulkTotal) { Repo.allGames().count { Art.needsFetch(it) } }
 
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        item { Text("Organizar", style = MaterialTheme.typography.headlineLarge) }
-        item { StorageCard() }
-        item { AppsStorageCard() }
-        item {
-            Section("Por revisar") {
-                val missingKeys = if (hasSwitch && !keysOk) 1 else 0
-                val any = missingKeys + junk + stray + dups.size + only.size + partial.size + biosMissing.size + noArt + tidy.size > 0
-                if (Tidy.scanning) SpacedRow {
-                    androidx.compose.material3.CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                    Muted(Tidy.progress.ifEmpty { "Revisando tus juegos…" })
-                }
-                if (!any) SpacedRow {
-                    Icon(Icons.Rounded.CheckCircle, null, tint = Palette.ok)
-                    Text("Todo en orden.", fontWeight = FontWeight.SemiBold)
-                }
-                Fix(Icons.Rounded.Key, "Faltan las llaves de Switch", "prod.keys: sin ellas no se reconocen los juegos de Switch " +
-                    "que no traen su código en el nombre. Se buscan en el dispositivo; si no aparecen, elige el archivo",
-                    missingKeys, "Buscar") {
-                    appScope.launch {
-                        val ok = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { SwitchId.findKeys() }
-                        keysOk = ok
-                        if (ok) {
-                            android.widget.Toast.makeText(ctx, "Llaves encontradas y guardadas en bios", android.widget.Toast.LENGTH_LONG).show()
-                            Tidy.scan()
-                        } else {
-                            android.widget.Toast.makeText(ctx, "No las encontré: elige dónde está prod.keys", android.widget.Toast.LENGTH_LONG).show()
-                            pickKeys.launch(arrayOf("*/*"))
+    val missingKeys = if (hasSwitch && !keysOk) 1 else 0
+    val gameIssues = tidy.size + dups.size + partial.size + only.size + noArt
+    val systemIssues = missingKeys + junk + stray + biosMissing.size
+    // Dos columnas: a la izquierda lo que hay que revisar (juegos y sistema); a la derecha el espacio.
+    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize()) {
+        val wide = maxWidth > 900.dp
+        val issues: @Composable () -> Unit = {
+            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                // Resumen arriba: cuántas cosas hay y si está todo bien.
+                Section("") {
+                    SpacedRow {
+                        Icon(if (gameIssues + systemIssues == 0) Icons.Rounded.CheckCircle else Icons.Rounded.AutoFixHigh, null,
+                            tint = if (gameIssues + systemIssues == 0) Palette.ok else MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(36.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(if (gameIssues + systemIssues == 0) "Todo en orden" else "${gameIssues + systemIssues} cosas por revisar",
+                                style = MaterialTheme.typography.titleLarge)
+                            Muted(if (Tidy.scanning) Tidy.progress.ifEmpty { "Revisando tus juegos…" }
+                                else "Nada se cambia sin que lo veas y lo confirmes.")
                         }
+                        if (Tidy.scanning) androidx.compose.material3.CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
                     }
                 }
-                Fix(Icons.Rounded.AutoFixHigh, "Juegos por ordenar", "Comprimidos, nombres raros, fuera de su carpeta o repetidos",
-                    tidy.size) { open = "tidy" }
-                Fix(Icons.Rounded.DeleteSweep, "Archivos que sobran", "Descargas a medias y copias viejas de partidas", junk) { open = "junk" }
-                Fix(Icons.Rounded.Memory, "BIOS fuera de su carpeta", "Van a «bios», donde las buscan los emuladores", stray) { open = "bios" }
-                Fix(Icons.Rounded.Memory, "BIOS que faltan en el dispositivo",
-                    biosMissing.take(3).joinToString(", ") { it.path.substringAfterLast('/') } + if (biosMissing.size > 3) "…" else "",
-                    biosMissing.size, "Copiar") {
-                    Sound.play(Sound.Fx.DONE)
-                    DownloadService.enqueue(ctx, Download("bios", "BIOS", "bios", biosMissing, bios = true))
+                if (gameIssues > 0) Section("Juegos") {
+                    Fix(Icons.Rounded.AutoFixHigh, "Juegos por ordenar", "Comprimidos, nombres raros, fuera de su carpeta o repetidos",
+                        tidy.size) { open = "tidy" }
+                    Fix(Icons.Rounded.ContentCopy, "Juegos repetidos", "El mismo juego en varias regiones o formatos", dups.size) { open = "dups" }
+                    Fix(Icons.Rounded.Downloading, "Juegos a medias", "Les faltan archivos en el dispositivo", partial.size) { open = "partial" }
+                    Fix(Icons.Rounded.CloudUpload, "Sin copia en el servidor", "Solo están en el dispositivo: si lo pierdes, se pierden", only.size) { open = "only" }
+                    Fix(Icons.Rounded.Image, "Sin imágenes", "Carátula, fondo o logo por buscar", noArt, "Buscar") {
+                        Art.startFetchAll(Repo.allGames(), quiet = true)
+                    }
                 }
-                Fix(Icons.Rounded.ContentCopy, "Juegos repetidos", "El mismo juego en varias regiones o formatos", dups.size) { open = "dups" }
-                Fix(Icons.Rounded.CloudUpload, "Sin copia en el servidor", "Solo están en el dispositivo: si lo pierdes, se pierden", only.size) { open = "only" }
-                Fix(Icons.Rounded.Downloading, "Juegos a medias", "Les faltan archivos en el dispositivo", partial.size) { open = "partial" }
-                Fix(Icons.Rounded.Image, "Sin imágenes", "Carátula, fondo o logo por buscar", noArt, "Buscar") {
-                    Art.startFetchAll(Repo.allGames(), quiet = true)
+                if (systemIssues > 0) Section("Sistema") {
+                    Fix(Icons.Rounded.Key, "Faltan las llaves de Switch", "prod.keys: sin ellas no se reconocen los juegos de Switch " +
+                        "que no traen su código en el nombre. Se buscan en el dispositivo; si no aparecen, elige el archivo",
+                        missingKeys, "Buscar") {
+                        appScope.launch {
+                            val ok = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { SwitchId.findKeys() }
+                            keysOk = ok
+                            if (ok) {
+                                android.widget.Toast.makeText(ctx, "Llaves encontradas y guardadas en bios", android.widget.Toast.LENGTH_LONG).show()
+                                Tidy.scan()
+                            } else {
+                                android.widget.Toast.makeText(ctx, "No las encontré: elige dónde está prod.keys", android.widget.Toast.LENGTH_LONG).show()
+                                pickKeys.launch(arrayOf("*/*"))
+                            }
+                        }
+                    }
+                    Fix(Icons.Rounded.Memory, "BIOS que faltan en el dispositivo",
+                        biosMissing.take(3).joinToString(", ") { it.path.substringAfterLast('/') } + if (biosMissing.size > 3) "…" else "",
+                        biosMissing.size, "Copiar") {
+                        Sound.play(Sound.Fx.DONE)
+                        DownloadService.enqueue(ctx, Download("bios", "BIOS", "bios", biosMissing, bios = true))
+                    }
+                    Fix(Icons.Rounded.Memory, "BIOS fuera de su carpeta", "Van a «bios», donde las buscan los emuladores", stray) { open = "bios" }
+                    Fix(Icons.Rounded.DeleteSweep, "Archivos que sobran", "Descargas a medias y copias viejas de partidas", junk) { open = "junk" }
                 }
+            }
+        }
+        val space: @Composable () -> Unit = {
+            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                StorageCard()
+                AppsStorageCard()
+            }
+        }
+        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            item { Text("Organizar", style = MaterialTheme.typography.headlineLarge) }
+            if (wide) item {
+                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Box(Modifier.weight(1.1f)) { issues() }
+                    Box(Modifier.weight(1f)) { space() }
+                }
+            } else {
+                item { issues() }
+                item { space() }
             }
         }
     }

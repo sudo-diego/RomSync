@@ -271,3 +271,17 @@ Descargas, y propone un plan (todo marcado, con "Desmarcar todo"); no cambia nad
 - Organizar → "Apps y emuladores": espacio de apps elegidas (permiso Acceso a uso), Abrir / Gestionar.
 - Tienda sin conexión: aviso con la fecha de la lista guardada y "Reintentar".
 - Rendimiento: ondas con menos líneas y trazos reutilizados; se pide la frecuencia más alta de pantalla.
+
+## Ronda 0.3.0 (25-10-2026)
+
+- Ordenar: los de Switch se proponen con el formato oficial aunque ya tengan TitleID ("Juego[TID][US][v0]" →
+  "Nombre oficial [TID].nsp"); el nombre de cada DLC (lo que va tras [DLC]) se conserva.
+- Ficha: Borrar con la misma forma que Descargar (`BigDeleteButton`); el diálogo separa en tarjetas "Del dispositivo",
+  "Sus partidas del dispositivo" y, aparte en rojo, "Del servidor"; cada una va a su "¿Seguro?".
+- Ficha de Switch: `SwitchSummary` (actualización al día o cuál falta, DLC tienes X de Y, cuántos en el dispositivo,
+  lista de los que faltan). Partidas: en el dispositivo y estado del respaldo en el servidor (al día/desactualizado/sin).
+- Carrusel con cruceta: izquierda/derecha cambian de página con el foco; abajo va a la primera plataforma.
+- Ajustes: dirección y puerto del servidor a mano (otra red o Tailscale 100.x.x.x).
+- Partidas rediseñada: resumen + "Respaldar todo" grande, tarjetas en cuadrícula con ícono y estado, no instalados
+  en una línea, respaldo automático al final. Organizar en dos columnas (Juegos/Sistema | espacio y apps).
+- Sin probar en la tablet (adb inalámbrico no conectaba).

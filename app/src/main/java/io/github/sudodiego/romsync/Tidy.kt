@@ -104,8 +104,11 @@ object Tidy {
             tid.endsWith("800") -> "switch/Actualizaciones y DLC/$name [UPD] [$tid]" + (ver?.let { "[v$it]" } ?: "") + ext
             else -> {
                 // El nombre del DLC sale del archivo ("[DLC Megadimension]", "[Wave 1-6 DLC Unlocker]").
-                val label = Regex("\\[([^]]*dlc[^]]*)]", RegexOption.IGNORE_CASE).find(innerName)?.groupValues?.get(1)
-                    ?.replace(Regex("\\bdlc\\b", RegexOption.IGNORE_CASE), "")?.replace('_', ' ')?.trim()?.let(::safeName)
+                // Si ya está con nuestro formato ("Juego [DLC] Traje de Aerith [TID]"), se conserva lo que va tras [DLC].
+                val ours = Regex("\\[DLC]\\s*([^\\[]+)", RegexOption.IGNORE_CASE).find(innerName)?.groupValues?.get(1)?.trim()
+                val label = (ours?.takeIf { it.isNotBlank() } ?: Regex("\\[([^]]*dlc[^]]*)]", RegexOption.IGNORE_CASE).find(innerName)
+                    ?.groupValues?.get(1)?.replace(Regex("\\bdlc\\b", RegexOption.IGNORE_CASE), ""))
+                    ?.replace('_', ' ')?.trim()?.let(::safeName)
                 "switch/Actualizaciones y DLC/$name [DLC]" + (label?.takeIf { it.isNotBlank() }?.let { " $it" } ?: "") + " [$tid]$ext"
             }
         }
@@ -126,8 +129,9 @@ object Tidy {
             if (reTid.find(name) == null) why += "le faltaba el código del juego"
             if (name.contains("tendoku", true)) why += "tenía la marca de la página"
             if (!tid.endsWith("000") && !rel.startsWith("switch/Actualizaciones y DLC/")) why += "es una actualización o DLC: va con las otras"
-            val wellPlaced = why.isEmpty()
-            return (if (wellPlaced) rel else target) to why
+            // Todo con el mismo formato: nombre oficial + código (antes se dejaban "Juego[TID][US][v0]" y nombres no oficiales).
+            if (why.isEmpty() && target != rel && officialName(baseOf(tid)) != null) why += "nombre distinto al oficial"
+            return (if (why.isEmpty()) rel else target) to why
         }
         var stem = Group.stem(name)
         val original = stem

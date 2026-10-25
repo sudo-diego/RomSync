@@ -14,8 +14,8 @@ android {
         applicationId = "io.github.sudodiego.romsync"
         minSdk = 29
         targetSdk = 35
-        versionCode = 2
-        versionName = "0.2.0"
+        versionCode = 3
+        versionName = "0.3.0"
     }
 
     // Igual que en TBF Companion: keystore.properties (fuera de git) apunta a la clave propia; sin él, clave de depuración.

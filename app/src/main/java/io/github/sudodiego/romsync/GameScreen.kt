@@ -1,5 +1,9 @@
 package io.github.sudodiego.romsync
 
+import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.Save
+import androidx.compose.material.icons.rounded.Dns
+import androidx.compose.material.icons.rounded.CloudDone
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.foundation.border
 import androidx.compose.ui.input.key.type
@@ -237,17 +241,17 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
                         }) { Text("Copiar al servidor · ${formatSize(g.size)}") }
                     }
                     if ((w.presence != Presence.MISSING || Prefs.configured) && dl?.status != DlStatus.RUNNING) {
-                        OutlinedButton(onClick = { Sound.play(Sound.Fx.WARN); askDelete = true },
-                            modifier = Modifier.height(if (toDownload.isNotEmpty() && dl == null) 64.dp else 40.dp).focusHighlight(RoundedCornerShape(99.dp), grow = 1.02f),
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)) {
-                            Icon(Icons.Rounded.Delete, null); Spacer(Modifier.width(6.dp)); Text("Borrar…")
-                        }
+                        // Sin nada para descargar, Borrar ocupa el lugar grande (igual que Descargar).
+                        val alone = !(w.presence != Presence.INSTALLED && w.presence != Presence.TABLET_ONLY && toDownload.isNotEmpty()) &&
+                            dl == null && !(w.presence == Presence.TABLET_ONLY && Prefs.configured && g.kind != "shortcut")
+                        BigDeleteButton(if (alone) Modifier.weight(1f) else Modifier) { Sound.play(Sound.Fx.WARN); askDelete = true }
                     }
                 }
                 dl?.takeIf { it.status == DlStatus.FAILED }?.let { Text("La descarga falló: ${it.error}", color = MaterialTheme.colorScheme.error) }
 
+                if (g.kind == "switch") SwitchSummary(g)
                 if (g.parts.size > 1 || g.parts.any { it.kind != "base" }) {
-                    Section("Contenido") {
+                    Section(if (g.kind == "switch") "Lo que tienes" else "Contenido") {
                         // Smash tiene ~100 DLC: marcar o desmarcar de a uno era imposible.
                         val missing = g.parts.filter { p -> !p.files.all { Repo.has(it.path) } }.map { it.titleId }.toSet()
                         if (missing.size > 1) SpacedRow {
@@ -266,7 +270,7 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
                                 }
                                 Text(formatSize(p.size))
                                 Spacer(Modifier.width(12.dp))
-                                if (have) Pill("En el dispositivo", Palette.ok)
+                                if (have) Pill("En el dispositivo", Palette.ok) else Pill("En el servidor", Palette.blue)
                             }
                         }
                     }
@@ -291,7 +295,6 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
                     }
                 }
                 TabletExtras(g)
-                if (g.kind == "switch") SwitchStatus(g)
 
                 VitaInstallSection(g)
                 GameSavesSection(g)
@@ -401,10 +404,15 @@ private fun GameSavesSection(g: Game) {
     var units by remember(g) { mutableStateOf<Map<String, Saves.Unit?>>(emptyMap()) }
     var restoreFor by remember { mutableStateOf<GameSaves.Link?>(null) }
     var reload by remember { mutableStateOf(0) }
+    // Último respaldo en el servidor que trae este juego (por emulador); null = no se pudo ver (sin conexión).
+    var lastBackup by remember(g) { mutableStateOf<Map<String, SaveBackupInfo?>?>(null) }
     LaunchedEffect(g, reload) {
         val ls = GameSaves.links(ctx, g)
         links = ls
         units = ls.associate { l -> l.emu.id to runCatching { Saves.currentUnits(ctx, l.emu).firstOrNull { it.key == l.key } }.getOrNull() }
+        if (Prefs.configured) lastBackup = runCatching {
+            Pc.use { c -> ls.associate { l -> l.emu.id to Backups.list(c, l.emu.id).firstOrNull { b -> b.keys.isEmpty() || l.key in b.keys } } }
+        }.getOrNull()
     }
     val ls = links ?: return
     if (ls.isEmpty()) return
@@ -412,14 +420,31 @@ private fun GameSavesSection(g: Game) {
         ls.forEach { l ->
             val u = units[l.emu.id]
             val busy = Saves.busy[l.emu.id]
+            val fmt = java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.SHORT, java.text.DateFormat.SHORT)
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(l.emu.name, fontWeight = FontWeight.SemiBold)
-                Muted(when {
-                    busy != null -> busy
-                    u == null -> "Sin partidas en el dispositivo"
-                    else -> "${u.files} archivo(s) · ${formatSize(u.bytes)} · " +
-                        java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.SHORT, java.text.DateFormat.SHORT).format(java.util.Date(u.newest))
-                })
+                // Dos estados, cada uno en su línea: en el dispositivo y en el servidor.
+                SpacedRow {
+                    Icon(Icons.Rounded.TabletAndroid, null, tint = if (u != null) Palette.ok else MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(when {
+                        busy != null -> busy
+                        u == null -> "Sin partidas en el dispositivo"
+                        else -> "En el dispositivo: ${formatSize(u.bytes)} · última vez ${fmt.format(java.util.Date(u.newest))}"
+                    })
+                }
+                val b = lastBackup?.get(l.emu.id)
+                val bAt = b?.let { runCatching { java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", java.util.Locale.ROOT).parse(it.at)?.time }.getOrNull() }
+                val (bOk, bText) = when {
+                    !Prefs.configured -> false to "Sin servidor: no hay respaldo"
+                    lastBackup == null -> null to "Respaldo: no se pudo revisar (sin conexión)"
+                    b == null -> false to (if (u != null) "Sin respaldo en el servidor" else "Sin respaldo")
+                    u != null && bAt != null && u.newest > bAt + 60_000 -> false to "Respaldo desactualizado (${fmt.format(java.util.Date(bAt))}): jugaste después"
+                    else -> true to "Respaldada en el servidor" + (bAt?.let { " · ${fmt.format(java.util.Date(it))}" } ?: "")
+                }
+                SpacedRow {
+                    Icon(Icons.Rounded.CloudDone, null, tint = when (bOk) { true -> Palette.ok; false -> Palette.warn; null -> MaterialTheme.colorScheme.onSurfaceVariant })
+                    Text(bText, color = if (bOk == false) Palette.warn else MaterialTheme.colorScheme.onSurface)
+                }
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(enabled = u != null && busy == null && Prefs.configured, onClick = {
                         appScope.launch {
@@ -541,9 +566,12 @@ private fun VersionPicker(g: Game, versions: List<Game>) {
     }
 }
 
-/** Switch: si hay una actualización más nueva y cuántos DLC existen (titledb), comparado con lo que tienes. */
+/**
+ * Switch, en tres líneas claras: la actualización (al día o cuál falta), los DLC (cuántos tienes de los que existen,
+ * cuántos están en el dispositivo) y los que te faltan (según titledb; no los tienes ni en el servidor).
+ */
 @Composable
-private fun SwitchStatus(g: Game) {
+private fun SwitchSummary(g: Game) {
     val base = (g.parts.firstOrNull { it.kind == "base" }?.titleId ?: g.serial).takeIf { it.length == 16 } ?: return
     LaunchedEffect(base) {
         // Todos los de Switch de una vez: así se baja una sola vez por semana y no por cada ficha.
@@ -551,21 +579,47 @@ private fun SwitchStatus(g: Game) {
             .mapNotNull { gg -> (gg.parts.firstOrNull { it.kind == "base" }?.titleId ?: gg.serial).takeIf { it.length == 16 } }.toSet() + base)
     }
     val info = remember(base, SwitchDb.updatedAt) { SwitchDb.info(base) }
+    val dlcs = g.parts.filter { it.kind == "dlc" }
+    val dlcOnDevice = dlcs.count { p -> p.files.all { Repo.has(it.path) } }
+    val update = g.parts.filter { it.kind == "update" }.maxByOrNull { it.version }
+    var showMissing by remember { mutableStateOf(false) }
     Section("Actualizaciones y DLC") {
-        if (info == null) {
-            Muted(if (SwitchDb.busy) "Buscando…" else "Sin internet")
-            return@Section
+        @Composable
+        fun Line(ok: Boolean?, title: String, detail: String) = Row(verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Icon(when (ok) { true -> Icons.Rounded.CheckCircle; false -> Icons.Rounded.Warning; null -> Icons.Rounded.Info }, null,
+                tint = when (ok) { true -> Palette.ok; false -> Palette.warn; null -> MaterialTheme.colorScheme.onSurfaceVariant })
+            Column(Modifier.weight(1f)) {
+                Text(title, fontWeight = FontWeight.SemiBold)
+                if (detail.isNotBlank()) Muted(detail)
+            }
         }
-        val have = g.parts.filter { it.kind == "update" }.maxOfOrNull { it.version } ?: 0L
-        val upToDate = info.latest == 0L || have >= info.latest
-        Text(when {
-            info.latest == 0L -> "Sin actualizaciones"
-            upToDate -> "Actualizado (${SwitchDb.label(have)})"
-            else -> "Hay una actualización nueva: ${SwitchDb.label(info.latest)} (tienes ${SwitchDb.label(have).removePrefix("versión ")})"
-        }, color = if (upToDate) Palette.ok else Palette.warn, fontWeight = FontWeight.SemiBold)
-        val owned = g.parts.filter { it.kind == "dlc" }.map { it.titleId.uppercase() }.toSet()
-        if (info.dlcs.isNotEmpty()) Text("DLC: ${info.dlcs.count { it in owned }} de ${info.dlcs.size}",
-            color = if (info.dlcs.all { it in owned }) Palette.ok else MaterialTheme.colorScheme.onSurface)
+        val have = update?.version ?: 0L
+        val updOnDevice = update?.files?.all { Repo.has(it.path) } == true
+        when {
+            info == null -> Line(null, "Actualización: " + (update?.let { SwitchDb.label(it.version) } ?: "ninguna"),
+                if (SwitchDb.busy) "Buscando cuál es la última…" else "Sin internet para ver si hay una más nueva")
+            info.latest == 0L -> Line(true, "No tiene actualizaciones", "")
+            have >= info.latest -> Line(true, "Actualizado: ${SwitchDb.label(have)}",
+                if (updOnDevice) "En el dispositivo" else "En el servidor (márcala abajo para descargarla)")
+            else -> Line(false, "Falta la actualización ${SwitchDb.label(info.latest)}",
+                if (update != null) "Tienes ${SwitchDb.label(have)}: busca la nueva y déjala en el servidor" else "No tienes ninguna actualización")
+        }
+        val total = info?.dlcs?.size ?: 0
+        val owned = dlcs.map { it.titleId.uppercase() }.toSet()
+        val missing = info?.dlcs.orEmpty().filter { it.uppercase() !in owned }
+        if (total > 0 || dlcs.isNotEmpty()) Line(if (total > 0) missing.isEmpty() else null,
+            if (total > 0) "DLC: tienes ${dlcs.size} de $total" else "DLC: tienes ${dlcs.size}",
+            "$dlcOnDevice en el dispositivo" + (if (dlcs.size > dlcOnDevice) " · ${dlcs.size - dlcOnDevice} solo en el servidor" else ""))
+        else if (info != null) Line(true, "No tiene DLC", "")
+        if (missing.isNotEmpty()) {
+            SpacedRow(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { showMissing = !showMissing }.padding(vertical = 4.dp)) {
+                Text("Te faltan ${missing.size} DLC (no están ni en el servidor)", color = Palette.warn, fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f))
+                Icon(if (showMissing) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore, null)
+            }
+            if (showMissing) Muted(missing.joinToString("  ·  "))
+        }
     }
 }
 
@@ -603,58 +657,84 @@ private fun TabletExtras(g: Game) {
     }
 }
 
+/** Borrar, con la misma forma que Descargar (pero con borde rojo, para no confundirlos). */
+@Composable
+fun BigDeleteButton(modifier: Modifier = Modifier, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(99.dp)
+    val red = MaterialTheme.colorScheme.error
+    Row(
+        modifier.height(64.dp).focusHighlight(shape, grow = 1.02f).clip(shape).background(red.copy(alpha = 0.08f))
+            .border(2.dp, red.copy(alpha = 0.6f), shape).pressable { onClick() }.padding(horizontal = 24.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Icon(Icons.Rounded.Delete, null, tint = red, modifier = Modifier.size(26.dp))
+        Text("Borrar…", color = red, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.titleMedium)
+    }
+}
+
 /**
- * Borrar, todo en uno: del dispositivo, del servidor y (si se quiere) sus partidas del dispositivo. Las partidas se
- * respaldan en el servidor antes de borrarlas. Avisa si después no queda ninguna copia del juego.
+ * Borrar, cada cosa por separado (antes eran tres casillas juntas y no se entendía qué pasaba con qué):
+ * 1) el juego del dispositivo (las partidas no se tocan), 2) sus partidas del dispositivo, y 3) aparte y en rojo, del
+ * servidor. Cada tarjeta tiene su botón y lleva al paso "¿Seguro?" con solo esa acción.
  */
 @Composable
 private fun DeleteDialog(g: Game, w: Repo.Where, onClose: () -> Unit, onGone: () -> Unit) {
     val ctx = LocalContext.current
     val onDevice = w.presence != Presence.MISSING
     val onServer = w.presence != Presence.TABLET_ONLY && Prefs.configured
-    var dev by remember { mutableStateOf(onDevice) }
-    var srv by remember { mutableStateOf(false) }
-    var saves by remember { mutableStateOf(false) }
     var withSaves by remember { mutableStateOf<List<Pair<GameSaves.Link, Saves.Unit>>>(emptyList()) }
     LaunchedEffect(g.id) {
         withSaves = runCatching {
             GameSaves.links(ctx, g).mapNotNull { l -> Saves.currentUnits(ctx, l.emu).firstOrNull { it.key == l.key }?.let { l to it } }
         }.getOrDefault(emptyList())
     }
-    val lost = (dev || !onDevice) && (srv || !onServer)
-    var confirming by remember { mutableStateOf(false) }
-    if (confirming) {
-        DeleteConfirm(g, w, dev && onDevice, srv && onServer, saves, onDevice, onServer, withSaves,
-            onBack = { confirming = false }, onClose = onClose, onGone = onGone)
+    // Qué se confirma: "dev", "saves" o "srv".
+    var confirm by remember { mutableStateOf<String?>(null) }
+    confirm?.let { what ->
+        DeleteConfirm(g, w, what == "dev", what == "srv", what == "saves", onDevice, onServer, withSaves,
+            onBack = { confirm = null }, onClose = onClose, onGone = onGone)
         return
     }
     AlertDialog(
         onDismissRequest = onClose,
         title = { Text("Borrar ${g.title}") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 @Composable
-                fun Opt(checked: Boolean, enabled: Boolean, label: String, detail: String, set: (Boolean) -> Unit) {
-                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable(enabled = enabled) { set(!checked) }.padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(checked, set, enabled = enabled)
-                        Column {
-                            Text(label, fontWeight = FontWeight.SemiBold,
-                                color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
+                fun Card(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, detail: String, action: String,
+                         danger: Boolean, enabled: Boolean, onClick: () -> Unit) {
+                    val red = MaterialTheme.colorScheme.error
+                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
+                        .background(if (danger) red.copy(alpha = 0.07f) else MaterialTheme.colorScheme.surfaceVariant)
+                        .padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                        Icon(icon, null, tint = if (danger) red else MaterialTheme.colorScheme.primary)
+                        Column(Modifier.weight(1f)) {
+                            Text(title, fontWeight = FontWeight.Bold, color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
                             Muted(detail)
                         }
+                        if (enabled) OutlinedButton(onClick = { Sound.play(Sound.Fx.WARN); onClick() }, modifier = Modifier.focusHighlight(RoundedCornerShape(99.dp)),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = red)) { Text(action) }
                     }
                 }
-                Opt(dev, onDevice, "Del dispositivo", if (onDevice) formatSize(w.localSize) else "No está") { dev = it }
-                Opt(srv, onServer, "Del servidor", if (onServer) formatSize(g.size) else "No está") { srv = it }
-                if (withSaves.isNotEmpty()) Opt(saves, true, "Sus partidas en el dispositivo",
-                    withSaves.joinToString(" · ") { (l, u) -> "${l.emu.name}: ${formatSize(u.bytes)}" } + " (se respaldan antes)") { saves = it }
+                Card(Icons.Rounded.TabletAndroid, "Del dispositivo",
+                    if (!onDevice) "No está en el dispositivo"
+                    else "Libera ${formatSize(w.localSize)}. Tus partidas se quedan." + if (onServer) " Lo vuelves a descargar cuando quieras." else "",
+                    "Quitar", false, onDevice) { confirm = "dev" }
+                if (withSaves.isNotEmpty()) Card(Icons.Rounded.Save, "Sus partidas del dispositivo",
+                    withSaves.joinToString(" · ") { (l, u) -> "${l.emu.name}: ${formatSize(u.bytes)}" } +
+                        if (Prefs.configured) ". Se respaldan en el servidor antes de borrarlas." else ". Sin servidor: se pierden.",
+                    "Borrar partidas", !Prefs.configured, true) { confirm = "saves" }
+                if (Prefs.configured) {
+                    Text("Servidor", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(top = 6.dp))
+                    Card(Icons.Rounded.Dns, "Del servidor",
+                        if (!onServer) "No está en el servidor"
+                        else "Se borra ${formatSize(g.size)} del PC, sin papelera." + if (!onDevice) " No te quedará en ningún lado." else "",
+                        "Borrar del servidor", true, onServer) { confirm = "srv" }
+                }
             }
         },
-        confirmButton = {
-            Button(enabled = dev || srv || saves, onClick = { confirming = true }) { Text("Siguiente") }
-        },
-        dismissButton = { TextButton(onClick = onClose) { Text("Cancelar") } },
+        confirmButton = { TextButton(onClick = onClose) { Text("Cerrar") } },
     )
 }
 

@@ -1,5 +1,16 @@
 package io.github.sudodiego.romsync
 
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.material3.Icon
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.background
+import androidx.compose.ui.Alignment
+import androidx.compose.foundation.layout.height
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.rounded.CloudUpload
+import androidx.compose.material.icons.Icons
 import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -49,30 +60,64 @@ fun SavesScreen() {
     val installed = Emulators.all.filter { Saves.statuses[it.id]?.installed == true }
     val needShell = installed.any { Saves.statuses[it.id]?.needsShell == true } && Shell.state != Shell.State.READY
 
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        item {
-            SpacedRow(Modifier.fillMaxWidth()) {
-                Column(Modifier.weight(1f)) {
-                    Text("Partidas", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-                    Muted("Una copia de todas las partidas de cada emulador. Para un solo juego, ábrelo en la Tienda.")
-                }
-                if (allBusy) CircularProgressIndicator(Modifier.size(28.dp))
-                else Button(enabled = Prefs.configured, onClick = {
-                    allBusy = true
-                    scope.launch {
-                        val msg = Saves.backupAll(ctx, auto = false)
-                        allBusy = false
-                        Toast.makeText(ctx, msg, Toast.LENGTH_LONG).show()
-                    }
-                }) { Text("Respaldar todo") }
-            }
-        }
-        item {
+    val missing = Emulators.all.filter { Saves.statuses[it.id]?.installed == false }
+    // Estado de cada emulador instalado: al día (lo mismo que el último respaldo), con cambios, o sin respaldo.
+    val states = installed.associate { it.id to saveState(it) }
+
+    androidx.compose.foundation.lazy.grid.LazyVerticalGrid(
+        androidx.compose.foundation.lazy.grid.GridCells.Adaptive(400.dp), Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(20.dp), horizontalArrangement = Arrangement.spacedBy(14.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        val full: androidx.compose.foundation.lazy.grid.LazyGridItemSpanScope.() -> androidx.compose.foundation.lazy.grid.GridItemSpan =
+            { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }
+        item(span = full) { Text("Partidas", style = MaterialTheme.typography.headlineLarge) }
+        // Resumen + el botón grande.
+        item(span = full) {
             Section("") {
                 SpacedRow {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        val ok = states.values.count { it == SaveState.OK }
+                        val changed = states.values.count { it == SaveState.CHANGED }
+                        val none = states.values.count { it == SaveState.NONE }
+                        Text(when {
+                            !Prefs.configured -> "Sin servidor: tus partidas solo están en el dispositivo"
+                            changed + none == 0 && ok > 0 -> "Todo respaldado"
+                            else -> "Hay partidas sin respaldar"
+                        }, style = MaterialTheme.typography.titleLarge,
+                            color = if (Prefs.configured && changed + none == 0) Palette.ok else Palette.warn)
+                        FlowRowCompat {
+                            if (ok > 0) Pill("$ok al día", Palette.ok)
+                            if (changed > 0) Pill("$changed con cambios", Palette.warn)
+                            if (none > 0) Pill("$none sin respaldo", Palette.danger)
+                        }
+                        Muted("Para respaldar o restaurar un solo juego, ábrelo en la Tienda.")
+                    }
+                    if (allBusy) CircularProgressIndicator(Modifier.size(32.dp))
+                    else BigActionButton("Respaldar todo", Icons.Rounded.CloudUpload, enabled = Prefs.configured) {
+                        allBusy = true
+                        scope.launch {
+                            val msg = Saves.backupAll(ctx, auto = false)
+                            allBusy = false
+                            Sound.play(Sound.Fx.DONE)
+                            Toast.makeText(ctx, msg, Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }
+            }
+        }
+        if (needShell) item(span = full) { ShizukuCard() }
+        items(installed, key = { it.id }) { emu -> EmulatorCard(emu, states[emu.id]) { restoreFor = emu } }
+        if (missing.isNotEmpty()) item(span = full) {
+            Muted("No instalados: " + missing.joinToString(", ") { it.name })
+        }
+        // Ajustes del respaldo automático, al final (se tocan poco).
+        item(span = full) {
+            Section("Respaldo automático") {
+                SpacedRow {
                     Column(Modifier.weight(1f)) {
-                        Text("Respaldo automático", fontWeight = FontWeight.Bold)
-                        Muted("Cada ${Prefs.autoBackupHours} h, con la app cerrada. Si el servidor está apagado, reintenta cada hora.")
+                        Text("Cada ${Prefs.autoBackupHours} h, con la app cerrada", fontWeight = FontWeight.SemiBold)
+                        Muted("Si el servidor está apagado, reintenta cada hora.")
                         val last = Prefs.lastAutoBackupOk
                         if (last > 0 || Prefs.lastAutoBackupNote.isNotEmpty()) Muted(
                             (if (last > 0) "Último que salió bien: ${formatAgo(last)}" else "Todavía no salió ninguno") +
@@ -96,17 +141,14 @@ fun SavesScreen() {
                 }
                 var keep by remember { mutableStateOf(Prefs.keepBackups) }
                 SpacedRow {
-                    Muted("Respaldos completos que se guardan", Modifier.weight(1f))
+                    Muted("Respaldos completos que se guardan (más 5 por juego; los viejos se borran solos)", Modifier.weight(1f))
                     listOf(5, 10, 20).forEach { n ->
                         androidx.compose.material3.FilterChip(selected = keep == n, onClick = { keep = n; Prefs.keepBackups = n },
                             label = { Text("$n") })
                     }
                 }
-                Muted("Más 5 por juego. Los viejos se borran solos.")
             }
         }
-        if (needShell) item { ShizukuCard() }
-        items(Emulators.all, key = { it.id }) { emu -> EmulatorCard(emu) { restoreFor = emu } }
     }
 
     restoreFor?.let { emu -> RestoreDialog(emu) { restoreFor = null } }
@@ -129,7 +171,7 @@ fun ShizukuCard() {
 }
 
 @Composable
-private fun EmulatorCard(emu: Emulator, onRestore: () -> Unit) {
+private fun EmulatorCard(emu: Emulator, state: SaveState?, onRestore: () -> Unit) {
     val ctx = LocalContext.current
     val scope = appScope
     val st = Saves.statuses[emu.id]
@@ -141,11 +183,20 @@ private fun EmulatorCard(emu: Emulator, onRestore: () -> Unit) {
     var path by remember { mutableStateOf(Prefs.emuPath(emu.id)) }
     Section("") {
         SpacedRow {
+            st?.pkg?.let { EmuChoice.icon(ctx, it) }?.let {
+                androidx.compose.foundation.Image(it, null, Modifier.size(48.dp).clip(RoundedCornerShape(12.dp)))
+            }
             Column(Modifier.weight(1f)) {
                 Text(emu.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Muted(consoles[emu.id].orEmpty())
             }
-            if (st?.installed != true) Muted("No instalado")
+            when (state) {
+                SaveState.OK -> Pill("Al día", Palette.ok)
+                SaveState.CHANGED -> Pill("Con cambios", Palette.warn)
+                SaveState.NONE -> Pill("Sin respaldo", Palette.danger)
+                SaveState.EMPTY -> Pill("Sin partidas", Color(0xFF64748B))
+                null -> {}
+            }
         }
         if (st?.installed == true && st.supported) {
             when {
@@ -166,8 +217,10 @@ private fun EmulatorCard(emu: Emulator, onRestore: () -> Unit) {
                         Saves.inspect(ctx, emu)
                         Toast.makeText(ctx, msg, Toast.LENGTH_LONG).show()
                     }
-                }) { Text("Respaldar") }
-                FilledTonalButton(enabled = busy == null && Prefs.configured, onClick = onRestore) { Text("Restaurar…") }
+                }, modifier = Modifier.focusHighlight(RoundedCornerShape(99.dp))) { Text("Respaldar") }
+                FilledTonalButton(enabled = busy == null && Prefs.configured, onClick = onRestore,
+                    modifier = Modifier.focusHighlight(RoundedCornerShape(99.dp))) { Text("Restaurar…") }
+                Spacer(Modifier.weight(1f))
                 TextButton(onClick = { editPath = !editPath }) { Text("Carpeta") }
             }
             if (editPath) {
@@ -437,3 +490,43 @@ private val consoles = mapOf(
     "armsx2" to "PlayStation 2", "nethersx2" to "PlayStation 2 (el anterior)", "vita3k" to "PlayStation Vita",
     "gamenative" to "Juegos de PC (Steam)",
 )
+
+enum class SaveState { OK, CHANGED, NONE, EMPTY }
+
+/** Al día si lo que hay ahora es igual a lo último respaldado (mismo hash); con cambios si no; sin respaldo si nunca. */
+fun saveState(emu: Emulator): SaveState? {
+    val st = Saves.statuses[emu.id] ?: return null
+    if (!st.installed || !st.supported || st.error != null) return null
+    if (st.files == 0) return SaveState.EMPTY
+    val last = Prefs.lastBackupHash(emu.id)
+    return when {
+        Prefs.lastBackupAt(emu.id) == 0L -> SaveState.NONE
+        last == st.hash -> SaveState.OK
+        else -> SaveState.CHANGED
+    }
+}
+
+@Composable
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+private fun FlowRowCompat(content: @Composable () -> Unit) =
+    androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) { content() }
+
+/** Botón de acción principal (como Descargar): grande, con el color destacado. */
+@Composable
+fun BigActionButton(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, modifier: Modifier = Modifier,
+                    enabled: Boolean = true, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(99.dp)
+    val accent = Color(UiState.accent)
+    val brush = androidx.compose.ui.graphics.Brush.verticalGradient(listOf(
+        androidx.compose.ui.graphics.lerp(accent, Color.White, 0.30f), accent, androidx.compose.ui.graphics.lerp(accent, Color.Black, 0.15f)))
+    Row(
+        modifier.height(60.dp).focusHighlight(shape, grow = 1.03f).clip(shape)
+            .background(if (enabled) brush else androidx.compose.ui.graphics.SolidColor(Color(0xFF94A3B8)))
+            .then(if (enabled) Modifier.pressable { Sound.play(Sound.Fx.MOVE); onClick() } else Modifier)
+            .padding(horizontal = 26.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Icon(icon, null, tint = Color.White, modifier = Modifier.size(26.dp))
+        Text(label, color = Color.White, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.titleMedium)
+    }
+}

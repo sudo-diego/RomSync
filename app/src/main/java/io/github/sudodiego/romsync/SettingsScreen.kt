@@ -86,6 +86,7 @@ private fun Field(label: String, value: String, onChange: (String) -> Unit, modi
 private fun PcCard() {
     val scope = appScope
     var host by remember { mutableStateOf(Prefs.host) }
+    var port by remember { mutableStateOf(Prefs.port.toString()) }
     var user by remember { mutableStateOf(Prefs.user) }
     var pass by remember { mutableStateOf(Prefs.password) }
     var found by remember { mutableStateOf<List<PcFinder.Found>?>(null) }
@@ -97,10 +98,10 @@ private fun PcCard() {
     var showSteps by remember { mutableStateOf(!Prefs.configured) }
     var manual by remember { mutableStateOf(false) }
 
-    fun cfg() = SftpConfig(host.trim(), Prefs.port, user.trim(), pass, if (host.trim() == Prefs.host) Prefs.fingerprint else "")
+    fun cfg() = SftpConfig(host.trim(), port.toIntOrNull() ?: 22, user.trim(), pass, if (host.trim() == Prefs.host) Prefs.fingerprint else "")
 
     fun saveRoms(path: String) {
-        Prefs.host = host; Prefs.user = user; Prefs.password = pass
+        Prefs.host = host; Prefs.port = port.toIntOrNull() ?: 22; Prefs.user = user; Prefs.password = pass
         Prefs.pcRoms = PcFinder.windowsPath(path)
         romsChoices = null
         message = true to "Listo: el dispositivo ya ve tu carpeta de ROMs"
@@ -151,6 +152,13 @@ private fun PcCard() {
             }
         }
 
+        // O a mano: otra red, Tailscale (100.x.x.x) o un nombre (mi-pc.local). La búsqueda solo mira la WiFi.
+        SpacedRow {
+            Field("O escribe la dirección", host, { host = it }, Modifier.weight(1f), hint = "192.168.1.20, 100.x.x.x o mi-pc.local")
+            Field("Puerto", port, { port = it.filter(Char::isDigit).take(5) }, Modifier.width(120.dp), number = true)
+        }
+        Muted("Fuera de casa funciona con Tailscale: usa la IP 100.x.x.x de tu PC (la ves en la app de Tailscale).")
+
         // Paso 3: usuario y contraseña; después la carpeta de ROMs se busca sola.
         Text("3. Tu cuenta de Windows", fontWeight = FontWeight.Bold)
         SpacedRow {
@@ -174,7 +182,7 @@ private fun PcCard() {
                     }
                     connecting = false
                     r.onSuccess { dirs ->
-                        Prefs.host = host; Prefs.user = user; Prefs.password = pass
+                        Prefs.host = host; Prefs.port = port.toIntOrNull() ?: 22; Prefs.user = user; Prefs.password = pass
                         when {
                             dirs.size == 1 -> saveRoms(dirs[0].path)
                             dirs.isEmpty() -> { message = true to "Conectado. No encontré la carpeta de ROMs: elígela."; browse = true }

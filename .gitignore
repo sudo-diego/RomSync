@@ -17,3 +17,9 @@ server/respaldos/
 server/dist/
 *.exe
 !app/romsync-shared.keystore
+
+# Notas de trabajo locales (no se publican)
+CONTEXTO.md
+docs/HISTORIAL.md
+docs/PROMPT-SESION-ADB.md
+*.mp3

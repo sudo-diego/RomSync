@@ -31,7 +31,7 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
 /**
- * RomSync Web (antes "Cocina"): la web de la tablet, como Nonna's Kitchen de Cannoli. Se enciende desde la app, muestra un QR, la
+ * RomSync Web: la web de la tablet, como Nonna's Kitchen de Cannoli. Se enciende desde la app, muestra un QR, la
  * dirección y un PIN de 6 caracteres que cambia cada vez. Desde el navegador del PC (o del teléfono) se administra
  * la tablet: plataformas y juegos, BIOS, partidas y herramientas (archivos e instalar APK).
  */

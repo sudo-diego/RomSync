@@ -1,6 +1,6 @@
 # RomSync
 
-App Android (Kotlin + Jetpack Compose) para manejar los ROMs, BIOS y partidas de la **Lenovo Legion Y700 Gen 3**
+App Android (Kotlin + Jetpack Compose) para manejar los ROMs, BIOS y partidas de una tablet o teléfono Android
 contra el disco duro del PC, **sin instalar nada en el PC** (usa el servidor OpenSSH que trae Windows, como Nixel).
 
 ## Qué hace
@@ -14,7 +14,7 @@ contra el disco duro del PC, **sin instalar nada en el PC** (usa el servidor Ope
 - **Partidas**: respaldo en el PC de RetroArch, Dolphin, ARMSX2, Eden, Vita3K, WatermelonDS y Azahar (manual o
   automático cada N horas con WiFi), historial y restauración. Las de Android/data necesitan **Shizuku**.
   Ver [docs/INVESTIGACION.md](docs/INVESTIGACION.md).
-- **Cocina** (como Nonna's Kitchen de Cannoli): la tablet sirve una web con QR y PIN. Desde el navegador del PC:
+- **Web**: la tablet sirve una web con QR y PIN. Desde el navegador del PC:
   plataformas y juegos (subir arrastrando, instalar desde el PC, borrar, carátulas), BIOS, partidas (bajar en zip,
   respaldar, restaurar) y herramientas (explorador de archivos, instalar APK).
 

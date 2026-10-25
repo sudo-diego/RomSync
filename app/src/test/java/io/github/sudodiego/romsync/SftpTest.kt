@@ -29,7 +29,7 @@ class SftpTest {
         server = SshServer.setUpDefaultServer().apply {
             port = 0
             keyPairProvider = SimpleGeneratorHostKeyProvider(Files.createTempFile("host", ".ser"))
-            setPasswordAuthenticator { u, p, _ -> u == "diego" && p == "clave" }
+            setPasswordAuthenticator { u, p, _ -> u == "usuario" && p == "clave" }
             subsystemFactories = listOf(SftpSubsystemFactory())
             fileSystemFactory = VirtualFileSystemFactory(root.toPath())
             start()
@@ -38,7 +38,7 @@ class SftpTest {
 
     @After fun stop() { server.stop(true); root.deleteRecursively() }
 
-    private fun cfg(pass: String = "clave", fp: String = "") = SftpConfig("127.0.0.1", server.port, "diego", pass, fp)
+    private fun cfg(pass: String = "clave", fp: String = "") = SftpConfig("127.0.0.1", server.port, "usuario", pass, fp)
 
     @Test fun walkDownloadResumeUpload() {
         SftpConn.connect(cfg()).use { c ->
@@ -83,6 +83,6 @@ class SftpTest {
     @Test fun windowsPaths() {
         assertEquals("/D:/Emulacion/ROMs", SftpConn.remotePath("D:\\Emulacion\\ROMs\\"))
         assertEquals("/D:/", SftpConn.remotePath("D:"))
-        assertEquals("/home/diego/roms", SftpConn.remotePath("/home/diego/roms/"))
+        assertEquals("/home/usuario/roms", SftpConn.remotePath("/home/usuario/roms/"))
     }
 }

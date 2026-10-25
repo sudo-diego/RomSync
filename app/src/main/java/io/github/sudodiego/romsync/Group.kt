@@ -84,7 +84,7 @@ object Group {
     /**
      * Basura del sistema operativo (Windows, macOS). En la carpeta bios es lo único que se ignora: ahí hay archivos de
      * configuración de los núcleos (Mupen64plus/mupen64plus.ini) que no son BIOS pero hacen falta, y la tablet y el PC
-     * tienen que contar lo mismo (si no, avisa de una "BIOS que falta" que en realidad está).
+     * tienen que contar lo mismo.
      */
     fun isSystemJunk(name: String): Boolean {
         val lower = name.lowercase()

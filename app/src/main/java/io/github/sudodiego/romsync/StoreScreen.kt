@@ -115,7 +115,7 @@ object StoreState {
                 val step = if (code == android.view.KeyEvent.KEYCODE_BUTTON_R2) 1 else -1
                 filter = filters[(filters.indexOf(filter) + step + filters.size) % filters.size]
                 Sound.play(Sound.Fx.MOVE)
-                // El foco va a lo primero de lo que se ve ahora (antes se perdía y caía en el panel).
+                // El foco va a lo primero de lo que se ve ahora.
                 val home = filter == StoreFilter.ALL && system.isEmpty() && query.isBlank()
                 appScope.launch { runCatching { grid.scrollToItem(0) }; requestFocusOn(if (home) "carrusel" else "primero") }
             }
@@ -255,7 +255,7 @@ fun StoreScreen() {
                 item(span = { GridItemSpan(maxLineSpan) }, key = "destacados") { FeaturedCarousel(cards, firstPlatform) }
                 item(span = { GridItemSpan(maxLineSpan) }, key = "plataformas") { PlatformRow(systems, firstPlatform) }
                 val onTablet = cards.filter { Repo.where(it).presence.let { p -> p == Presence.INSTALLED || p == Presence.PARTIAL } && it.kind != "shortcut" }
-                // Los del carrusel no se repiten aquí (antes "Para descargar" era casi lo mismo que el carrusel).
+                // Los del carrusel no se repiten aquí.
                 val inCarousel = featuredOf(cards).map { it.id }.toSet()
                 val toGet = cards.filter { Repo.where(it).presence == Presence.MISSING && it.kind != "shortcut" && it.id !in inCarousel }
                 // Lo más importante de la Tienda es descargar: primero "Para descargar", después lo que ya está.
@@ -272,7 +272,7 @@ fun StoreScreen() {
                         ShelfRow(onTablet.shuffled(java.util.Random(StoreState.seed)), { StoreState.openSection(filter = StoreFilter.INSTALLED, from = "vertodo:tablet") }, ::versionsOf, "tablet")
                     }
                 }
-                // Una sola sección para explorar por plataforma (antes eran hasta 8 filas seguidas, una por consola).
+                // Una sola sección para explorar por plataforma.
                 val explore = systems.filter { it.second >= 2 && it.first.id !in Group.shortcutSystems }.map { it.first }
                 if (explore.isNotEmpty()) item(span = { GridItemSpan(maxLineSpan) }, key = "explorar") {
                     StorePanel("Explorar", Icons.Rounded.Explore, Palette.blue) { SectionTiles(cards) }
@@ -322,7 +322,7 @@ private fun FeaturedCarousel(cards: List<Game>, below: androidx.compose.ui.focus
     }
     var target by remember { mutableStateOf(0) }
     val carouselScope = androidx.compose.runtime.rememberCoroutineScope()
-    // Con el foco del control encima, no pasa solo (si no, se lleva el foco a otra página).
+    // Con el foco del control encima, no pasa solo.
     var focusedIn by remember { mutableStateOf(false) }
     LaunchedEffect(pager, featured.size) {
         while (true) {
@@ -557,7 +557,7 @@ private fun Modifier.gridNav(idx: Int, games: List<Game>): Modifier {
  * Android mandaba el foco al panel lateral) y reintenta unas veces hasta que quede.
  */
 suspend fun refocus(request: () -> Unit) {
-    // Si el usuario se mueve mientras tanto, manda él: no se le devuelve el foco (antes "luchaba" y lo regresaba).
+    // Si el usuario se mueve mientras tanto, manda él: no se le devuelve el foco.
     val stamp = Nav.moveStamp
     kotlinx.coroutines.delay(30)
     repeat(12) {
@@ -686,7 +686,7 @@ private fun OfflineBanner(onRetry: () -> Unit) {
         Column(Modifier.weight(1f)) {
             Text("Sin conexión con el servidor", fontWeight = FontWeight.Bold)
             Muted((if (at > 0) "Ves la lista guardada ${formatAgo(at)}. " else "") +
-                "Lo que está en tu dispositivo funciona igual; para descargar hace falta conexión.")
+                "Lo que está en tu dispositivo funciona igual. Para descargar hace falta conexión.")
         }
         TextButton(onClick = { Sound.play(Sound.Fx.MOVE); onRetry() }) { Text("Reintentar") }
     }
@@ -783,7 +783,7 @@ private fun Toolbar(systems: List<SystemInfo>) {
                 value = StoreState.query, onValueChange = { StoreState.query = it },
                 modifier = Modifier.weight(1f).focusRequester(StoreState.searchFocus)
                     .focusProperties { canFocus = !Nav.keys || StoreState.searchArmed }
-                    // Mientras se usa, sigue activo (si no, al escribir con teclado o mando perdía el foco).
+                    // Mientras se usa, sigue activo.
                     .onFocusChanged { StoreState.searchArmed = it.isFocused }
                     .gamepadText(), singleLine = true, placeholder = { Text("Buscar") },
                 leadingIcon = { Icon(Icons.Rounded.Search, null) },
@@ -949,7 +949,7 @@ private fun SelectionBar(sel: List<Game>) {
                 list.take(8).forEach { Text("• ${it.title}") }
                 if (list.size > 8) Muted("y ${list.size - 8} más")
                 Text("Las partidas no se borran.", fontWeight = FontWeight.SemiBold)
-                if (noCopy.isNotEmpty()) Text("${noCopy.size} no tienen otra copia: se pierden del todo (${noCopy.take(3).joinToString { it.title }}).",
+                if (noCopy.isNotEmpty()) Text("${noCopy.size} no tienen otra copia y se pierden del todo (${noCopy.take(3).joinToString { it.title }}).",
                     color = MaterialTheme.colorScheme.error)
             }
         },

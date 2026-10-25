@@ -138,7 +138,7 @@ fun StrayBiosCard() {
         SpacedRow {
             Column(Modifier.weight(1f)) {
                 Text("BIOS fuera de su carpeta: ${tablet.size + pc.size}", fontWeight = FontWeight.Bold)
-                Muted("Están junto a los juegos (por ejemplo en ps2). No salen como juegos; puedes moverlas a la carpeta bios.")
+                Muted("Están junto a los juegos (por ejemplo en ps2). No salen como juegos. Puedes moverlas a la carpeta bios.")
             }
             TextButton(onClick = { open = true }) { Text("Ordenar") }
         }
@@ -176,10 +176,10 @@ fun StrayBiosDialog(tablet: List<FileEntry>, pc: List<FileEntry>, onClose: () ->
             LazyColumn(Modifier.fillMaxWidth().heightIn(max = 480.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 item {
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Muted("Van a «bios» (dispositivo: ${Prefs.biosDir}; servidor: ${Prefs.remoteBios}). Si un emulador estaba configurado " +
+                        Muted("Van a la carpeta bios, en el dispositivo (${Prefs.biosDir}) y en el servidor (${Prefs.remoteBios}). Si un emulador estaba configurado " +
                             "para buscarlas en la carpeta de juegos (por ejemplo ARMSX2 en ps2), después elige la carpeta bios en sus ajustes.")
-                        Text("PS2: el emulador solo necesita el .bin de 4 MB, y con uno de cualquier región se juegan todos los juegos " +
-                            "(conviene el de tu región, por el idioma del menú). .ROM1/.ROM2/.EROM son el reproductor de DVD; .NVM y .MEC se crean solos.",
+                        Text("Para PS2 el emulador solo necesita el .bin de 4 MB, y con uno de cualquier región se juegan todos los juegos " +
+                            "(conviene el de tu región, por el idioma del menú). .ROM1, .ROM2 y .EROM son el reproductor de DVD. .NVM y .MEC se crean solos.",
                             style = MaterialTheme.typography.bodySmall)
                     }
                 }

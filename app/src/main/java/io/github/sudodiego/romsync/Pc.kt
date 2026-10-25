@@ -288,7 +288,7 @@ object PcEdit {
 
     /**
      * Escribe "Juego.m3u" junto a los discos: en el PC (así queda guardado) y, si los discos están en la tablet, también
-     * ahí. Antes había que "descargar lo que falta" (un archivo de 111 B) para tenerlo en la tablet.
+     * ahí.
      */
     suspend fun createM3u(g: Game, onPc: Boolean = true): String {
         val dir = g.primary.substringBeforeLast('/')

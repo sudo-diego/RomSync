@@ -77,7 +77,7 @@ fun SettingsScreen() {
         item { TabletCard() }
         item { ArtCard() }
         item { ShizukuCard() }
-        item { Muted("RomSync 0.2 · hecho para la Lenovo Legion Y700 Gen 3") }
+        item { Muted("RomSync 0.2") }
     }
 }
 
@@ -150,7 +150,7 @@ private fun PcCard() {
 
     if (editing) {
         // Paso 1
-        StepCard(1, "Activar SFTP en Windows", "Una sola vez, con herramientas de Windows; no hay que bajar nada.", done = Prefs.configured) {
+        StepCard(1, "Activar SFTP en Windows", "Una sola vez, con herramientas de Windows. No hay que instalar nada.", done = Prefs.configured) {
             SpacedRow {
                 Muted("¿Ya lo hiciste? Sigue al paso 2.", Modifier.weight(1f))
                 TextButton(onClick = { showSteps = !showSteps }) { Text(if (showSteps) "Ocultar" else "Ver cómo") }
@@ -197,7 +197,7 @@ private fun PcCard() {
                 }
             }
             Field("Dirección de tu PC", host, { host = it.trim() }, Modifier.fillMaxWidth(), hint = "192.168.1.20 · 100.x.x.x (Tailscale) · mi-pc.local")
-            Muted("Con Tailscale: usa la IP 100.x.x.x de tu PC (la ves en la app de Tailscale). El puerto sigue siendo el 22, " +
+            Muted("Con Tailscale usa la IP 100.x.x.x de tu PC, que aparece en la app de Tailscale. El puerto sigue siendo el 22, " +
                 "el mismo de siempre: Tailscale solo cambia la dirección.")
         }
         // Paso 3
@@ -206,7 +206,7 @@ private fun PcCard() {
                 Field("Usuario", user, { user = it }, Modifier.weight(1f), hint = "el de C:\\Users\\…")
                 Field("Contraseña", pass, { pass = it }, Modifier.weight(1f), password = true)
             }
-            Muted("La contraseña de la cuenta, no el PIN. Con cuenta de Microsoft es la de esa cuenta; el usuario es el nombre de tu carpeta en C:\\Users.")
+            Muted("La contraseña de la cuenta, no el PIN. Con cuenta de Microsoft es la de esa cuenta. El usuario es el nombre de tu carpeta en C:\\Users.")
             SpacedRow {
                 BigActionButton(if (connecting) "Conectando…" else "Conectar", Icons.Rounded.Link,
                     enabled = !connecting && host.isNotBlank() && user.isNotBlank()) {
@@ -251,7 +251,7 @@ private fun PcCard() {
             Icon(Icons.Rounded.Tune, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
             Column(Modifier.weight(1f)) {
                 Text("Avanzado", fontWeight = FontWeight.Bold)
-                Muted("Puerto, carpetas en el PC e identidad del servidor. La app los detecta sola; cámbialos solo si sabes que hace falta.")
+                Muted("Puerto, carpetas en el PC e identidad del servidor. La app los detecta sola. Cámbialos solo si sabes que hace falta.")
             }
             Icon(if (advanced) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore, null)
         }
@@ -366,7 +366,7 @@ private fun TabletCard() {
     val picker = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.OpenDocumentTree()) { uri ->
         val path = uri?.let { treeToPath(it) }
-        if (uri != null && path == null) Notice.info("No se pudo usar esa carpeta: elige una del almacenamiento del dispositivo")
+        if (uri != null && path == null) Notice.info("No se pudo usar esa carpeta. Elige una del almacenamiento del dispositivo")
         if (path != null) {
             if (picking == "roms") { roms = path; Prefs.romsDir = path } else { bios = path; Prefs.biosDir = path }
             Notice.info("Carpeta guardada: ${path.removePrefix(android.os.Environment.getExternalStorageDirectory().path)}")
@@ -395,7 +395,7 @@ private fun TabletCard() {
         }
         if (editName) {
             Field("Nombre del dispositivo", name, { name = it }, Modifier.fillMaxWidth())
-            Muted("Ojo: si lo cambias, los respaldos anteriores quedan con el nombre viejo (se ven igual al restaurar).")
+            Muted("Si lo cambias, los respaldos anteriores quedan con el nombre viejo, pero se ven igual al restaurar.")
             TextButton(onClick = { Prefs.deviceName = name; name = Prefs.deviceName; editName = false }) { Text("Guardar nombre") }
         }
         Column {
@@ -423,8 +423,8 @@ private fun ArtCard() {
     Section("Carátulas (SteamGridDB)") {
         val ctx = androidx.compose.ui.platform.LocalContext.current
         if (Prefs.sgdbKey.isBlank()) {
-            Text("Sin clave: los juegos se ven sin carátula, fondo ni logo.", fontWeight = FontWeight.SemiBold)
-            Muted("Es gratis: entra con tu cuenta de Steam en SteamGridDB, copia la clave y pégala aquí.")
+            Text("Sin clave los juegos se ven sin carátula, fondo ni logo.", fontWeight = FontWeight.SemiBold)
+            Muted("Es gratis. Entra con tu cuenta de Steam en SteamGridDB, copia la clave y pégala aquí.")
             FilledTonalButton(onClick = {
                 runCatching { ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW,
                     android.net.Uri.parse("https://www.steamgriddb.com/profile/preferences/api"))) }
@@ -528,7 +528,7 @@ private fun LookControls() {
             accentPresets.forEach { (name, v) ->
                 val sel = UiState.accent == v
                 Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    // El anillo va por fuera del color, separado (antes quedaba por debajo y se veía mal).
+                    // El anillo va por fuera del color, separado.
                     androidx.compose.foundation.layout.Box(
                         Modifier.size(54.dp).clip(RoundedCornerShape(99.dp)).clickable { setAccent(v) }
                             .then(if (sel) Modifier.border(3.dp, MaterialTheme.colorScheme.onSurface, RoundedCornerShape(99.dp)) else Modifier),
@@ -559,7 +559,7 @@ private fun LookControls() {
     }.padding(horizontal = 18.dp, vertical = 10.dp)) {
         Column(Modifier.weight(1f)) {
             Text("Pantalla completa", fontWeight = FontWeight.SemiBold)
-            Muted("Oculta la barra de arriba y los botones de Android; aparecen deslizando desde el borde.")
+            Muted("Oculta la barra de arriba y los botones de Android. Aparecen al deslizar desde el borde.")
         }
         androidx.compose.material3.Switch(checked = UiState.fullscreen, onCheckedChange = {
             Sound.play(Sound.Fx.TOGGLE); UiState.fullscreen = it; Prefs.fullscreen = it
@@ -663,7 +663,7 @@ private fun SpeedTestRow() {
             androidx.compose.material3.LinearProgressIndicator(progress = { PcEdit.liveFrac }, Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(99.dp)))
         }
     }
-    Muted("Baja 512 MB de un juego del servidor y sube 256 MB de prueba y 256 MB de un juego tuyo; no se guarda nada.")
+    Muted("Baja 512 MB de un juego del servidor y sube 256 MB de prueba y 256 MB de un juego tuyo. No se guarda nada.")
 }
 
 /** Un deslizador que se mueve con izquierda/derecha del mando (de a [step]), con el anillo de foco y sonido. */

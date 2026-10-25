@@ -280,7 +280,7 @@ private fun Modifier.drawWithClipBottom(p: Float) = this.then(Modifier.drawWithC
 /**
  * El regalo de la 3DS: la misma baldosa del ícono, que se envuelve al terminar (el papel sube, se cruzan las cintas y
  * aparece el lazo con un rebote). En la ficha se abre: el lazo sale volando, el papel se desvanece y la carátula queda
- * a la vista de a poco (antes aparecía de golpe).
+ * a la vista de a poco.
  */
 @Composable
 fun GiftBox(g: Game, modifier: Modifier, opening: Boolean = false) {

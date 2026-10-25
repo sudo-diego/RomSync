@@ -63,7 +63,7 @@ data class SaveBackupInfo(
     val files: Int,
     val auto: Boolean,
     val keep: Boolean,
-    /** Qué es: "todo", "auto", "juego" (uno o algunos), "antes" (antes de restaurar), "traspaso"; vacío en los viejos. */
+    /** Qué es: "todo", "auto", "juego" (uno o algunos), "antes", "traspaso"; vacío en los viejos. */
     val kind: String = "",
     /** Los juegos que trae (nombres) y sus claves de [Saves.unitOf], para decir qué es cada respaldo. */
     val games: List<String> = emptyList(),

@@ -298,7 +298,7 @@ private fun WavesCanvas(modifier: Modifier, time: androidx.compose.runtime.Mutab
     val bgTop = if (dark) mix(accent, Color.Black, 0.55f) else mix(accent, Color.White, 0.45f)
     val bgBottom = if (dark) mix(accent, Color.Black, 0.88f) else mix(accent, Color.White, 0.80f)
     val line = Color.White
-    // Los trazos se reutilizan (antes se creaban 72 por cuadro).
+    // Los trazos se reutilizan.
     val paths = remember { List(2 * 12) { androidx.compose.ui.graphics.Path() } }
     Canvas(modifier.fillMaxSize()) {
         val t = time.floatValue

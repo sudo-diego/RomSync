@@ -112,7 +112,6 @@ object Art {
             val dated = searchDated(key, official ?: g.title)
             val found = dated.map { it.first to it.second }
             val want = official?.let(::norm) ?: fileTitle(g)
-            // Antes se tomaba el primero si no había uno idéntico: "Aladdin" daba "Aladdin - Hidden Objects Game".
             // Con varios del mismo nombre (Link's Awakening de Game Boy y de Switch), en consolas nuevas el más nuevo y
             // en las viejas el original.
             val best = pickFor(g, dated, want)?.let { it.first to it.second }
@@ -269,7 +268,7 @@ object Art {
 
     private val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.Main)
 
-    /** Lo que se baja de cada juego de una vez: la carátula, el fondo de la ficha y el logo (antes solo la carátula). */
+    /** Lo que se baja de cada juego de una vez: la carátula, el fondo de la ficha y el logo. */
     private val bulkKinds = listOf("grid", "hero", "logo", "icon") // también íconos: la vista de íconos queda lista sin esperar
 
     /** Si a un juego le falta alguna imagen que todavía no se buscó. */

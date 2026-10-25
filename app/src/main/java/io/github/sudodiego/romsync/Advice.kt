@@ -11,7 +11,7 @@ object Advice {
         val e = if (g.kind == "folder") "carpeta" else Group.ext(g.primary)
         return when {
             sys == "wiiu" -> when (e) {
-                ".wua" -> 3 to "WUA: un solo archivo con el juego, la actualización y los DLC; es el formato recomendado por Cemu"
+                ".wua" -> 3 to "WUA, un solo archivo con el juego, la actualización y los DLC. Es el formato que recomienda Cemu"
                 ".wud", ".wux" -> 2 to "imagen del disco"
                 "carpeta" -> 1 to "carpeta suelta (miles de archivos, más lenta de copiar)"
                 else -> 0 to "formato poco común"

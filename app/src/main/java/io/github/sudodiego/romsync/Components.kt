@@ -395,7 +395,7 @@ fun Modifier.focusHighlight(shape: androidx.compose.ui.graphics.Shape = RoundedC
     var focused by remember { androidx.compose.runtime.mutableStateOf(false) }
     val scale by androidx.compose.animation.core.animateFloatAsState(if (focused) grow else 1f,
         androidx.compose.animation.core.spring(dampingRatio = 0.6f, stiffness = 500f), label = "foco")
-    // [ring]: otro color para el anillo cuando el elemento ya es del color destacado (si no, no se distingue).
+    // [ring]: otro color para el anillo cuando el elemento ya es del color destacado.
     val color = ring ?: MaterialTheme.colorScheme.primary
     // Se anota como lo último elegido de su pantalla (al volver del panel con la derecha, el foco vuelve aquí).
     val fr = remember { androidx.compose.ui.focus.FocusRequester() }

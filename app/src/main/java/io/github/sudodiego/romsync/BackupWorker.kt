@@ -24,7 +24,7 @@ class BackupWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx
         if (System.currentTimeMillis() < due) return Result.success()
         // PC apagado o fuera de casa: se intenta otra vez en una hora.
         if (runCatching { Pc.io { } }.isFailure) {
-            Prefs.lastAutoBackupNote = "El servidor no respondía; se reintenta cada hora"
+            Prefs.lastAutoBackupNote = "El servidor no respondía. Se vuelve a intentar cada hora"
             return Result.success()
         }
         val msg = Saves.backupAll(applicationContext, auto = true)

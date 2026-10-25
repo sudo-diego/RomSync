@@ -449,7 +449,7 @@ private fun GameSavesSection(g: Game) {
     val ctx = LocalContext.current
     if (g.system in GameSaves.sharedCards) {
         Section("Partidas") {
-            Muted("Las de PS2 van en tarjetas compartidas: se respaldan desde Partidas.")
+            Muted("Las de PS2 van en tarjetas compartidas y se respaldan desde Partidas.")
         }
         return
     }
@@ -537,8 +537,8 @@ private fun GameSavesSection(g: Game) {
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("De ${l.emu.name} en este dispositivo (${formatSize(u.bytes)}). El juego no se toca.")
-                    if (Prefs.configured) Text("Antes se respaldan en el servidor: las recuperas con Restaurar.", fontWeight = FontWeight.SemiBold)
-                    else Text("No hay servidor para respaldarlas: se pierden para siempre.", color = MaterialTheme.colorScheme.error,
+                    if (Prefs.configured) Text("Antes se respaldan en el servidor y las recuperas con Restaurar.", fontWeight = FontWeight.SemiBold)
+                    else Text("No hay servidor para respaldarlas y se pierden para siempre.", color = MaterialTheme.colorScheme.error,
                         fontWeight = FontWeight.SemiBold)
                 }
             },
@@ -631,7 +631,7 @@ private fun VersionPicker(g: Game, versions: List<Game>) {
             Spacer(Modifier.width(8.dp))
             Icon(Icons.Rounded.ArrowDropDown, null)
         }
-        // Lo que antes era la sección "Otras versiones": solo la recomendación, debajo del botón.
+        // Lo que
 
         androidx.compose.material3.DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             versions.sortedBy { it.name }.forEach { v ->
@@ -775,7 +775,7 @@ fun BigDeleteButton(modifier: Modifier = Modifier, autoFocus: Boolean = false, o
 }
 
 /**
- * Borrar, cada cosa por separado (antes eran tres casillas juntas y no se entendía qué pasaba con qué):
+ * Borrar, cada cosa por separado:
  * 1) el juego del dispositivo (las partidas no se tocan), 2) sus partidas del dispositivo, y 3) aparte y en rojo, del
  * servidor. Cada tarjeta tiene su botón y lleva al paso "¿Seguro?" con solo esa acción.
  */
@@ -892,7 +892,7 @@ private fun DeleteConfirm(
                     if (dev && onDevice) freed += Repo.delete(g)
                     if (srv && onServer) runCatching { freed += Repo.deleteFromPc(g) }.onFailure { failed = it.message }
                     Sound.play(if (failed == null) Sound.Fx.DONE else Sound.Fx.WARN)
-                    // Aviso arriba a la derecha con la carátula yéndose al basurero (antes era un Toast).
+                    // Aviso arriba a la derecha con la carátula yéndose al basurero.
                     if (failed != null) Notice.show(g.id, g.title, "No se pudo borrar del servidor: $failed", Notice.Kind.ERROR)
                     else Notice.show(g.id, g.title, (if (srv) "Borrado del servidor" else "Quitado del dispositivo") +
                         " · ${formatSize(freed)} libres", Notice.Kind.DELETE)
@@ -915,7 +915,7 @@ private fun GameEditor(g: Game, onClose: () -> Unit) {
         onClose()
         Nav.game = Repo.game(g.id) ?: g
     }
-    ReviewSheet("Editar ${g.title}", "El nombre y las imágenes se guardan en este dispositivo; los archivos no cambian.",
+    ReviewSheet("Editar ${g.title}", "El nombre y las imágenes se guardan en este dispositivo. Los archivos no cambian.",
         onClose = onClose,
         footer = {
             TextButton(onClick = { Art.forget(g.id); Art.startFetchAll(listOf(g), quiet = true); Notice.info("Buscando las imágenes de nuevo") }) {

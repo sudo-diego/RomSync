@@ -171,7 +171,7 @@ object Tidy {
             if (reTid.find(name) == null) why += "le faltaba el código del juego"
             if (name.contains("tendoku", true)) why += "tenía la marca de la página"
             if (!tid.endsWith("000") && !rel.startsWith("switch/Actualizaciones y DLC/")) why += "es una actualización o DLC: va con las otras"
-            // Todo con el mismo formato: nombre oficial + código (antes se dejaban "Juego[TID][US][v0]" y nombres no oficiales).
+            // Todo con el mismo formato: nombre oficial + código.
             if (why.isEmpty() && target != rel && officialName(baseOf(tid)) != null) why += "nombre distinto al oficial"
             return (if (why.isEmpty()) rel else target) to why
         }

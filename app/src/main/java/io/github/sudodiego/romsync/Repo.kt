@@ -115,7 +115,7 @@ object Repo {
                 conn = Conn.Idle
             }
             compare()
-            // Las carátulas, fondos y logos se bajan solos en segundo plano (antes, solo al abrir la ficha de cada juego).
+            // Las carátulas, fondos y logos se bajan solos en segundo plano.
             Art.startFetchAll(allGames(), quiet = true)
             appScope.launch { runCatching { Art.recheckAll(allGames()) } } // en segundo plano: no frena la tienda
         } finally {

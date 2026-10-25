@@ -56,7 +56,7 @@ object Organize {
     fun recommend(vs: List<Game>): Pair<Game, String>? {
         if (vs.map { it.system }.distinct().size > 1) {
             val ok = vs.filter { Group.ext(it.primary) in knownExt }
-            if (ok.size == 1) return ok.first() to "formato normal de ${Repo.system(ok.first().system).short}; el otro parece estar en la carpeta equivocada"
+            if (ok.size == 1) return ok.first() to "formato normal de ${Repo.system(ok.first().system).short}. El otro parece estar en la carpeta equivocada"
         }
         return Advice.pick(vs)?.let { (g, why) -> g to why.ifBlank { "la mejor de las que tienes" } }
     }
@@ -176,7 +176,7 @@ fun DuplicatesDialog(onClose: () -> Unit) {
     var selected by remember { mutableStateOf(setOf<String>()) }
     var confirm by remember { mutableStateOf(false) }
     val chosen = groups.flatten().filter { it.id in selected }
-    // ¿Alguna de las marcadas tiene partidas en el dispositivo? (si no, no se habla de partidas).
+    // ¿Alguna de las marcadas tiene partidas en el dispositivo?.
     var withSaves by remember { mutableStateOf(false) }
     androidx.compose.runtime.LaunchedEffect(confirm) {
         if (confirm) withSaves = chosen.any { g ->
@@ -194,7 +194,7 @@ fun DuplicatesDialog(onClose: () -> Unit) {
                     val where = listOfNotNull(if (chosen.any { Repo.where(it).presence != Presence.TABLET_ONLY }) "del servidor" else null,
                         if (chosen.any { Repo.where(it).presence != Presence.MISSING }) "del dispositivo" else null).joinToString(" y ")
                     Text("Se borran $where (libera ${formatSize(chosen.sumOf { it.size })}).", fontWeight = FontWeight.SemiBold)
-                    if (withSaves) Muted("Sus partidas no se borran: quedan en el dispositivo.")
+                    if (withSaves) Muted("Sus partidas no se borran y quedan en el dispositivo.")
                 }
             },
             confirmButton = {
@@ -231,7 +231,7 @@ fun DuplicatesDialog(onClose: () -> Unit) {
     ) {
         if (groups.isEmpty()) item { Muted("Nada que revisar.") }
         if (Tidy.plan.orEmpty().any { it.kind != Tidy.Kind.INFO }) item {
-            Text("Antes conviene «Juegos por ordenar»: varios de estos pueden ser descargas sin ordenar (comprimidos, nombres raros) y se arreglan solos.",
+            Text("Conviene revisar antes «Juegos por ordenar». Varios de estos pueden ser descargas sin ordenar y se arreglan solos.",
                 color = Palette.warn, fontWeight = FontWeight.SemiBold)
         }
         items(groups, key = { Repo.versionKey(it.first()) }) { vs ->
@@ -308,7 +308,7 @@ fun TabletOnlyDialog(onClose: () -> Unit) {
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Los juegos que ya terminaron de copiarse quedan en el servidor.")
-                Text("El que se está copiando ahora no queda a medias: se borra lo que alcanzó a subir.", fontWeight = FontWeight.SemiBold)
+                Text("El que se está copiando no queda a medias. Se borra lo que alcanzó a subir.", fontWeight = FontWeight.SemiBold)
                 Muted("En el dispositivo no cambia nada. Puedes volver a copiarlos cuando quieras.")
             }
         },
@@ -321,7 +321,7 @@ fun TabletOnlyDialog(onClose: () -> Unit) {
         },
         dismissButton = { TextButton(onClick = { askCancel = false }) { Text("Seguir copiando") } },
     )
-    ReviewSheet("Sin copia en el servidor", "Solo están en este dispositivo: si se pierde o se borra, se pierden. Se copian a la misma carpeta en el servidor; aquí no cambia nada.",
+    ReviewSheet("Sin copia en el servidor", "Solo están en este dispositivo. Si se pierde o se borra, se pierden. Se copian a la misma carpeta en el servidor y aquí no cambia nada.",
         onClose = onClose,
         footer = {
             if (busy) {
@@ -372,7 +372,7 @@ fun TabletOnlyDialog(onClose: () -> Unit) {
     ) {
         if (list.isEmpty()) item { Muted("Todo tiene copia en el servidor.") }
         if (Tidy.plan.orEmpty().any { it.kind != Tidy.Kind.INFO }) item {
-            Text("Antes conviene «Juegos por ordenar»: varios de estos pueden ser descargas sin ordenar (comprimidos, nombres raros) y se arreglan solos.",
+            Text("Conviene revisar antes «Juegos por ordenar». Varios de estos pueden ser descargas sin ordenar y se arreglan solos.",
                 color = Palette.warn, fontWeight = FontWeight.SemiBold)
         }
         // De a 4 por fila: carátula, nombre, plataforma y tamaño; tocar marca o desmarca.

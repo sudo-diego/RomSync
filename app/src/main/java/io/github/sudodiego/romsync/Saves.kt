@@ -90,7 +90,7 @@ object Saves {
             .sortedBy { it.title.lowercase() }
     }
 
-    /** [reason]: "antes" (antes de restaurar) o "traspaso"; si no, sale de [auto] y [only]. Queda en el respaldo para la lista. */
+    /** [reason]: "antes" o "traspaso"; si no, sale de [auto] y [only]. Queda en el respaldo para la lista. */
     suspend fun backup(ctx: Context, emu: Emulator, auto: Boolean, force: Boolean = false, only: Set<String>? = null,
                        reason: String = ""): Result = withContext(Dispatchers.IO) {
         val pkg = Emulators.installedPackage(ctx, emu) ?: return@withContext Result.Failed("${emu.name} no está instalado")

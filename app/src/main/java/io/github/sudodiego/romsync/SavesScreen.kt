@@ -132,7 +132,7 @@ fun SavesScreen() {
                     }
                     Switch(checked = auto, onCheckedChange = { auto = it; Prefs.autoBackup = it; BackupWorker.schedule(ctx) })
                 }
-                // Sin esto, el ahorro de batería de Android (y el de Lenovo) puede frenar el respaldo con la app cerrada.
+                // Sin esto, el ahorro de batería de Android puede frenar el respaldo con la app cerrada.
                 val pm = ctx.getSystemService(android.os.PowerManager::class.java)
                 var free by remember { mutableStateOf(pm.isIgnoringBatteryOptimizations(ctx.packageName)) }
                 if (auto && !free) SpacedRow {
@@ -148,7 +148,7 @@ fun SavesScreen() {
                 }
                 var keep by remember { mutableStateOf(Prefs.keepBackups) }
                 SpacedRow {
-                    Muted("Respaldos completos que se guardan (más 5 por juego; los viejos se borran solos)", Modifier.weight(1f))
+                    Muted("Respaldos completos que se guardan, más 5 por juego. Los más viejos se borran solos", Modifier.weight(1f))
                     listOf(5, 10, 20).forEach { n ->
                         FilterChip(selected = keep == n, onClick = { keep = n; Prefs.keepBackups = n },
                             label = { Text("$n") })
@@ -252,7 +252,7 @@ private fun EmulatorCard(emu: Emulator, state: SaveState?, onRestore: () -> Unit
                 Text("Se copian tus tarjetas de memoria (Mcd001.ps2…) de NetherSX2 a ARMSX2. Son el mismo formato.")
                 Text("Antes se guarda una copia de las tarjetas de los dos emuladores en el dispositivo (RomSync/antes-del-traspaso)" +
                     if (Prefs.configured) " y un respaldo en el servidor." else ".", fontWeight = FontWeight.SemiBold)
-                Text("Los estados guardados (save states) no sirven entre emuladores: si estabas usando uno, guarda dentro del juego en NetherSX2 antes.")
+                Text("Los estados guardados (save states) no sirven entre emuladores. Si usabas uno, guarda antes dentro del juego en NetherSX2.")
                 Muted("NetherSX2 no se toca. Cierra los dos emuladores antes de seguir.")
             }
         },
@@ -271,11 +271,11 @@ private fun EmulatorCard(emu: Emulator, state: SaveState?, onRestore: () -> Unit
     // carpeta "hola123.ps2"): sin elegirla, parece que no se pasó nada.
     if (transferDone) AlertDialog(
         onDismissRequest = { transferDone = false },
-        title = { Text("Listo: tus tarjetas ya están en ARMSX2") },
+        title = { Text("Tus tarjetas ya están en ARMSX2") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("Se pasaron: " + Saves.transferredCards.joinToString(", "))
-                Text("Falta un paso en ARMSX2: menú → Memory Cards → pon en «Slot 1» la tarjeta que usabas en NetherSX2 " +
+                Text("Falta un paso en ARMSX2. Ve al menú → Memory Cards → pon en «Slot 1» la tarjeta que usabas en NetherSX2 " +
                     "(la que tiene tus partidas). ARMSX2 empieza con Mcd001.ps2, que suele estar vacía.",
                     fontWeight = FontWeight.Bold)
             }
@@ -416,7 +416,7 @@ fun RestoreDialog(emu: Emulator, onlyKey: String? = null, onClose: () -> Unit) {
                                 Muted("Partida de ${formatAgo(u.newest)} · ${formatSize(u.bytes)}")
                                 when {
                                     now == null -> Text("No la tienes en el dispositivo", color = Palette.ok, style = MaterialTheme.typography.bodySmall)
-                                    now.newest > u.newest + 60_000 -> Text("Ojo: la del dispositivo es más nueva (${formatAgo(now.newest)})",
+                                    now.newest > u.newest + 60_000 -> Text("La del dispositivo es más nueva (${formatAgo(now.newest)})",
                                         color = Palette.warn, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodySmall)
                                     now.newest + 60_000 < u.newest -> Text("Más nueva que la del dispositivo", color = Palette.ok, style = MaterialTheme.typography.bodySmall)
                                     else -> Muted("Igual a la del dispositivo")
@@ -531,7 +531,7 @@ private fun BackupOneDialog(emu: Emulator, onClose: () -> Unit) {
     )
 }
 
-/** Qué es un respaldo, en palabras (antes era "2026-10-13 21:01 · 17 archivos" y no se entendía la diferencia). */
+/** Qué es un respaldo, en palabras. */
 fun backupTitle(b: SaveBackupInfo): String {
     val one = b.games.singleOrNull()?.let(Saves::prettyUnitName)
     return when (b.kind) {

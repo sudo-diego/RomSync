@@ -78,7 +78,7 @@ object Backups {
      * gastaba el mismo cupo que uno completo (134 MB) y Dolphin podía llegar a 4 GB.
      * - completos y automáticos: los últimos [Prefs.keepBackups] (10);
      * - de un juego: los últimos 5 de CADA juego;
-     * - copias de seguridad (antes de restaurar, traspaso): las últimas 5;
+     * - copias de seguridad: las últimas 5;
      * - los marcados "conservar" nunca.
      */
     fun toPrune(all: List<SaveBackupInfo>): List<SaveBackupInfo> {

@@ -558,7 +558,7 @@ private fun Sidebar(active: Int, go: (Tab) -> Unit) {
             // Solo para el dedo: con mando el panel se abre al entrar a él (y así el foco nunca cae aquí).
             IconButton(modifier = Modifier.focusProperties { canFocus = false }, onClick = {
                 Sound.play(Sound.Fx.TOGGLE)
-                // Solo abre o cierra el panel (antes, con una ficha abierta, la cerraba).
+                // Solo abre o cierra el panel.
                 if (Nav.game != null) Nav.sidebarInGame = !Nav.sidebarInGame
                 else { UiState.sidebarOpen = !UiState.sidebarOpen; Prefs.sidebarOpen = UiState.sidebarOpen }
             }) { Icon(if (open) Icons.AutoMirrored.Rounded.MenuOpen else Icons.Rounded.Menu, "Panel") }
@@ -633,7 +633,7 @@ private fun TabContent() {
         // La ficha encima (de una ficha se puede pasar a otra: cada una entra con su animación).
         AnimatedContent(
             targetState = Nav.game?.id,
-            // Sin animar el tamaño (sin esto la ficha "crecía" desde arriba a la izquierda) y con el estilo elegido.
+            // Sin animar el tamaño y con el estilo elegido.
             transitionSpec = {
                 when (UiState.openAnim) {
                     "derecha" -> (fadeIn(tween(220)) + slideInHorizontally(tween(320)) { it / 6 }) togetherWith

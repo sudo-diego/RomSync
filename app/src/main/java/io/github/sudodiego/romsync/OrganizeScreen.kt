@@ -119,7 +119,7 @@ fun OrganizeScreen() {
                 }
                 if (systemIssues > 0) Section("Sistema") {
                     Fix(Icons.Rounded.Key, "Faltan las llaves de Switch", "prod.keys: sin ellas no se reconocen los juegos de Switch " +
-                        "que no traen su código en el nombre. Se buscan en el dispositivo; si no aparecen, elige el archivo",
+                        "que no traen su código en el nombre. Se buscan en el dispositivo y, si no aparecen, puedes elegir el archivo",
                         missingKeys, "Buscar") {
                         appScope.launch {
                             val ok = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { SwitchId.findKeys() }
@@ -128,7 +128,7 @@ fun OrganizeScreen() {
                                 Notice.info("Llaves encontradas y guardadas en bios")
                                 Tidy.scan()
                             } else {
-                                Notice.info("No las encontré: elige dónde está prod.keys")
+                                Notice.info("No se encontraron. Elige dónde está prod.keys")
                                 pickKeys.launch(arrayOf("*/*"))
                             }
                         }

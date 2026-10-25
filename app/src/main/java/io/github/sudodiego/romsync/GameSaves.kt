@@ -7,7 +7,7 @@ import java.io.File
 
 /**
  * Las partidas de UN juego de la tienda: en qué emulador están y con qué clave las agrupa [Saves.unitOf]. Así la ficha
- * del juego puede respaldar y restaurar solo ese juego (antes eso estaba aparte, en Partidas, con códigos como "GP7P").
+ * del juego puede respaldar y restaurar solo ese juego.
  *
  * La clave sale de la ROM que está en la tablet: el código de 4 letras del disco en GameCube/Wii, el TitleID en Switch y
  * 3DS, el ID de Vita, o el nombre del archivo (las partidas de DS y RetroArch se llaman igual que la ROM).

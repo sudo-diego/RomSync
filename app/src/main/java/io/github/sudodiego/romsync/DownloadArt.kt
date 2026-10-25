@@ -179,7 +179,7 @@ private fun ThreeDsFill(g: Game, p: Float, upload: Boolean, modifier: Modifier, 
     var shownFill by remember { mutableStateOf(p) }
     var lastBatch by remember { mutableStateOf(-1L) }
     if (drops != lastDrops) {
-        if (lastDrops >= 0) { shownFill = p; if (sound && !upload) Sound.play(Sound.Fx.CUBE) }
+        if (lastDrops >= 0) { shownFill = p; if (sound) Sound.play(Sound.Fx.CUBE) } // al bajar cae uno; al subir sale uno
         lastDrops = drops
     }
     if (batch != lastBatch) { if (lastBatch >= 0 && sound) Sound.play(Sound.Fx.RAIL); lastBatch = batch }

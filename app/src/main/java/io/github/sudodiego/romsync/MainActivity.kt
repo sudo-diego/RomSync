@@ -158,8 +158,13 @@ object Nav {
     /** Derecha desde el panel: de vuelta a lo último que se eligió en la sección; si ya no está, a su entrada. */
     fun backToContent() {
         val fr = lastFocus[tab.name]
-        if (fr == null || runCatching { fr.requestFocus() }.isFailure) enter(tab)
+        val r = fr?.let { runCatching { it.requestFocus() } }
+        if (r == null || r.isFailure) { enter(tab); return }
+        // Si lo recordado ya no puede tener el foco (quedó fuera de la vista), a la entrada de la sección.
+        ui.postDelayed({ if (inSidebar) enter(tab) }, 120)
     }
+    private val ui = android.os.Handler(android.os.Looper.getMainLooper())
+    private val main = kotlinx.coroutines.MainScope()
     /** La pantalla que tiene el foco ahora (null: el panel o ninguna). */
     var focusedScreen: String? = null
 
@@ -168,8 +173,10 @@ object Nav {
      * igual en todas. En la Tienda es el carrusel (o la primera carátula si se está dentro de una sección).
      */
     fun enter(t: Tab) {
-        StoreState.focusTarget = if (t != Tab.STORE) entryOf(t)
-            else if (StoreState.filter == StoreFilter.ALL && StoreState.system.isBlank() && StoreState.query.isBlank()) "carrusel" else "primero"
+        if (t != Tab.STORE) { StoreState.requestFocusOn(entryOf(t)); return }
+        // La entrada de la Tienda está arriba: si la lista está más abajo no existe todavía, así que primero se sube.
+        val key = if (StoreState.filter == StoreFilter.ALL && StoreState.system.isBlank() && StoreState.query.isBlank()) "carrusel" else "primero"
+        main.launch { runCatching { StoreState.grid.scrollToItem(0) }; StoreState.requestFocusOn(key) }
     }
     /** Al entrar a una sección con mando, el foco va a lo principal de esa pantalla. */
     fun entryOf(t: Tab) = if (t == Tab.STORE) "carrusel" else "entrada:${t.name}"
@@ -440,10 +447,11 @@ fun AppShell() {
         Nav.enter(t)
     }
     // Si nadie tomó el foco de entrada (sección vacía, como Descargas sin nada), va a la sección en el panel lateral.
-    androidx.compose.runtime.LaunchedEffect(StoreState.focusTarget) {
+    androidx.compose.runtime.LaunchedEffect(StoreState.focusTarget, StoreState.focusSeq) {
         val t = StoreState.focusTarget ?: return@LaunchedEffect
         if (!t.startsWith("entrada:")) return@LaunchedEffect
-        kotlinx.coroutines.delay(300)
+        // Hasta 1,5 s: algunas secciones muestran su primer botón cuando terminan de cargar (Organizar analiza).
+        repeat(15) { kotlinx.coroutines.delay(100); if (StoreState.focusTarget != t) return@LaunchedEffect }
         // La sección no tiene nada que elegir (como Descargas vacía): el foco queda en ella en el panel.
         if (StoreState.focusTarget == t && (Nav.keys || Nav.pad)) {
             StoreState.focusTarget = null

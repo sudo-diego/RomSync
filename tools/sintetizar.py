@@ -245,11 +245,18 @@ def sfx():
         start = int(.36*SR); j = j + [0.0]*max(0, start + len(chord) - len(j))
         for i, v in enumerate(chord): j[start + i] += v
         save('jingle', j, .6)
-        # 3DS: cubito que cae (golpecito que baja de tono) y el riel que se mueve (tres clics mecánicos).
-        n = int(.12*SR); cubo = []
+        # 3DS: cubito que cae. Un "pop" redondo y suave al estilo Nintendo (antes era un golpe seco): un tono que sube
+        # rápido de altura, con un armónico suave y una cola corta.
+        n = int(.16*SR); cubo = []
+        base = {'clasico': 520, 'suave': 440, 'retro': 600}.get(kind, 520)
+        ph = 0.0
         for i in range(n):
-            t = i/SR; f = 950*math.exp(-t*9) + 300
-            cubo.append(math.sin(TAU*f*t) * math.exp(-t*28) + (.25*(random.random()*2-1)*math.exp(-t*120)))
+            t = i/SR
+            f = base * (1 + 0.9*(1 - math.exp(-t*55)))
+            ph += TAU*f/SR
+            env = (1 - math.exp(-t*900)) * math.exp(-t*22)
+            v = math.sin(ph) + 0.25*math.sin(2*ph) + (0.18*math.sin(3*ph) if kind == 'retro' else 0)
+            cubo.append(v*env)
         save('cubo', cubo, .55)
         riel = [0.0]*int(.22*SR)
         for k in range(3):

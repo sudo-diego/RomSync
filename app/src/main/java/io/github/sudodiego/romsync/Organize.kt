@@ -385,7 +385,7 @@ fun TabletOnlyDialog(onClose: () -> Unit) {
                         .clickable { selected = if (on) selected - g.id else selected + g.id }.padding(4.dp)) {
                         Box {
                             Cover(g, Modifier.fillMaxWidth().then(if (on) Modifier.border(3.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(14.dp)) else Modifier)) {
-                                DownloadOverlay(g)
+                                DownloadOverlay(g, sound = true)
                             }
                             Checkbox(on, { selected = if (it) selected + g.id else selected - g.id }, Modifier.align(Alignment.TopEnd))
                         }

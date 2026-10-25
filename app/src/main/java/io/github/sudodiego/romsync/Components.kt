@@ -1,5 +1,7 @@
 package io.github.sudodiego.romsync
 
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.animateContentSize
 import kotlinx.coroutines.launch
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.foundation.focusGroup
@@ -183,10 +185,12 @@ fun Modifier.gamepadText(): Modifier = composed {
 @Composable
 fun Modifier.focusWhen(key: String): Modifier {
     val fr = androidx.compose.runtime.remember { androidx.compose.ui.focus.FocusRequester() }
-    androidx.compose.runtime.LaunchedEffect(StoreState.focusTarget, Nav.keys, Nav.pad) {
+    androidx.compose.runtime.LaunchedEffect(StoreState.focusTarget, StoreState.focusSeq, Nav.keys, Nav.pad) {
         if (StoreState.focusTarget == key && (Nav.keys || Nav.pad) && Nav.game == null) {
-            refocus { fr.requestFocus() }
-            StoreState.focusTarget = null
+            // Si varios tienen la misma entrada (los "Revisar" de Organizar), gana el primero que lo toma.
+            if (key.startsWith("entrada:")) refocus { check(StoreState.focusTarget == key); fr.requestFocus(); StoreState.focusTarget = null }
+            else refocus { fr.requestFocus() }
+            if (StoreState.focusTarget == key) StoreState.focusTarget = null
         }
     }
     return this.focusRequester(fr)
@@ -353,15 +357,30 @@ fun PadHints(hints: List<Pair<String, String>>) {
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 fun PadBar(modifier: Modifier = Modifier) {
     if (!Nav.pad) return
-    androidx.compose.foundation.layout.FlowRow(
-        modifier.widthIn(max = 900.dp).softShadow(16.dp, 6.dp, 0.18f).clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.surface.copy(alpha = 0.95f))
-            .padding(horizontal = 12.dp, vertical = 6.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        PadBarState.hints.forEach { (btn, what) ->
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                btn.split(' ').forEach { PadGlyph(it) }
-                Text(what, style = MaterialTheme.typography.labelMedium)
+    // Al cambiar lo que dice (otra pantalla, el panel, una ficha), lo nuevo entra con un fundido que sube un poco y el
+    // recuadro cambia de tamaño suave.
+    Box(modifier.widthIn(max = 900.dp).softShadow(16.dp, 6.dp, 0.18f).clip(RoundedCornerShape(16.dp))
+        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.95f))
+        .animateContentSize(androidx.compose.animation.core.spring(dampingRatio = 0.85f, stiffness = 500f))) {
+        androidx.compose.animation.AnimatedContent(
+            targetState = PadBarState.hints,
+            transitionSpec = {
+                (androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(200, 60)) +
+                    androidx.compose.animation.slideInVertically(androidx.compose.animation.core.tween(240)) { it / 3 }) togetherWith
+                    androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(90)) using null
+            },
+            label = "guia",
+        ) { hints ->
+            androidx.compose.foundation.layout.FlowRow(
+                Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                hints.forEach { (btn, what) ->
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        btn.split(' ').forEach { PadGlyph(it) }
+                        Text(what, style = MaterialTheme.typography.labelMedium)
+                    }
+                }
             }
         }
     }

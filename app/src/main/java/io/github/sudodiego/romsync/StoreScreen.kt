@@ -132,6 +132,10 @@ object StoreState {
     var returnTo by mutableStateOf<String?>(null)
     /** A qué elemento le toca el foco ahora ("carrusel", "primero", "plataforma:<id>", "vertodo:<fila>"). Ver focusWhen. */
     var focusTarget by mutableStateOf<String?>("carrusel")
+    /** Sube con cada pedido de foco, así pedir lo mismo dos veces también cuenta (antes, si quedaba "carrusel" sin usar,
+     *  volver a pedirlo no hacía nada y la derecha desde el panel no entraba a la Tienda). */
+    var focusSeq by mutableStateOf(0)
+    fun requestFocusOn(key: String) { focusTarget = key; focusSeq++ }
     /** Dónde volver con B al salir de una plataforma o de "Ver todo". */
     var backTarget: String? = null
     /** Abrir una plataforma o "Ver todo" como una sección: el foco va al primer juego y B vuelve a [from]. */

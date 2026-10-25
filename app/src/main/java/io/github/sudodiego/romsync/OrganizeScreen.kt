@@ -88,7 +88,8 @@ fun OrganizeScreen() {
     val systemIssues = missingKeys + junk + stray + biosMissing.size
     // Dos columnas: a la izquierda lo que hay que revisar (juegos y sistema); a la derecha el espacio.
     androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize()) {
-        val wide = maxWidth > 900.dp
+        // Por el ancho de la pantalla, no del espacio que deja el panel: abrir o cerrar el panel no debe cambiar el diseño.
+        val wide = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp >= 1000 || maxWidth > 900.dp
         val issues: @Composable () -> Unit = {
             Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 // Resumen arriba: cuántas cosas hay y si está todo bien.

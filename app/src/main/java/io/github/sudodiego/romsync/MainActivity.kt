@@ -430,7 +430,10 @@ class MainActivity : ComponentActivity() {
         if (mapped != 0) return dispatchKeyEvent(android.view.KeyEvent(event.downTime, event.eventTime, event.action,
             mapped, event.repeatCount, event.metaState, event.deviceId, event.scanCode, event.flags, event.source))
         // Cada movimiento de la cruceta suena (como en Big Picture), en cualquier pantalla.
-        val handled = super.dispatchKeyEvent(event)
+        // Un pedido de foco a algo que ya no está no debe cerrar la app.
+        val handled = try { super.dispatchKeyEvent(event) } catch (e: IllegalStateException) {
+            android.util.Log.w("RomSync", "foco: ${e.message?.lineSequence()?.firstOrNull()}"); true
+        }
         if (handled && event.action == android.view.KeyEvent.ACTION_DOWN && event.keyCode in setOf(android.view.KeyEvent.KEYCODE_DPAD_UP,
                 android.view.KeyEvent.KEYCODE_DPAD_DOWN, android.view.KeyEvent.KEYCODE_DPAD_LEFT, android.view.KeyEvent.KEYCODE_DPAD_RIGHT))
             Sound.play(Sound.Fx.MOVE)

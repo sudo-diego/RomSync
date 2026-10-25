@@ -139,6 +139,7 @@ object StoreState {
      *  volver a pedirlo no hacía nada y la derecha desde el panel no entraba a la Tienda). */
     var focusSeq by mutableStateOf(0)
     fun requestFocusOn(key: String) { focusTarget = key; focusSeq++ }
+    val isHome get() = filter == StoreFilter.ALL && system.isEmpty() && query.isBlank()
     /** Dónde volver con B al salir de una plataforma o de "Ver todo". */
     var backTarget: String? = null
     /** Abrir una plataforma o "Ver todo" como una sección: el foco va al primer juego y B vuelve a [from]. */
@@ -331,10 +332,9 @@ private fun FeaturedCarousel(cards: List<Game>, below: androidx.compose.ui.focus
         }
     }
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        HorizontalPager(pager, Modifier.fillMaxWidth().height(260.dp).clipToBounds()
+        HorizontalPager(pager, Modifier.fillMaxWidth().height(260.dp).clip(RoundedCornerShape(26.dp))
             .focusRequester(carouselFocus).focusWhen("carrusel")
             .onFocusChanged { focusedIn = it.isFocused }
-            .focusProperties { down = below }
             .onPreviewKeyEvent { e ->
                 val isCenter = e.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER || e.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_ENTER
                 if (isCenter) {
@@ -347,6 +347,8 @@ private fun FeaturedCarousel(cards: List<Game>, below: androidx.compose.ui.focus
                 }
                 if (e.type != androidx.compose.ui.input.key.KeyEventType.KeyDown) return@onPreviewKeyEvent false
                 when (e.nativeKeyEvent.keyCode) {
+                    // Abajo: a la primera plataforma si está; si no, lo que haya debajo.
+                    android.view.KeyEvent.KEYCODE_DPAD_DOWN -> runCatching { below.requestFocus() }.isSuccess
                     android.view.KeyEvent.KEYCODE_DPAD_RIGHT, android.view.KeyEvent.KEYCODE_DPAD_LEFT -> {
                         val step = if (e.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_RIGHT) 1 else -1
                         // Desde la página a la que ya va: dos toques seguidos saltan dos páginas.

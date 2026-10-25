@@ -189,6 +189,12 @@ neutro en la app y en las respuestas (sin voseo ni modismos).
 - Al apretar Descargar o al terminar, el foco pasaba por el panel antes de Pausar/Borrar (el botón desaparecía) → el panel
   solo acepta el foco cuando se va a él (`Nav.sidebarWelcome`: izquierda, B o pedido de la app).
 - 3DS: el aviso de descarga terminada (y su jingle) se adelantaba al regalo → espera a que terminen de caer los cubitos.
+- Cierres al azar: `focusProperties { down = ... }` apuntaba a una tarjeta que podía no existir (fila desplazada) →
+  se pide a mano y, si falla, sigue la búsqueda normal. Regla: nunca redirigir el foco a un FocusRequester que pueda no
+  estar en pantalla. Además `dispatchKeyEvent` no deja que un pedido de foco fallido cierre la app.
+- Carrusel: la página que entraba se veía cortada en rectángulo (la ventana tenía borde recto) → ventana redondeada.
+- Con mando, desde una ficha o una sección de la Tienda la izquierda ya no va al panel: B vuelve al inicio y de ahí al
+  panel (tocando, el panel funciona igual).
 - Subida cortada dejaba `.part` en el PC (sin conexión no se podía borrar) → se anotan (`Prefs.pendingParts`) y se
   borran al volver a conectar (`SftpConn.cleanParts`).
 - Abajo en el carrusel descargaba el juego: A abría la ficha al apretar y al soltar apretaba Descargar.

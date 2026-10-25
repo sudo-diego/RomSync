@@ -211,9 +211,13 @@ fun Modifier.screenFocus(scroll: (suspend (Float) -> Unit)? = null): Modifier {
         if (it.hasFocus) { Nav.switching = false; Nav.focusedScreen = key } else if (Nav.focusedScreen == key) Nav.focusedScreen = null
     }.focusProperties {
         // Solo se frena la cruceta (arriba, abajo, derecha); B y los saltos pedidos por la app sí pueden salir.
-        exit = { dir -> if (dir == androidx.compose.ui.focus.FocusDirection.Up || dir == androidx.compose.ui.focus.FocusDirection.Down ||
-            dir == androidx.compose.ui.focus.FocusDirection.Right) androidx.compose.ui.focus.FocusRequester.Cancel
-            else androidx.compose.ui.focus.FocusRequester.Default }
+        exit = { dir ->
+            val inner = key == "game" || (key == Tab.STORE.name && !StoreState.isHome)
+            if (dir == androidx.compose.ui.focus.FocusDirection.Up || dir == androidx.compose.ui.focus.FocusDirection.Down ||
+                dir == androidx.compose.ui.focus.FocusDirection.Right || (dir == androidx.compose.ui.focus.FocusDirection.Left && inner))
+                androidx.compose.ui.focus.FocusRequester.Cancel
+            else androidx.compose.ui.focus.FocusRequester.Default
+        }
     }.focusGroup().onKeyEvent { e ->
         if (scroll == null || e.type != androidx.compose.ui.input.key.KeyEventType.KeyDown) return@onKeyEvent false
         val dir = when (e.nativeKeyEvent.keyCode) {

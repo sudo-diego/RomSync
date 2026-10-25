@@ -991,10 +991,8 @@ private fun GameEditor(g: Game, onClose: () -> Unit) {
 @Composable
 fun BigDownloadButton(label: String, size: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val shape = RoundedCornerShape(99.dp)
-    // Del color destacado elegido en Ajustes: más claro arriba, más oscuro abajo (brillo de botón de eShop).
     val accent = Color(UiState.accent)
-    val brush = androidx.compose.ui.graphics.Brush.verticalGradient(listOf(
-        androidx.compose.ui.graphics.lerp(accent, Color.White, 0.30f), accent, androidx.compose.ui.graphics.lerp(accent, Color.Black, 0.15f)))
+    val brush = androidx.compose.ui.graphics.SolidColor(accent)
     // Con control, al abrir la ficha el foco cae directo aquí (sin recorrer toda la pantalla).
     val focus = androidx.compose.runtime.remember { androidx.compose.ui.focus.FocusRequester() }
     androidx.compose.runtime.LaunchedEffect(Unit) { if (Nav.keys || Nav.pad) { kotlinx.coroutines.delay(30); runCatching { focus.requestFocus() } } }

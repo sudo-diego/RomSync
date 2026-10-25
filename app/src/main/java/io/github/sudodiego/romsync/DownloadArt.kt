@@ -172,16 +172,19 @@ private fun ThreeDsFill(g: Game, p: Float, upload: Boolean, modifier: Modifier, 
     val batch = clock / CYCLE
     val inBatch = clock % CYCLE
     val fromRight = java.util.Random(batch * 7919 + g.id.hashCode()).nextBoolean()
-    if (sound) LaunchedEffect(Unit) {
-        while (true) {
-            Sound.play(Sound.Fx.MOVE) // el riel empieza a moverse
-            for (k in 0 until 4) {
-                kotlinx.coroutines.delay(if (k == 0) TRAVEL + FALL else GAP)
-                Sound.play(Sound.Fx.TOGGLE) // cae un cubito
-            }
-            kotlinx.coroutines.delay(CYCLE - TRAVEL - FALL - 3 * GAP)
-        }
+    // Como en la 3DS, el ícono se rellena cuando cae cada cubito (por tandas, no de a poco): cada caída deja ver lo
+    // que se bajó hasta ese momento. Los sonidos van con lo que se ve: el riel al empezar la tanda y uno por cubito.
+    val drops = batch * 4 + (0 until 4).count { k -> inBatch - k * GAP >= TRAVEL + FALL }
+    var lastDrops by remember { mutableStateOf(-1L) }
+    var shownFill by remember { mutableStateOf(p) }
+    var lastBatch by remember { mutableStateOf(-1L) }
+    if (drops != lastDrops) {
+        if (lastDrops >= 0) { shownFill = p; if (sound && !upload) Sound.play(Sound.Fx.CUBE) }
+        lastDrops = drops
     }
+    if (batch != lastBatch) { if (lastBatch >= 0 && sound) Sound.play(Sound.Fx.RAIL); lastBatch = batch }
+    if (p >= 0.999f) shownFill = 1f
+    val fill = if (upload) p else shownFill
     BoxWithConstraints(modifier.background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color(0xFFF2F9FF), Color(0xFFD6ECFF))))) {
         val side = minOf(maxWidth, maxHeight) * 0.5f
         val sidePx = with(androidx.compose.ui.platform.LocalDensity.current) { side.toPx() }
@@ -217,12 +220,12 @@ private fun ThreeDsFill(g: Game, p: Float, upload: Boolean, modifier: Modifier, 
         IconTile(side, Modifier.align(Alignment.Center)) {
             val art = listOf("icon", "grid").firstOrNull { Art.cached(g.id, it) != null }
             if (art != null) ArtImage(g, art, Modifier.fillMaxSize().graphicsLayer { alpha = 0.2f }, ContentScale.Crop)
-            Box(Modifier.fillMaxSize().drawWithClipBottom(p)) {
+            Box(Modifier.fillMaxSize().drawWithClipBottom(fill)) {
                 if (art != null) ArtImage(g, art, Modifier.fillMaxSize(), ContentScale.Crop)
                 else Box(Modifier.fillMaxSize().background(Color(Repo.system(g.system).color)))
             }
         }
-        Text("${(p * 100).toInt()}%", Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp), color = Color(0xFF2B3A4A),
+        Text("${(fill * 100).toInt()}%", Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp), color = Color(0xFF2B3A4A),
             fontWeight = FontWeight.Bold, fontSize = 13.sp)
     }
 }

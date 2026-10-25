@@ -19,7 +19,6 @@ import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -101,8 +100,8 @@ fun GroupHeader(icon: ImageVector, color: Color, title: String, detail: String, 
 /** Fila marcable dentro de una tarjeta. */
 @Composable
 fun CheckRow(checked: Boolean?, onToggle: () -> Unit, content: @Composable () -> Unit) {
-    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).then(if (checked != null) Modifier.clickable { onToggle() } else Modifier)
-        .padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).then(if (checked != null) Modifier.clickable { onToggle() } else Modifier)
+        .padding(horizontal = 6.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         if (checked != null) Checkbox(checked, { onToggle() }) else Box(Modifier.size(48.dp))
         Box(Modifier.weight(1f)) { content() }
     }

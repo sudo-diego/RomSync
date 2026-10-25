@@ -1,5 +1,7 @@
 package io.github.sudodiego.romsync
 
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.layout.aspectRatio
@@ -28,7 +30,6 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ArrowDropDown
 import androidx.compose.material.icons.rounded.Downloading
 import androidx.compose.material.icons.rounded.TabletAndroid
-import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.LaunchedEffect
@@ -66,17 +67,13 @@ import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.RadioButtonUnchecked
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -170,7 +167,8 @@ fun StoreScreen() {
     val versionCount = remember(all) { all.filter { it.kind != "shortcut" }.groupingBy { Repo.versionKey(it) }.eachCount() }
     fun versionsOf(g: Game) = if (g.kind == "shortcut") 1 else versionCount[Repo.versionKey(g)] ?: 1
     val browsing = StoreState.query.isNotBlank() || StoreState.filter != StoreFilter.ALL || StoreState.system.isNotEmpty()
-    val games = remember(cards, StoreState.filter, StoreState.system, StoreState.query, StoreState.bySize) {
+    // También con los archivos del dispositivo: al borrar o bajar un juego, el filtro "Descargados" se vuelve a aplicar.
+    val games = remember(cards, localFiles, Repo.tabletOnly, StoreState.filter, StoreState.system, StoreState.query, StoreState.bySize) {
         val q = StoreState.query.trim().lowercase()
         cards.filter { g ->
             if (StoreState.system.isNotEmpty() && g.system != StoreState.system) return@filter false
@@ -195,12 +193,19 @@ fun StoreScreen() {
     androidx.activity.compose.BackHandler(enabled = filtered && Nav.game == null) { Sound.play(Sound.Fx.BACK); StoreState.home() }
     // Al empezar a usar el mando sin nada enfocado en la Tienda, el foco va al carrusel (no al botón del panel).
     var storeHasFocus by remember { mutableStateOf(false) }
+    // Con un mando conectado, Android pone su propio foco inicial (en el panel) un instante después: si no se ha
+    // apretado nada todavía, el foco vuelve al carrusel.
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(1000)
+        if (Nav.pad && !Nav.anyKey && !filtered && Nav.game == null) StoreState.focusTarget = "carrusel"
+    }
     LaunchedEffect(Nav.keys) {
         if (Nav.keys && !storeHasFocus && Nav.game == null && StoreState.focusTarget == null) StoreState.focusTarget = if (filtered) "primero" else "carrusel"
     }
-    PadHints(listOfNotNull("A" to "Abrir", (if (filtered) "B" to "Inicio" else null), "X" to "Buscar", "Y" to "Vista",
+    PadHints(listOfNotNull("A" to "Abrir", (if (filtered) "B" to "Inicio" else "B" to "Panel"), "X" to "Buscar", "Y" to "Vista",
         "ZL ZR" to "Filtro", "−" to "Actualizar", "+" to "Orden", "L R" to "Sección"))
-    Box(Modifier.fillMaxSize().onFocusChanged { storeHasFocus = it.hasFocus }) {
+    Box(Modifier.fillMaxSize().onFocusChanged { storeHasFocus = it.hasFocus }
+        .screenFocus { StoreState.grid.animateScrollBy(it) }) {
         LazyVerticalGrid(
             state = StoreState.grid,
             columns = GridCells.Adaptive(if (UiState.icons) 124.dp else 158.dp),
@@ -246,18 +251,25 @@ fun StoreScreen() {
                     StorePanel("Explorar", Icons.Rounded.Explore, Palette.blue) { SectionTiles(cards) }
                 }
             } else {
-                systems.firstOrNull { it.first.id == StoreState.system }?.let { (sys, n) ->
-                    item(span = { GridItemSpan(maxLineSpan) }, key = "titulo-plataforma") {
-                        SpacedRow(Modifier.padding(top = 4.dp)) {
-                            Box(Modifier.size(18.dp).clip(RoundedCornerShape(6.dp)).background(Color(sys.color)))
-                            Text(sys.name, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                            Muted("$n juegos")
-                        }
+                // Dónde se está: la plataforma y/o la sección (al cambiar con ZL/ZR se ve aquí).
+                item(span = { GridItemSpan(maxLineSpan) }, key = "titulo-seccion") {
+                    val sys = systems.firstOrNull { it.first.id == StoreState.system }?.first
+                    val filterName = when (StoreState.filter) {
+                        StoreFilter.ALL -> if (sys == null) "Todos los juegos" else null
+                        StoreFilter.TABLET_ONLY -> "Sin copia en el servidor"
+                        else -> StoreState.filter.label
+                    }
+                    SpacedRow(Modifier.padding(top = 4.dp)) {
+                        if (sys != null) Box(Modifier.size(18.dp).clip(RoundedCornerShape(6.dp)).background(Color(sys.color)))
+                        Text(listOfNotNull(sys?.name, filterName).joinToString(" · "), style = MaterialTheme.typography.headlineMedium,
+                            fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                        Muted("${games.size} juegos")
                     }
                 }
                 if (games.isEmpty()) item(span = { GridItemSpan(maxLineSpan) }, key = "vacio") { EmptyState() }
                 itemsIndexed(games, key = { _, it -> it.id }) { idx, g ->
-                    GameCard(g, versionsOf(g), Modifier.animateItem().then(if (idx == 0) Modifier.focusWhen("primero") else Modifier))
+                    GameCard(g, versionsOf(g), Modifier.animateItem().then(if (idx == 0) Modifier.focusWhen("primero") else Modifier)
+                        .gridNav(idx, games))
                 }
             }
             // Espacio para que la barra de selección no tape las últimas tarjetas.
@@ -284,7 +296,7 @@ private fun FeaturedCarousel(cards: List<Game>, below: androidx.compose.ui.focus
     val carouselFocus = remember { androidx.compose.ui.focus.FocusRequester() }
     LaunchedEffect(Nav.game) {
         val i = featured.indexOfFirst { it.id == StoreState.returnTo }
-        if (Nav.game == null && i >= 0) { pager.scrollToPage(i); kotlinx.coroutines.delay(60); runCatching { carouselFocus.requestFocus() }; StoreState.returnTo = null }
+        if (Nav.game == null && i >= 0) { pager.scrollToPage(i); refocus { carouselFocus.requestFocus() }; StoreState.returnTo = null }
     }
     var target by remember { mutableStateOf(0) }
     val carouselScope = androidx.compose.runtime.rememberCoroutineScope()
@@ -298,11 +310,20 @@ private fun FeaturedCarousel(cards: List<Game>, below: androidx.compose.ui.focus
         }
     }
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        HorizontalPager(pager, Modifier.fillMaxWidth().height(260.dp)
+        HorizontalPager(pager, Modifier.fillMaxWidth().height(260.dp).clipToBounds()
             .focusRequester(carouselFocus).focusWhen("carrusel")
             .onFocusChanged { focusedIn = it.isFocused }
             .focusProperties { down = below }
             .onPreviewKeyEvent { e ->
+                val isCenter = e.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER || e.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_ENTER
+                if (isCenter) {
+                    // Se abre al soltar el botón: abrir al apretar hacía que al soltarlo se apretara Descargar en la ficha.
+                    if (e.type == androidx.compose.ui.input.key.KeyEventType.KeyUp) {
+                        val g = featured[pager.currentPage]
+                        Sound.play(Sound.Fx.OPEN); StoreState.returnTo = g.id; Nav.game = g
+                    }
+                    return@onPreviewKeyEvent true
+                }
                 if (e.type != androidx.compose.ui.input.key.KeyEventType.KeyDown) return@onPreviewKeyEvent false
                 when (e.nativeKeyEvent.keyCode) {
                     android.view.KeyEvent.KEYCODE_DPAD_RIGHT, android.view.KeyEvent.KEYCODE_DPAD_LEFT -> {
@@ -315,11 +336,6 @@ private fun FeaturedCarousel(cards: List<Game>, below: androidx.compose.ui.focus
                         carouselScope.launch { pager.animateScrollToPage(target, animationSpec = tween(260)) }
                         true
                     }
-                    android.view.KeyEvent.KEYCODE_DPAD_CENTER, android.view.KeyEvent.KEYCODE_ENTER -> {
-                        val g = featured[pager.currentPage]
-                        Sound.play(Sound.Fx.OPEN); StoreState.returnTo = g.id; Nav.game = g
-                        true
-                    }
                     else -> false
                 }
             }
@@ -328,10 +344,11 @@ private fun FeaturedCarousel(cards: List<Game>, below: androidx.compose.ui.focus
             val g = featured[i]
             val offset = (pager.currentPage - i) + pager.currentPageOffsetFraction
             Box(
+                // La escala y el recorte en la misma capa: al pasar de página la imagen se salía del borde.
                 Modifier.fillMaxSize().graphicsLayer {
                     val s = 1f - 0.06f * kotlin.math.abs(offset).coerceAtMost(1f)
-                    scaleX = s; scaleY = s
-                }.clip(RoundedCornerShape(26.dp))
+                    scaleX = s; scaleY = s; shape = RoundedCornerShape(26.dp); clip = true
+                }
                     // Con el dedo se toca la página; con el mando se usa el carrusel entero (las páginas no reciben foco).
                     .focusProperties { canFocus = false }
                     .pressable { Sound.play(Sound.Fx.OPEN); StoreState.returnTo = g.id; Nav.game = g },
@@ -374,10 +391,14 @@ private fun WideShelf(games: List<Game>, onAll: () -> Unit) {
 @Composable
 private fun WideTile(g: Game) {
     val sys = Repo.system(g.system)
-    Box(Modifier.size(360.dp, 200.dp).focusHighlight(RoundedCornerShape(22.dp), grow = 1.03f).softShadow(22.dp)
+    val focus = remember { androidx.compose.ui.focus.FocusRequester() }
+    LaunchedEffect(Nav.game) {
+        if (Nav.game == null && StoreState.returnTo == g.id) { refocus { focus.requestFocus() }; StoreState.returnTo = null }
+    }
+    Box(Modifier.size(360.dp, 200.dp).focusRequester(focus).focusHighlight(RoundedCornerShape(22.dp), grow = 1.03f).softShadow(22.dp)
         .clip(RoundedCornerShape(22.dp))
         .background(Brush.linearGradient(listOf(Color(sys.color), Color(0xFF0D1220))))
-        .pressable { Sound.play(Sound.Fx.OPEN); Nav.game = g }) {
+        .pressable { Sound.play(Sound.Fx.OPEN); StoreState.returnTo = g.id; Nav.game = g }) {
         ArtImage(g, "hero", Modifier.fillMaxSize())
         Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xCC000000)))))
         Box(Modifier.align(Alignment.TopStart).padding(16.dp).size(200.dp, 70.dp)) {
@@ -466,6 +487,50 @@ private fun SectionTiles(cards: List<Game>) {
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 private fun CenterRow(content: @Composable () -> Unit) =
     androidx.compose.runtime.CompositionLocalProvider(androidx.compose.foundation.gestures.LocalBringIntoViewSpec provides CenteredFocus) { content() }
+
+/**
+ * En la cuadrícula, arriba y abajo van al juego de la misma columna (la búsqueda de Android a veces elegía el primero
+ * de la fila). En la primera fila, la lista sube del todo para que se vea el encabezado.
+ */
+@Composable
+private fun Modifier.gridNav(idx: Int, games: List<Game>): Modifier {
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    return this.onFocusChanged { f ->
+        if (!f.isFocused) return@onFocusChanged
+        val cols = StoreState.grid.layoutInfo.let { li -> li.visibleItemsInfo.filter { it.key is String && games.any { g -> g.id == it.key } }
+            .groupBy { it.row }.values.maxOfOrNull { it.size } ?: 1 }
+        if (idx < cols) scope.launch { StoreState.grid.animateScrollToItem(0) }
+    }.onPreviewKeyEvent { e ->
+        if (e.type != androidx.compose.ui.input.key.KeyEventType.KeyDown) return@onPreviewKeyEvent false
+        val down = e.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN
+        val up = e.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_UP
+        if (!down && !up) return@onPreviewKeyEvent false
+        val li = StoreState.grid.layoutInfo
+        val cols = li.visibleItemsInfo.filter { info -> games.any { it.id == info.key } }.groupBy { it.row }.values.maxOfOrNull { it.size } ?: 1
+        val to = idx + if (down) cols else -cols
+        if (to < 0) { scope.launch { StoreState.grid.animateScrollToItem(0) }; return@onPreviewKeyEvent true }
+        val target = games.getOrNull(to.coerceAtMost(games.size - 1)) ?: return@onPreviewKeyEvent true
+        if (down && idx / cols == (games.size - 1) / cols) return@onPreviewKeyEvent true // última fila
+        StoreState.focusTarget = "juego:${target.id}"
+        // Que la fila de destino esté en pantalla (si no, su carátula no existe todavía).
+        val itemIndex = li.visibleItemsInfo.firstOrNull { it.key == games[idx].id }?.index?.let { it + (to - idx) }
+        if (itemIndex != null) scope.launch { StoreState.grid.animateScrollToItem(maxOf(0, itemIndex - cols)) }
+        Sound.play(Sound.Fx.MOVE)
+        true
+    }
+}
+
+/**
+ * Devolver el foco después de cerrar una ficha: espera a que termine la transición (si no, al desaparecer la ficha
+ * Android mandaba el foco al panel lateral) y reintenta unas veces hasta que quede.
+ */
+suspend fun refocus(request: () -> Unit) {
+    kotlinx.coroutines.delay(30)
+    repeat(12) {
+        if (runCatching { request() }.isSuccess) { kotlinx.coroutines.delay(150); runCatching { request() }; return }
+        kotlinx.coroutines.delay(50)
+    }
+}
 
 /** Un panel del inicio: título con ícono de color y su contenido, para que cada sección se distinga. */
 @Composable
@@ -761,7 +826,13 @@ private fun GameCard(g: Game, versions: Int = 1, modifier: Modifier = Modifier) 
     // Al volver de su ficha con el mando, el foco vuelve a esta carátula.
     val focus = remember { androidx.compose.ui.focus.FocusRequester() }
     LaunchedEffect(Nav.game) {
-        if (Nav.game == null && StoreState.returnTo == g.id) { kotlinx.coroutines.delay(60); runCatching { focus.requestFocus() }; StoreState.returnTo = null }
+        if (Nav.game == null && StoreState.returnTo == g.id) { refocus { focus.requestFocus() }; StoreState.returnTo = null }
+    }
+    LaunchedEffect(StoreState.focusTarget) {
+        if (StoreState.focusTarget == "juego:${g.id}") {
+            kotlinx.coroutines.delay(40)
+            if (runCatching { focus.requestFocus() }.isSuccess) StoreState.focusTarget = null
+        }
     }
     Column(modifier.graphicsLayer {
         scaleX = scale; scaleY = scale; alpha = shown.value; translationY = (1f - shown.value) * 24f
@@ -809,10 +880,10 @@ private fun SelectionBar(sel: List<Game>) {
             Row(Modifier.padding(horizontal = 18.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("${sel.size} seleccionado(s)", fontWeight = FontWeight.Bold)
-                androidx.compose.material3.OutlinedButton(enabled = onTablet.isNotEmpty(), onClick = { ask = "tablet" }) {
+                OutlinedButton(enabled = onTablet.isNotEmpty(), onClick = { ask = "tablet" }) {
                     Text("Borrar del dispositivo (${onTablet.size})")
                 }
-                if (Prefs.configured) androidx.compose.material3.OutlinedButton(enabled = onPc.isNotEmpty(), onClick = { ask = "pc" },
+                if (Prefs.configured) OutlinedButton(enabled = onPc.isNotEmpty(), onClick = { ask = "pc" },
                     colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)) {
                     Text("Borrar del servidor (${onPc.size})")
                 }
@@ -837,7 +908,7 @@ private fun SelectionBar(sel: List<Game>) {
             }
         },
         confirmButton = {
-            androidx.compose.material3.Button(onClick = {
+            Button(onClick = {
                 ask = null
                 StoreState.selection = emptySet()
                 appScope.launch {

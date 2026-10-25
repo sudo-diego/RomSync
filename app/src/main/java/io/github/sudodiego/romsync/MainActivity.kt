@@ -1,5 +1,8 @@
 package io.github.sudodiego.romsync
 
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.focus.focusRequester
 import android.Manifest
@@ -38,7 +41,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.automirrored.rounded.MenuOpen
 import androidx.compose.material.icons.rounded.Menu
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
@@ -65,7 +67,6 @@ import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Storefront
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
-import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -124,10 +125,15 @@ val MarginFocus = object : androidx.compose.foundation.gestures.BringIntoViewSpe
 
 object Nav {
     var tab by mutableStateOf(Tab.STORE)
-    var game by mutableStateOf<Game?>(null)
+    private var gameState by mutableStateOf<Game?>(null)
+    var game: Game?
+        get() = gameState
+        set(v) { if (v?.id != gameState?.id && keys) switching = true; gameState = v }
     var hasFilesAccess by mutableStateOf(true)
     /** Se está usando control o teclado (no el dedo): entonces al abrir una pantalla el foco va a su botón principal. */
     var keys by mutableStateOf(false)
+    /** Ya se apretó algún botón desde que se abrió la app. */
+    var anyKey = false
     /** Hay un mando conectado (las guías de botones se muestran solo así). */
     var pad by mutableStateOf(false)
     /** Cómo se llaman sus botones: "ps" (✕ ○ □ △) o "xbox" (A B X Y). Sale del último mando que se usó. */
@@ -137,6 +143,31 @@ object Nav {
     private val sidebar = HashMap<Tab, androidx.compose.ui.focus.FocusRequester>()
     fun sidebarFocus(t: Tab) = sidebar.getOrPut(t) { androidx.compose.ui.focus.FocusRequester() }
     var inSidebar by mutableStateOf(false)
+    /** Cambiando de pantalla (abrir o cerrar una ficha): el panel no acepta el foco mientras tanto. */
+    var switching by mutableStateOf(false)
+    /** El panel desplegado por el mando (con B); se vuelve a plegar al salir de él. */
+    var padOpen by mutableStateOf(false)
+    /** El panel se ve desplegado ahora. */
+    val sidebarShown get() = (if (game == null) UiState.sidebarOpen else sidebarInGame) || padOpen
+    /** Lo último elegido en cada pantalla ("game" es la ficha). */
+    val lastFocus = mutableMapOf<String, androidx.compose.ui.focus.FocusRequester>()
+
+    /** Derecha desde el panel: de vuelta a lo último que se eligió en la sección; si ya no está, a su entrada. */
+    fun backToContent() {
+        val fr = lastFocus[tab.name]
+        if (fr == null || runCatching { fr.requestFocus() }.isFailure) enter(tab)
+    }
+    /** La pantalla que tiene el foco ahora (null: el panel o ninguna). */
+    var focusedScreen: String? = null
+
+    /**
+     * Entrar a una sección (con A o derecha en el panel, o con L/R): el foco va a su primer elemento, de inmediato y
+     * igual en todas. En la Tienda es el carrusel (o la primera carátula si se está dentro de una sección).
+     */
+    fun enter(t: Tab) {
+        StoreState.focusTarget = if (t != Tab.STORE) entryOf(t)
+            else if (StoreState.filter == StoreFilter.ALL && StoreState.system.isBlank() && StoreState.query.isBlank()) "carrusel" else "primero"
+    }
     /** Al entrar a una sección con mando, el foco va a lo principal de esa pantalla. */
     fun entryOf(t: Tab) = if (t == Tab.STORE) "carrusel" else "entrada:${t.name}"
     /** El panel lateral dentro de una ficha (empieza cerrado para dejarle espacio al juego). */
@@ -273,15 +304,55 @@ class MainActivity : ComponentActivity() {
     /** El mando manda L2/R2 como botones (además del eje): entonces el eje se ignora. */
     private var triggerKeys = false
     private var lastTrigger = 0L
+    private var stickDir = 0
+    private var heldDpad = 0
+    private val repeater = android.os.Handler(android.os.Looper.getMainLooper())
+    private val repeatStep = object : Runnable {
+        override fun run() { if (stickDir != 0) { tapDpad(stickDir); repeater.postDelayed(this, 110) } }
+    }
+    private fun tapDpad(code: Int) {
+        val t = android.os.SystemClock.uptimeMillis()
+        super.dispatchKeyEvent(android.view.KeyEvent(t, t, android.view.KeyEvent.ACTION_DOWN, code, 0))
+        super.dispatchKeyEvent(android.view.KeyEvent(t, t, android.view.KeyEvent.ACTION_UP, code, 0))
+        Sound.play(Sound.Fx.MOVE)
+    }
+    /** La cruceta (como eje) y el stick izquierdo: gana la dirección más marcada; en diagonal se queda la que ya iba. */
+    private fun stick(ev: android.view.MotionEvent) {
+        val hx = ev.getAxisValue(android.view.MotionEvent.AXIS_HAT_X); val hy = ev.getAxisValue(android.view.MotionEvent.AXIS_HAT_Y)
+        val sx = ev.getAxisValue(android.view.MotionEvent.AXIS_X); val sy = ev.getAxisValue(android.view.MotionEvent.AXIS_Y)
+        val x = if (kotlin.math.abs(hx) > 0.5f) hx else if (kotlin.math.abs(sx) > 0.55f) sx else 0f
+        val y = if (kotlin.math.abs(hy) > 0.5f) hy else if (kotlin.math.abs(sy) > 0.55f) sy else 0f
+        val h = if (x > 0) android.view.KeyEvent.KEYCODE_DPAD_RIGHT else if (x < 0) android.view.KeyEvent.KEYCODE_DPAD_LEFT else 0
+        val v = if (y > 0) android.view.KeyEvent.KEYCODE_DPAD_DOWN else if (y < 0) android.view.KeyEvent.KEYCODE_DPAD_UP else 0
+        val dir = when {
+            h == 0 && v == 0 -> 0
+            h == 0 -> v
+            v == 0 -> h
+            stickDir == h || stickDir == v -> stickDir // diagonal: sigue la que ya iba
+            kotlin.math.abs(x) > kotlin.math.abs(y) -> h
+            else -> v
+        }
+        if (dir == stickDir) return
+        repeater.removeCallbacks(repeatStep)
+        stickDir = dir
+        if (dir != 0) {
+            Nav.keys = true; Nav.anyKey = true
+            tapDpad(dir)
+            repeater.postDelayed(repeatStep, 380)
+        }
+    }
+
     override fun dispatchGenericMotionEvent(ev: android.view.MotionEvent): Boolean {
-        if (ev.source and android.view.InputDevice.SOURCE_JOYSTICK == android.view.InputDevice.SOURCE_JOYSTICK) {
+        if (ev.source and android.view.InputDevice.SOURCE_JOYSTICK == android.view.InputDevice.SOURCE_JOYSTICK &&
+            ev.actionMasked == android.view.MotionEvent.ACTION_MOVE) {
+            stick(ev)
             val l = maxOf(ev.getAxisValue(android.view.MotionEvent.AXIS_LTRIGGER), ev.getAxisValue(android.view.MotionEvent.AXIS_BRAKE))
             val r = maxOf(ev.getAxisValue(android.view.MotionEvent.AXIS_RTRIGGER), ev.getAxisValue(android.view.MotionEvent.AXIS_GAS))
-            // Si el mando también manda los gatillos como botones, se usan esos (si no, un apretón contaba dos veces).
             if (!triggerKeys) {
                 if (l > 0.6f && !lt) { lt = true; padButton(android.view.KeyEvent.KEYCODE_BUTTON_L2) } else if (l < 0.3f) lt = false
                 if (r > 0.6f && !rt) { rt = true; padButton(android.view.KeyEvent.KEYCODE_BUTTON_R2) } else if (r < 0.3f) rt = false
             }
+            return true // el sistema no inventa flechas propias (mandaba las dos de una diagonal)
         }
         return super.dispatchGenericMotionEvent(ev)
     }
@@ -301,7 +372,7 @@ class MainActivity : ComponentActivity() {
                 val step = if (code == android.view.KeyEvent.KEYCODE_BUTTON_R1) 1 else -1
                 Nav.game = null
                 Nav.tab = tabs[(tabs.indexOf(Nav.tab) + step + tabs.size) % tabs.size]
-                StoreState.focusTarget = Nav.entryOf(Nav.tab)
+                Nav.enter(Nav.tab)
                 Sound.play(Sound.Fx.MOVE)
                 return true
             }
@@ -312,6 +383,13 @@ class MainActivity : ComponentActivity() {
     override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
         if (event.source and android.view.InputDevice.SOURCE_GAMEPAD == android.view.InputDevice.SOURCE_GAMEPAD)
             Nav.styleOf(event.device)?.let { if (it != Nav.padStyle) Nav.padStyle = it }
+        Nav.anyKey = true
+        // B/atrás va siempre directo a "volver" de la app (Compose lo usaba para salir de un grupo de foco y se perdía).
+        // En el buscador escribiendo, lo maneja el buscador (cierra el teclado y suelta el campo).
+        if (event.keyCode == android.view.KeyEvent.KEYCODE_BACK && !StoreState.searchArmed) {
+            if (event.action == android.view.KeyEvent.ACTION_UP && !event.isCanceled) onBackPressedDispatcher.onBackPressed()
+            return true
+        }
         if (!Nav.keys && event.keyCode != android.view.KeyEvent.KEYCODE_BACK) Nav.keys = true
         // L/R, ZL/ZR, X, Y, −, +: se usan al bajar el botón; al soltarlo no hacen nada más.
         val padKeys = setOf(android.view.KeyEvent.KEYCODE_BUTTON_L1, android.view.KeyEvent.KEYCODE_BUTTON_R1,
@@ -322,15 +400,33 @@ class MainActivity : ComponentActivity() {
             if (event.action == android.view.KeyEvent.ACTION_DOWN && event.repeatCount == 0 && padButton(event.keyCode)) return true
             if (event.action == android.view.KeyEvent.ACTION_UP) return true
         }
+        val dpads = setOf(android.view.KeyEvent.KEYCODE_DPAD_UP, android.view.KeyEvent.KEYCODE_DPAD_DOWN,
+            android.view.KeyEvent.KEYCODE_DPAD_LEFT, android.view.KeyEvent.KEYCODE_DPAD_RIGHT)
+        if (event.keyCode in dpads && event.deviceId > 0) {
+            if (event.action == android.view.KeyEvent.ACTION_DOWN) {
+                if (heldDpad != 0 && heldDpad != event.keyCode) return true
+                heldDpad = event.keyCode
+            } else if (event.action == android.view.KeyEvent.ACTION_UP) {
+                if (event.keyCode != heldDpad) return true
+                heldDpad = 0
+            }
+        }
+        // L3/R3 no hacen nada en la app (no se deja que el sistema los use como toques).
+        if (event.keyCode == android.view.KeyEvent.KEYCODE_BUTTON_THUMBL || event.keyCode == android.view.KeyEvent.KEYCODE_BUTTON_THUMBR) return true
         // A = elegir y B = volver también si el sistema no los traduce solo (algunos controles no lo hacen).
         val mapped = when (event.keyCode) {
             android.view.KeyEvent.KEYCODE_BUTTON_A -> android.view.KeyEvent.KEYCODE_DPAD_CENTER
             android.view.KeyEvent.KEYCODE_BUTTON_B -> android.view.KeyEvent.KEYCODE_BACK
             else -> 0
         }
-        if (mapped != 0) return super.dispatchKeyEvent(android.view.KeyEvent(event.downTime, event.eventTime, event.action,
+        if (mapped != 0) return dispatchKeyEvent(android.view.KeyEvent(event.downTime, event.eventTime, event.action,
             mapped, event.repeatCount, event.metaState, event.deviceId, event.scanCode, event.flags, event.source))
-        return super.dispatchKeyEvent(event)
+        // Cada movimiento de la cruceta suena (como en Big Picture), en cualquier pantalla.
+        val handled = super.dispatchKeyEvent(event)
+        if (handled && event.action == android.view.KeyEvent.ACTION_DOWN && event.keyCode in setOf(android.view.KeyEvent.KEYCODE_DPAD_UP,
+                android.view.KeyEvent.KEYCODE_DPAD_DOWN, android.view.KeyEvent.KEYCODE_DPAD_LEFT, android.view.KeyEvent.KEYCODE_DPAD_RIGHT))
+            Sound.play(Sound.Fx.MOVE)
+        return handled
     }
 
     override fun onStart() {
@@ -363,26 +459,34 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 fun AppShell() {
     val wide = LocalConfiguration.current.screenWidthDp >= 600
     val active = DownloadService.items.count { it.status == DlStatus.RUNNING || it.status == DlStatus.QUEUED }
     fun go(t: Tab) {
         if (Nav.tab != t || Nav.game != null) Sound.play(Sound.Fx.MOVE)
         Nav.tab = t; Nav.game = null
-        StoreState.focusTarget = Nav.entryOf(t)
+        Nav.enter(t)
     }
     // Si nadie tomó el foco de entrada (sección vacía, como Descargas sin nada), va a la sección en el panel lateral.
     androidx.compose.runtime.LaunchedEffect(StoreState.focusTarget) {
         val t = StoreState.focusTarget ?: return@LaunchedEffect
         if (!t.startsWith("entrada:")) return@LaunchedEffect
-        kotlinx.coroutines.delay(450)
-        if (StoreState.focusTarget == t && (Nav.keys || Nav.pad)) { runCatching { Nav.sidebarFocus(Nav.tab).requestFocus() }; StoreState.focusTarget = null }
+        kotlinx.coroutines.delay(300)
+        // La sección no tiene nada que elegir (como Descargas vacía): el foco queda en ella en el panel.
+        if (StoreState.focusTarget == t && (Nav.keys || Nav.pad)) {
+            StoreState.focusTarget = null
+            runCatching { Nav.sidebarFocus(Nav.tab).requestFocus() }
+        }
     }
     // B en la pantalla principal de una sección: al panel lateral (no sale de la app); B en el panel: de vuelta al contenido.
+    val activity = androidx.compose.ui.platform.LocalContext.current as? android.app.Activity
     BackHandler(enabled = Nav.game == null && (Nav.keys || Nav.pad)) {
         Sound.play(Sound.Fx.BACK)
-        if (Nav.inSidebar) StoreState.focusTarget = Nav.entryOf(Nav.tab)
-        else runCatching { Nav.sidebarFocus(Nav.tab).requestFocus() }
+        // Como en el menú de una consola: B lleva al panel y lo despliega; en el panel ya desplegado, B cierra la app.
+        // Para volver al contenido, derecha (vuelve a lo último que se eligió).
+        if (Nav.inSidebar) { if (Nav.sidebarShown) activity?.finish() else Nav.padOpen = true }
+        else { runCatching { Nav.sidebarFocus(Nav.tab).requestFocus() }; Nav.padOpen = true }
     }
 
     BackHandler(enabled = Nav.game != null) { Sound.play(Sound.Fx.BACK); Nav.game = null }
@@ -423,14 +527,22 @@ fun AppShell() {
  */
 @Composable
 private fun Sidebar(active: Int, go: (Tab) -> Unit) {
-    val open = if (Nav.game == null) UiState.sidebarOpen else Nav.sidebarInGame
+    // Con el mando, B despliega el panel (y se vuelve a plegar al salir de él). Al pasar por él de paso, no.
+    androidx.compose.runtime.LaunchedEffect(Nav.inSidebar) { if (!Nav.inSidebar) Nav.padOpen = false }
+    val open = Nav.sidebarShown
     val width by animateDpAsState(if (open) 232.dp else 84.dp, spring(dampingRatio = 0.8f, stiffness = 400f), label = "panel")
     Column(
-        Modifier.width(width).fillMaxHeight().onFocusChanged { Nav.inSidebar = it.hasFocus }.padding(vertical = 14.dp, horizontal = 12.dp),
+        Modifier.width(width).fillMaxHeight().onFocusChanged { Nav.inSidebar = it.hasFocus }
+            .onPreviewKeyEvent { e ->
+                if (e.nativeKeyEvent.keyCode != android.view.KeyEvent.KEYCODE_DPAD_RIGHT || !Nav.inSidebar) return@onPreviewKeyEvent false
+                if (e.nativeKeyEvent.action == android.view.KeyEvent.ACTION_DOWN) { Nav.backToContent(); Sound.play(Sound.Fx.MOVE) }
+                true
+            }.padding(vertical = 14.dp, horizontal = 12.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Row(Modifier.height(56.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = {
+            // Solo para el dedo: con mando el panel se abre al entrar a él (y así el foco nunca cae aquí).
+            IconButton(modifier = Modifier.focusProperties { canFocus = false }, onClick = {
                 Sound.play(Sound.Fx.TOGGLE)
                 // Solo abre o cierra el panel (antes, con una ficha abierta, la cerraba).
                 if (Nav.game != null) Nav.sidebarInGame = !Nav.sidebarInGame
@@ -451,7 +563,7 @@ private fun Sidebar(active: Int, go: (Tab) -> Unit) {
             val scale by animateFloatAsState(if (isPressed) 0.94f else 1f, label = "s")
             // Cerrado: el ícono centrado (con el margen del panel abierto, el recuadro de foco quedaba corrido).
             Row(
-                Modifier.fillMaxWidth().height(52.dp).focusRequester(Nav.sidebarFocus(t)).graphicsLayer { scaleX = scale; scaleY = scale }
+                Modifier.fillMaxWidth().height(52.dp).focusProperties { canFocus = !Nav.switching }.focusRequester(Nav.sidebarFocus(t)).graphicsLayer { scaleX = scale; scaleY = scale }
                     .focusHighlight(RoundedCornerShape(16.dp)).clip(RoundedCornerShape(16.dp)).background(bg)
                     .clickable(interactionSource = pressed, indication = null) { go(t) }
                     .padding(horizontal = if (open) 16.dp else 0.dp),
@@ -472,31 +584,51 @@ private fun Sidebar(active: Int, go: (Tab) -> Unit) {
 }
 
 @Composable
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 private fun TabContent() {
-    // Clave de la pantalla: la pestaña, o el juego abierto. Al abrir un juego entra desde la derecha; al volver, sale.
+    // Como en una consola, la ficha se abre ENCIMA de la sección, que sigue viva debajo: al volver todo está tal cual
+    // (foco, desplazamiento), sin reconstruirse ni verse el foco viajar a su lugar.
     val key = Nav.game?.id ?: Nav.tab.name
-    AnimatedContent(
-        targetState = key,
-        transitionSpec = {
-            val isTab = { k: String -> Tab.entries.any { it.name == k } }
-            when {
-                !isTab(targetState) -> (fadeIn(tween(260)) + scaleIn(tween(300), initialScale = 0.97f)) togetherWith fadeOut(tween(120))
-                !isTab(initialState) -> fadeIn(tween(260)) togetherWith (fadeOut(tween(160)) + scaleOut(tween(200), targetScale = 0.98f))
-                else -> (fadeIn(tween(260)) + slideInVertically(tween(300)) { it / 20 }) togetherWith fadeOut(tween(120))
+    // Mientras se cambia de pantalla el foco no pasa por el panel (lo suelta el contenido nuevo al tomarlo; si nadie lo
+    // toma, se suelta solo al rato).
+    androidx.compose.runtime.LaunchedEffect(Nav.switching) { if (Nav.switching) { kotlinx.coroutines.delay(800); Nav.switching = false } }
+    val inGame = Nav.game != null
+    val under by animateFloatAsState(if (inGame) 0f else 1f, tween(if (inGame) 200 else 260), label = "debajo")
+    Box(Modifier.fillMaxSize()) {
+        // La sección: debajo de la ficha queda invisible y fuera del recorrido del mando, pero sin desmontarse.
+        Box(Modifier.fillMaxSize().graphicsLayer { alpha = under; val s = 0.98f + 0.02f * under; scaleX = s; scaleY = s }
+            .focusProperties { canFocus = !inGame }) {
+            AnimatedContent(
+                targetState = Nav.tab,
+                transitionSpec = { (fadeIn(tween(260)) + slideInVertically(tween(300)) { it / 20 }) togetherWith fadeOut(tween(120)) },
+                label = "seccion",
+            ) { tab ->
+                Box(Modifier.fillMaxSize().focusProperties { enter = { if (Nav.game != null) androidx.compose.ui.focus.FocusRequester.Cancel
+                    else androidx.compose.ui.focus.FocusRequester.Default } }) {
+                    androidx.compose.runtime.CompositionLocalProvider(LocalScreenKey provides tab.name) { when (tab) {
+                        Tab.DOWNLOADS -> DownloadsScreen()
+                        Tab.SAVES -> SavesScreen()
+                        Tab.ORGANIZE -> OrganizeScreen()
+                        Tab.KITCHEN -> KitchenScreen()
+                        Tab.SETTINGS -> SettingsScreen()
+                        else -> StoreScreen()
+                    } }
+                }
             }
-        },
-        label = "pantalla",
-    ) { k ->
-        val tab = Tab.entries.firstOrNull { it.name == k }
-        val game = if (tab == null) (Nav.game?.takeIf { it.id == k } ?: Repo.game(k)) else null
-        when {
-            game != null -> GameScreen(game) { Sound.play(Sound.Fx.BACK); Nav.game = null }
-            tab == Tab.DOWNLOADS -> DownloadsScreen()
-            tab == Tab.SAVES -> SavesScreen()
-            tab == Tab.ORGANIZE -> OrganizeScreen()
-            tab == Tab.KITCHEN -> KitchenScreen()
-            tab == Tab.SETTINGS -> SettingsScreen()
-            else -> StoreScreen()
+        }
+        // La ficha encima (de una ficha se puede pasar a otra: cada una entra con su animación).
+        AnimatedContent(
+            targetState = Nav.game?.id,
+            transitionSpec = { (fadeIn(tween(260)) + scaleIn(tween(300), initialScale = 0.97f)) togetherWith
+                (fadeOut(tween(160)) + scaleOut(tween(200), targetScale = 0.98f)) },
+            label = "ficha",
+        ) { id ->
+            val game = id?.let { Nav.game?.takeIf { g -> g.id == it } ?: Repo.game(it) }
+            if (game != null) Box(Modifier.fillMaxSize()
+                // Lo de debajo no recibe toques mientras la ficha está encima.
+                .pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent().changes.forEach { it.consume() } } }) {
+                GameScreen(game) { Sound.play(Sound.Fx.BACK); Nav.game = null }
+            }
         }
     }
 }

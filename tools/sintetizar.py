@@ -245,6 +245,17 @@ def sfx():
         start = int(.36*SR); j = j + [0.0]*max(0, start + len(chord) - len(j))
         for i, v in enumerate(chord): j[start + i] += v
         save('jingle', j, .6)
+        # 3DS: cubito que cae (golpecito que baja de tono) y el riel que se mueve (tres clics mecánicos).
+        n = int(.12*SR); cubo = []
+        for i in range(n):
+            t = i/SR; f = 950*math.exp(-t*9) + 300
+            cubo.append(math.sin(TAU*f*t) * math.exp(-t*28) + (.25*(random.random()*2-1)*math.exp(-t*120)))
+        save('cubo', cubo, .55)
+        riel = [0.0]*int(.22*SR)
+        for k in range(3):
+            for i in range(int(.025*SR)):
+                t = i/SR; riel[int(k*.07*SR)+i] += math.sin(TAU*(2200 if kind != 'suave' else 1400)*t) * math.exp(-t*160)
+        save('riel', riel, .35)
     print('sonidos: 3 juegos')
 
 if __name__ == '__main__':

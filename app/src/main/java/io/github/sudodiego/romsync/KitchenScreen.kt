@@ -1,5 +1,6 @@
 package io.github.sudodiego.romsync
 
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -12,7 +13,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -35,7 +35,10 @@ import com.google.zxing.qrcode.QRCodeWriter
 @Composable
 fun KitchenScreen() {
     val ctx = LocalContext.current
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+    PadHints(listOf("A" to "Elegir", "B" to "Panel", "L R" to "Sección"))
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    LazyColumn(Modifier.fillMaxSize().screenFocus { listState.animateScrollBy(it) }, state = listState,
+        contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item {
             Column {
                 Text("RomSync Web", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
@@ -46,7 +49,7 @@ fun KitchenScreen() {
             Section("") {
                 if (!Kitchen.running) {
                     Muted("Abre la dirección en la misma red WiFi. El PIN cambia cada vez.")
-                    Button(onClick = { Kitchen.start(ctx) }) { Text("Encender la web") }
+                    Button(onClick = { Kitchen.start(ctx) }, Modifier.focusWhen("entrada:KITCHEN")) { Text("Encender la web") }
                 } else {
                     Row(horizontalArrangement = Arrangement.spacedBy(28.dp), verticalAlignment = Alignment.CenterVertically) {
                         Box(Modifier.clip(RoundedCornerShape(16.dp)).background(Color.White).padding(14.dp)) {
@@ -58,7 +61,7 @@ fun KitchenScreen() {
                             Muted("y escribe el PIN")
                             Text(Kitchen.pin, fontFamily = FontFamily.Monospace, fontSize = 44.sp, letterSpacing = 8.sp,
                                 fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                            Button(onClick = { Kitchen.stop(ctx) },
+                            Button(onClick = { Kitchen.stop(ctx) }, Modifier.focusWhen("entrada:KITCHEN"),
                                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) { Text("Apagar") }
                         }
                     }

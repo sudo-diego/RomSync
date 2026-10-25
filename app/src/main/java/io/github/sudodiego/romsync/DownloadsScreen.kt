@@ -1,5 +1,6 @@
 package io.github.sudodiego.romsync
 
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.clickable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -30,12 +31,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.Button
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -56,7 +54,10 @@ fun DownloadsScreen() {
     val failed = all.filter { it.status == DlStatus.FAILED }
     val done = all.filter { it.status == DlStatus.DONE }.reversed()
     val pending = running + queued
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+    PadHints(listOf("A" to "Elegir", "B" to "Panel", "L R" to "Sección"))
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    LazyColumn(Modifier.fillMaxSize().screenFocus { listState.animateScrollBy(it) }, state = listState,
+        contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item { Text("Descargas", style = MaterialTheme.typography.headlineLarge) }
         if (all.isEmpty()) item {
             Section("") {
@@ -158,7 +159,7 @@ private fun DownloadRow(d: Download) {
     if (ask) CancelDownloadDialog(d) { ask = false }
     Section("", Modifier.then(if (g != null) Modifier.clip(RoundedCornerShape(20.dp)).clickable { Sound.play(Sound.Fx.OPEN); Nav.game = g } else Modifier)) {
         SpacedRow {
-            if (g != null) Cover(g, Modifier.width(56.dp), showTitle = false)
+            if (g != null) Cover(g, Modifier.width(if (d.status == DlStatus.DONE) 90.dp else 56.dp), showTitle = false) { DownloadOverlay(g) }
             Column(Modifier.weight(1f)) {
                 Text(d.title, fontWeight = FontWeight.Bold)
                 Muted(when (d.status) {

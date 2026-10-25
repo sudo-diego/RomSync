@@ -1,5 +1,6 @@
 package io.github.sudodiego.romsync
 
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.rounded.ChevronRight
@@ -32,15 +33,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -71,8 +69,10 @@ fun SavesScreen() {
     // Estado de cada emulador instalado: al día (lo mismo que el último respaldo), con cambios, o sin respaldo.
     val states = Saves.backupTick.let { installed.associate { it.id to saveState(it) } }
 
+    PadHints(listOf("A" to "Elegir", "B" to "Panel", "L R" to "Sección"))
+    val gridState = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
     androidx.compose.foundation.lazy.grid.LazyVerticalGrid(
-        androidx.compose.foundation.lazy.grid.GridCells.Adaptive(400.dp), Modifier.fillMaxSize(),
+        androidx.compose.foundation.lazy.grid.GridCells.Adaptive(400.dp), Modifier.fillMaxSize().screenFocus { gridState.animateScrollBy(it) }, gridState,
         contentPadding = PaddingValues(20.dp), horizontalArrangement = Arrangement.spacedBy(14.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
@@ -138,7 +138,7 @@ fun SavesScreen() {
                 if (auto && !free) SpacedRow {
                     Text("Android puede frenarlo con la app cerrada.", Modifier.weight(1f),
                         color = Palette.warn, style = MaterialTheme.typography.bodySmall)
-                    androidx.compose.material3.TextButton(onClick = {
+                    TextButton(onClick = {
                         runCatching {
                             ctx.startActivity(android.content.Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
                                 android.net.Uri.parse("package:${ctx.packageName}")))
@@ -150,7 +150,7 @@ fun SavesScreen() {
                 SpacedRow {
                     Muted("Respaldos completos que se guardan (más 5 por juego; los viejos se borran solos)", Modifier.weight(1f))
                     listOf(5, 10, 20).forEach { n ->
-                        androidx.compose.material3.FilterChip(selected = keep == n, onClick = { keep = n; Prefs.keepBackups = n },
+                        FilterChip(selected = keep == n, onClick = { keep = n; Prefs.keepBackups = n },
                             label = { Text("$n") })
                     }
                 }

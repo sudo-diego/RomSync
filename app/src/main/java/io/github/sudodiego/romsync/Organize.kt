@@ -18,12 +18,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -250,7 +248,7 @@ fun DuplicatesDialog(onClose: () -> Unit) {
                     }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    androidx.compose.material3.FilledTonalButton(onClick = {
+                    FilledTonalButton(onClick = {
                         selected = selected - vs.map { it.id }.toSet() + vs.filter { it.id != best.id }.map { it.id }
                     }) { Text("Dejar solo la recomendada") }
                     TextButton(onClick = {
@@ -338,7 +336,7 @@ fun TabletOnlyDialog(onClose: () -> Unit) {
                     Muted(listOf(formatSpeed(speed), formatEta(total - doneAll, speed)).filter { it.isNotBlank() }.joinToString(" · ")
                         .ifEmpty { "Empezando…" })
                 }
-                androidx.compose.material3.OutlinedButton(onClick = { Sound.play(Sound.Fx.WARN); askCancel = true },
+                OutlinedButton(onClick = { Sound.play(Sound.Fx.WARN); askCancel = true },
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)) { Text("Cancelar") }
             } else {
                 Column(Modifier.weight(1f)) {

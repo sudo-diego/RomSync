@@ -226,7 +226,7 @@ class DownloadService : Service() {
                         // Las terminadas se van solas de la lista (ya avisó el aviso de arriba).
                         android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
                             if (d.status == DlStatus.DONE) { items.remove(d); save() }
-                        }, 6000)
+                        }, 12000) // tiempo para ver el aviso y, en estilo 3DS, el regalo
                     }
                 } catch (e: Exception) {
                     if (d.status == DlStatus.RUNNING) {

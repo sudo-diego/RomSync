@@ -1,5 +1,6 @@
 package io.github.sudodiego.romsync
 
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Save
@@ -59,17 +60,12 @@ import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -144,7 +140,7 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
     LaunchedEffect(g.id) { enter.animateTo(1f, spring(dampingRatio = 0.75f, stiffness = 260f)) }
     @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
     androidx.compose.runtime.CompositionLocalProvider(androidx.compose.foundation.LocalOverscrollConfiguration provides null) {
-    Column(Modifier.fillMaxSize().verticalScroll(scroll)) {
+    Column(Modifier.fillMaxSize().screenFocus { scroll.animateScrollBy(it) }.verticalScroll(scroll)) {
         // Fondo (hero) con degradado hacia la página; se mueve más lento que el scroll (paralaje).
         Box(Modifier.fillMaxWidth().height(300.dp).graphicsLayer { translationY = kotlin.math.round(scroll.value * 0.45f); clip = true }) {
             // El fondo se vuelve transparente hacia abajo (máscara), en vez de fundirse a un color fijo: así se mezcla
@@ -163,12 +159,12 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
                 ArtImage(g, "hero", Modifier.fillMaxSize())
             }
             ArtImage(g, "logo", Modifier.align(Alignment.BottomEnd).padding(28.dp).height(100.dp).width(300.dp), ContentScale.Fit)
-            IconButton(onClick = onBack, Modifier.padding(14.dp).size(48.dp).clip(RoundedCornerShape(99.dp)).background(Color(0x88000000))) {
+            IconButton(onClick = onBack, Modifier.notForDpad().padding(14.dp).size(48.dp).clip(RoundedCornerShape(99.dp)).background(Color(0x88000000))) {
                 Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Volver", tint = Color.White)
             }
             Box(Modifier.align(Alignment.TopEnd).padding(14.dp)) {
                 IconButton(onClick = { Sound.play(Sound.Fx.MOVE); menu = true },
-                    Modifier.size(48.dp).clip(RoundedCornerShape(99.dp)).background(Color(0x88000000))) {
+                    Modifier.notForDpad().size(48.dp).clip(RoundedCornerShape(99.dp)).background(Color(0x88000000))) {
                     Icon(Icons.Rounded.MoreVert, "Más", tint = Color.White)
                 }
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
@@ -200,7 +196,7 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
                 val k = enter.value.coerceIn(0f, 1f)
                 alpha = k; translationY = (1f - k) * 80f
                 rotationZ = (1f - k) * -4f
-            }.focusHighlight().softShadow(18.dp, 16.dp).clip(RoundedCornerShape(18.dp)).pressable { Sound.play(Sound.Fx.OPEN); editing = true }) {
+            }.notForDpad().softShadow(18.dp, 16.dp).clip(RoundedCornerShape(18.dp)).pressable { Sound.play(Sound.Fx.OPEN); editing = true }) {
                 Cover(g, Modifier.fillMaxWidth()) {
                     // Estilo 3DS: si llegó envuelto, se desenvuelve al abrir la ficha.
                     if (g.id in DownloadArt.gifts) {
@@ -212,7 +208,7 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
                             opening = true
                             kotlinx.coroutines.delay(750); DownloadArt.unwrap(g.id)
                         }
-                    } else DownloadOverlay(g)
+                    } else DownloadOverlay(g, sound = true)
                 }
                 Icon(Icons.Rounded.Edit, "Editar", Modifier.align(Alignment.TopEnd).padding(8.dp).size(34.dp)
                     .clip(RoundedCornerShape(99.dp)).background(Color(0xAA000000)).padding(7.dp), tint = Color.White)
@@ -243,7 +239,7 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
                             if (dl.status == DlStatus.PAUSED) FilledTonalButton(onClick = { Sound.play(Sound.Fx.MOVE); DownloadService.resume(ctx, dl) },
                                 Modifier.focusHighlight(pill)) {
                                 Icon(Icons.Rounded.PlayArrow, null); Spacer(Modifier.width(6.dp)); Text("Seguir")
-                            } else FilledTonalButton(onClick = { Sound.play(Sound.Fx.MOVE); DownloadService.pause(dl) }, Modifier.focusHighlight(pill)) {
+                            } else FilledTonalButton(onClick = { Sound.play(Sound.Fx.MOVE); DownloadService.pause(dl) }, Modifier.focusHighlight(pill).autoFocusPad()) {
                                 Icon(Icons.Rounded.Pause, null); Spacer(Modifier.width(6.dp)); Text("Pausar")
                             }
                             TextButton(onClick = { Sound.play(Sound.Fx.WARN); askCancel = true }, Modifier.focusHighlight(pill)) { Text("Cancelar") }
@@ -290,6 +286,20 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
                     }
                 }
                 dl?.takeIf { it.status == DlStatus.FAILED }?.let { Text("La descarga falló: ${it.error}", color = MaterialTheme.colorScheme.error) }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(onClick = { Sound.play(Sound.Fx.OPEN); editing = true }) {
+                        Icon(Icons.Rounded.Edit, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Editar")
+                    }
+                    if (g.kind == "discs") TextButton(onClick = {
+                        scope.launch {
+                            val msg = runCatching { PcEdit.createM3u(g, onPc = w.presence != Presence.TABLET_ONLY && Prefs.configured) }
+                                .fold({ "Listo: $it" }, { it.message ?: "Error" })
+                            Notice.info(msg); Repo.refresh()
+                        }
+                    }) { Text("Crear .m3u") }
+                    if (w.presence != Presence.TABLET_ONLY && Prefs.configured) TextButton(onClick = { Sound.play(Sound.Fx.WARN); askDelete = "srv" },
+                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) { Text("Borrar del servidor…") }
+                }
 
                 if (g.kind == "switch") SwitchSummary(g)
                 if (g.parts.size > 1 || g.parts.any { it.kind != "base" }) {
@@ -987,7 +997,7 @@ fun BigDownloadButton(label: String, size: String, modifier: Modifier = Modifier
         androidx.compose.ui.graphics.lerp(accent, Color.White, 0.30f), accent, androidx.compose.ui.graphics.lerp(accent, Color.Black, 0.15f)))
     // Con control, al abrir la ficha el foco cae directo aquí (sin recorrer toda la pantalla).
     val focus = androidx.compose.runtime.remember { androidx.compose.ui.focus.FocusRequester() }
-    androidx.compose.runtime.LaunchedEffect(Unit) { if (Nav.keys || Nav.pad) runCatching { focus.requestFocus() } }
+    androidx.compose.runtime.LaunchedEffect(Unit) { if (Nav.keys || Nav.pad) { kotlinx.coroutines.delay(30); runCatching { focus.requestFocus() } } }
     Row(
         modifier.height(64.dp).focusRequester(focus).focusHighlight(shape, grow = 1.02f).clip(shape).background(brush)
             .border(2.dp, Color.White.copy(alpha = .35f), shape)
@@ -1036,4 +1046,12 @@ private fun DeleteNow(g: Game, w: Repo.Where, what: String, onClose: (gone: Bool
     }
     DeleteConfirm(g, w, dev = what == "dev", srv = what == "srv", saves = false, onDevice = onDevice, onServer = onServer,
         withSaves = withSaves, onBack = { onClose(false) }, onClose = { onClose(false) }, onGone = { onClose(true) })
+}
+
+/** Con mando, este botón toma el foco al aparecer (por ejemplo Pausar al empezar una descarga: si no, el foco se perdía). */
+@Composable
+fun Modifier.autoFocusPad(): Modifier {
+    val fr = remember { androidx.compose.ui.focus.FocusRequester() }
+    LaunchedEffect(Unit) { if (Nav.keys || Nav.pad) { kotlinx.coroutines.delay(120); runCatching { fr.requestFocus() } } }
+    return this.focusRequester(fr)
 }

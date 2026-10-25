@@ -1,11 +1,11 @@
 package io.github.sudodiego.romsync
 
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.rounded.DriveFileRenameOutline
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Unarchive
-import androidx.compose.material3.Button
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -34,11 +34,9 @@ import androidx.compose.material.icons.rounded.Key
 import androidx.compose.material.icons.rounded.Dns
 import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -152,7 +150,10 @@ fun OrganizeScreen() {
                 AppsStorageCard()
             }
         }
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        PadHints(listOf("A" to "Elegir", "B" to "Panel", "L R" to "Sección"))
+        val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+        LazyColumn(Modifier.fillMaxSize().screenFocus { listState.animateScrollBy(it) }, state = listState,
+            contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             item { Text("Organizar", style = MaterialTheme.typography.headlineLarge) }
             if (wide) item {
                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -321,8 +322,8 @@ private fun BiggestGamesCard() {
     val max = top.first().second.toFloat()
     Section("Lo que más ocupa") {
         top.forEach { (g, bytes) ->
-            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { Sound.play(Sound.Fx.OPEN); Nav.game = g }
-                .padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).clickable { Sound.play(Sound.Fx.OPEN); Nav.game = g }
+                .padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Cover(g, Modifier.width(36.dp), showTitle = false)
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     SpacedRow {

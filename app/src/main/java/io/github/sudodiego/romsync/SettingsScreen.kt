@@ -1,5 +1,6 @@
 package io.github.sudodiego.romsync
 
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.material.icons.rounded.ChevronRight
@@ -17,7 +18,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.rounded.LibraryMusic
-import androidx.compose.material3.TextButton
 import androidx.compose.ui.Alignment
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -30,7 +30,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.TouchApp
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
@@ -45,13 +44,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -70,7 +67,10 @@ import kotlinx.coroutines.withContext
 
 @Composable
 fun SettingsScreen() {
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+    PadHints(listOf("A" to "Elegir", "◀▶" to "Cambiar", "B" to "Panel", "L R" to "Sección"))
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    LazyColumn(Modifier.fillMaxSize().screenFocus { listState.animateScrollBy(it) }, state = listState,
+        contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item { Text("Ajustes", style = MaterialTheme.typography.headlineLarge) }
         item { Column { LookAndSoundCard() } }
         item { Column(verticalArrangement = Arrangement.spacedBy(14.dp)) { PcCard() } }
@@ -381,7 +381,7 @@ private fun TabletCard() {
                 Text(title, fontWeight = FontWeight.SemiBold)
                 Muted(path.removePrefix(android.os.Environment.getExternalStorageDirectory().path).ifEmpty { "/" }.let { "Almacenamiento$it" })
             }
-            androidx.compose.material3.FilledTonalButton(onClick = { Sound.play(Sound.Fx.MOVE); picking = what; picker.launch(null) }) { Text("Elegir…") }
+            FilledTonalButton(onClick = { Sound.play(Sound.Fx.MOVE); picking = what; picker.launch(null) }) { Text("Elegir…") }
         }
         FolderRow("Carpeta de ROMs", roms, "roms")
         FolderRow("Carpeta de BIOS", bios, "bios")
@@ -401,7 +401,8 @@ private fun TabletCard() {
         Column {
             Text("Dejar siempre libres: ${reserve.toInt()} GB", fontWeight = FontWeight.SemiBold)
             Slider(value = reserve, onValueChange = { reserve = it }, valueRange = 0f..30f, steps = 29,
-                onValueChangeFinished = { Prefs.reserveGb = reserve.toInt() })
+                onValueChangeFinished = { Prefs.reserveGb = reserve.toInt() },
+                modifier = Modifier.padSlider(reserve, 0f..30f, 1f) { reserve = it; Prefs.reserveGb = it.toInt() })
             Muted("Una descarga que deje menos libre que esto no empieza.")
         }
     }
@@ -424,7 +425,7 @@ private fun ArtCard() {
         if (Prefs.sgdbKey.isBlank()) {
             Text("Sin clave: los juegos se ven sin carátula, fondo ni logo.", fontWeight = FontWeight.SemiBold)
             Muted("Es gratis: entra con tu cuenta de Steam en SteamGridDB, copia la clave y pégala aquí.")
-            androidx.compose.material3.FilledTonalButton(onClick = {
+            FilledTonalButton(onClick = {
                 runCatching { ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW,
                     android.net.Uri.parse("https://www.steamgriddb.com/profile/preferences/api"))) }
             }) { Text("Conseguir mi clave en SteamGridDB") }
@@ -485,7 +486,8 @@ private fun LookAndSoundCard() {
         SpacedRow {
             Icon(Icons.Rounded.MusicNote, null)
             Text("Música", Modifier.width(110.dp), fontWeight = FontWeight.SemiBold)
-            Slider(musicVol, { musicVol = it; Prefs.musicVolume = it.toInt(); Sound.musicSettingsChanged() }, Modifier.weight(1f),
+            Slider(musicVol, { musicVol = it; Prefs.musicVolume = it.toInt(); Sound.musicSettingsChanged() },
+                Modifier.weight(1f).padSlider(musicVol, 0f..100f, 5f) { musicVol = it; Prefs.musicVolume = it.toInt(); Sound.musicSettingsChanged() },
                 enabled = music, valueRange = 0f..100f)
             Switch(music, { music = it; Prefs.musicOn = it; Sound.musicSettingsChanged(); Sound.play(Sound.Fx.TOGGLE) })
         }
@@ -500,7 +502,8 @@ private fun LookAndSoundCard() {
         SpacedRow {
             Icon(Icons.Rounded.TouchApp, null)
             Text("Sonidos", Modifier.width(110.dp), fontWeight = FontWeight.SemiBold)
-            Slider(sfxVol, { sfxVol = it; Prefs.sfxVolume = it.toInt() }, Modifier.weight(1f), enabled = sfx, valueRange = 0f..100f,
+            Slider(sfxVol, { sfxVol = it; Prefs.sfxVolume = it.toInt() }, Modifier.weight(1f).padSlider(sfxVol, 0f..100f, 5f) { sfxVol = it; Prefs.sfxVolume = it.toInt() },
+                enabled = sfx, valueRange = 0f..100f,
                 onValueChangeFinished = { Sound.play(Sound.Fx.MOVE) })
             Switch(sfx, { sfx = it; Prefs.sfxOn = it; Sound.play(Sound.Fx.TOGGLE) })
         }
@@ -525,13 +528,15 @@ private fun LookControls() {
             accentPresets.forEach { (name, v) ->
                 val sel = UiState.accent == v
                 Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    // El anillo va por fuera del color, separado (antes quedaba por debajo y se veía mal).
                     androidx.compose.foundation.layout.Box(
-                        Modifier.size(52.dp).clip(RoundedCornerShape(99.dp))
-                            .border(if (sel) 4.dp else 0.dp, MaterialTheme.colorScheme.onSurface, RoundedCornerShape(99.dp))
-                            .padding(if (sel) 6.dp else 0.dp).clip(RoundedCornerShape(99.dp)).background(Color(v))
-                            .clickable { setAccent(v) },
+                        Modifier.size(54.dp).clip(RoundedCornerShape(99.dp)).clickable { setAccent(v) }
+                            .then(if (sel) Modifier.border(3.dp, MaterialTheme.colorScheme.onSurface, RoundedCornerShape(99.dp)) else Modifier),
                         contentAlignment = Alignment.Center,
-                    ) { if (sel) Icon(Icons.Rounded.Check, name, tint = Color.White) }
+                    ) {
+                        androidx.compose.foundation.layout.Box(Modifier.size(40.dp).clip(RoundedCornerShape(99.dp)).background(Color(v)),
+                            contentAlignment = Alignment.Center) { if (sel) Icon(Icons.Rounded.Check, name, tint = Color.White) }
+                    }
                     Text(name.substringBefore(' '), style = MaterialTheme.typography.labelSmall,
                         fontWeight = if (sel) FontWeight.Bold else FontWeight.Normal)
                 }
@@ -594,7 +599,7 @@ fun OptionRow(label: String, options: List<Pair<String, String>>, selected: Stri
         verticalAlignment = Alignment.CenterVertically) {
         Text(label, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f),
             color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
-        androidx.compose.material3.IconButton(onClick = { move(-1) }, enabled = enabled, modifier = Modifier.notForDpad()) {
+        IconButton(onClick = { move(-1) }, enabled = enabled, modifier = Modifier.notForDpad()) {
             Icon(Icons.Rounded.ChevronLeft, "Anterior")
         }
         Column(Modifier.width(150.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -607,7 +612,7 @@ fun OptionRow(label: String, options: List<Pair<String, String>>, selected: Stri
                 }
             }
         }
-        androidx.compose.material3.IconButton(onClick = { move(1) }, enabled = enabled, modifier = Modifier.notForDpad()) {
+        IconButton(onClick = { move(1) }, enabled = enabled, modifier = Modifier.notForDpad()) {
             Icon(Icons.Rounded.ChevronRight, "Siguiente")
         }
     }
@@ -620,7 +625,7 @@ private fun SpeedTestRow() {
     var step by remember { mutableStateOf<String?>(null) }
     var result by remember { mutableStateOf<String?>(null) }
     SpacedRow {
-        androidx.compose.material3.FilledTonalButton(enabled = step == null, onClick = {
+        FilledTonalButton(enabled = step == null, onClick = {
             step = "Empezando…"; result = null
             appScope.launch {
                 result = runCatching { PcEdit.speedTest(ctx.cacheDir) { step = it } }.fold(
@@ -648,3 +653,16 @@ private fun SpeedTestRow() {
     }
     Muted("Baja 512 MB de un juego del servidor y sube 256 MB de prueba y 256 MB de un juego tuyo; no se guarda nada.")
 }
+
+/** Un deslizador que se mueve con izquierda/derecha del mando (de a [step]), con el anillo de foco y sonido. */
+@Composable
+fun Modifier.padSlider(value: Float, range: ClosedFloatingPointRange<Float>, step: Float, set: (Float) -> Unit): Modifier =
+    this.focusHighlight(RoundedCornerShape(99.dp), grow = 1f).onPreviewKeyEvent { e ->
+        if (e.type != androidx.compose.ui.input.key.KeyEventType.KeyDown) return@onPreviewKeyEvent false
+        val d = when (e.nativeKeyEvent.keyCode) {
+            android.view.KeyEvent.KEYCODE_DPAD_LEFT -> -step
+            android.view.KeyEvent.KEYCODE_DPAD_RIGHT -> step
+            else -> return@onPreviewKeyEvent false
+        }
+        set((value + d).coerceIn(range.start, range.endInclusive)); Sound.play(Sound.Fx.MOVE); true
+    }

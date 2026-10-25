@@ -147,7 +147,7 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
             }
         }
         if (UiState.coverAnim == "ninguna") enter.snapTo(1f)
-        else enter.animateTo(1f, tween(700, easing = androidx.compose.animation.core.FastOutSlowInEasing))
+        else enter.animateTo(1f, androidx.compose.animation.core.tween(700, easing = androidx.compose.animation.core.FastOutSlowInEasing))
     }
     @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
     androidx.compose.runtime.CompositionLocalProvider(androidx.compose.foundation.LocalOverscrollConfiguration provides null) {

@@ -1,5 +1,13 @@
 package io.github.sudodiego.romsync
 
+import androidx.compose.material.icons.rounded.TabletAndroid
+import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Box
+import androidx.compose.material.icons.rounded.ExpandMore
+import androidx.compose.material.icons.rounded.ExpandLess
+import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.rounded.Link
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
@@ -61,7 +69,7 @@ fun SettingsScreen() {
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item { Text("Ajustes", style = MaterialTheme.typography.headlineLarge) }
         item { Column { LookAndSoundCard() } }
-        item { PcCard() }
+        item { Column(verticalArrangement = Arrangement.spacedBy(14.dp)) { PcCard() } }
         item { TabletCard() }
         item { ArtCard() }
         item { ShizukuCard() }
@@ -108,105 +116,166 @@ private fun PcCard() {
         scope.launch { Repo.refresh() }
     }
 
+    var editing by remember { mutableStateOf(!Prefs.configured) }
+    var advanced by remember { mutableStateOf(false) }
+
+    // Arriba, siempre: el estado de la conexión en una tarjeta clara.
     Section("Servidor (tu PC)") {
-        if (Prefs.configured) Text("Conectado a ${Prefs.host} · ${Prefs.pcRoms}", color = Palette.ok, fontWeight = FontWeight.SemiBold)
-        if (Prefs.configured) SpeedTestRow()
-
-        // Paso 1: activar SFTP en Windows, solo con herramientas de Windows.
+        val conn = Repo.conn
         SpacedRow {
-            Text("1. Activar SFTP en Windows (una vez)", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-            TextButton(onClick = { showSteps = !showSteps }) { Text(if (showSteps) "Ocultar" else "Ver cómo") }
+            Box(Modifier.size(14.dp).clip(RoundedCornerShape(99.dp)).background(when {
+                !Prefs.configured -> Color(0xFF94A3B8)
+                conn is Conn.Online -> Palette.ok
+                conn is Conn.Offline -> Palette.danger
+                else -> Palette.blue
+            }))
+            Column(Modifier.weight(1f)) {
+                Text(when {
+                    !Prefs.configured -> "Sin servidor todavía"
+                    conn is Conn.Online -> "Conectado a tu PC"
+                    conn is Conn.Offline -> "Sin conexión con tu PC"
+                    else -> "Conectando…"
+                }, style = MaterialTheme.typography.titleLarge)
+                if (Prefs.configured) Muted("${Prefs.host}:${Prefs.port} · ROMs en ${Prefs.pcRoms}")
+                else Muted("Conecta tu PC para ver y bajar tus juegos y respaldar tus partidas. Son 3 pasos.")
+            }
+            if (Prefs.configured) TextButton(onClick = { editing = !editing }) { Text(if (editing) "Listo" else "Cambiar de servidor") }
         }
-        if (showSteps) Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("• Configuración → Sistema → Características opcionales → Ver características → busca «Servidor OpenSSH» → Agregar.")
-            Text("• Abre la app «Servicios» (búscala en Inicio) → «OpenSSH SSH Server» → Tipo de inicio: Automático → Iniciar → Aceptar.")
-            Muted("Todo con herramientas de Windows; no hay que bajar nada. El firewall se configura solo al agregarlo.")
-        }
+        if (Prefs.configured && !editing) SpeedTestRow()
+    }
 
-        // Paso 2: encontrar el PC en la red.
-        Text("2. Buscar el servidor", fontWeight = FontWeight.Bold)
-        SpacedRow {
-            Button(enabled = !searching, onClick = {
-                searching = true
-                found = null
-                scope.launch {
-                    val me = Kitchen.lanAddress()
-                    found = if (me == null) emptyList() else runCatching { PcFinder.scan(me) }.getOrDefault(emptyList())
-                    // El equipo que abrió la web de la tablet suele ser el PC.
-                    if (Kitchen.lastClientIp.isNotEmpty() && found!!.none { it.ip == Kitchen.lastClientIp }) {
-                        withContext(Dispatchers.IO) { PcFinder.probe(Kitchen.lastClientIp) }?.let { found = listOf(it) + found!! }
-                    }
-                    if (found!!.size == 1) host = found!![0].ip
-                    searching = false
-                }
-            }) { Text("Buscar mi servidor") }
-            if (searching) { CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp); Muted("Buscando en tu WiFi…") }
-            else if (host.isNotBlank()) Muted("Elegido: $host")
-        }
-        found?.let { list ->
-            if (list.isEmpty()) Text("No apareció ningún equipo con SFTP. Revisa el paso 1 y que el servidor esté en la misma WiFi.",
-                color = MaterialTheme.colorScheme.error)
-            list.forEach { f ->
-                TextButton(onClick = { host = f.ip }) {
-                    Text((if (f.ip == host) "✓ " else "") + f.ip + (if (f.windows) " · Windows (tu servidor)" else " · otro aparato (router, NAS…): no es el servidor"))
-                }
+    if (editing) {
+        // Paso 1
+        StepCard(1, "Activar SFTP en Windows", "Una sola vez, con herramientas de Windows; no hay que bajar nada.", done = Prefs.configured) {
+            SpacedRow {
+                Muted("¿Ya lo hiciste? Sigue al paso 2.", Modifier.weight(1f))
+                TextButton(onClick = { showSteps = !showSteps }) { Text(if (showSteps) "Ocultar" else "Ver cómo") }
+            }
+            if (showSteps) Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("1. Configuración → Sistema → Características opcionales → Ver características → «Servidor OpenSSH» → Agregar.")
+                Text("2. App «Servicios» → «OpenSSH SSH Server» → Tipo de inicio: Automático → Iniciar → Aceptar.")
+                Muted("El firewall de Windows se configura solo al agregarlo.")
             }
         }
-
-        // O a mano: otra red, Tailscale (100.x.x.x) o un nombre (mi-pc.local). La búsqueda solo mira la WiFi.
-        SpacedRow {
-            Field("O escribe la dirección", host, { host = it }, Modifier.weight(1f), hint = "192.168.1.20, 100.x.x.x o mi-pc.local")
-            Field("Puerto", port, { port = it.filter(Char::isDigit).take(5) }, Modifier.width(120.dp), number = true)
+        // Paso 2
+        StepCard(2, "Encontrar tu PC", "En casa se busca solo en tu WiFi. Fuera de casa, escribe su dirección.", done = host.isNotBlank()) {
+            SpacedRow {
+                Button(enabled = !searching, onClick = {
+                    searching = true
+                    found = null
+                    scope.launch {
+                        val me = Kitchen.lanAddress()
+                        found = if (me == null) emptyList() else runCatching { PcFinder.scan(me) }.getOrDefault(emptyList())
+                        // El equipo que abrió la web de la tablet suele ser el PC.
+                        if (Kitchen.lastClientIp.isNotEmpty() && found!!.none { it.ip == Kitchen.lastClientIp }) {
+                            withContext(Dispatchers.IO) { PcFinder.probe(Kitchen.lastClientIp) }?.let { found = listOf(it) + found!! }
+                        }
+                        if (found!!.count { it.windows } == 1) host = found!!.first { it.windows }.ip
+                        searching = false
+                    }
+                }) { Text("Buscar en mi WiFi") }
+                if (searching) { CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp); Muted("Buscando…") }
+            }
+            found?.let { list ->
+                if (list.isEmpty()) Text("No apareció ningún PC con SFTP. Revisa el paso 1 y que esté en la misma WiFi.", color = MaterialTheme.colorScheme.error)
+                list.forEach { f ->
+                    val sel = f.ip == host
+                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
+                        .background(if (sel) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant)
+                        .clickable { host = f.ip }.padding(12.dp), verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        androidx.compose.material3.RadioButton(sel, { host = f.ip })
+                        Column(Modifier.weight(1f)) {
+                            Text(f.ip, fontWeight = FontWeight.Bold)
+                            Muted(if (f.windows) "Windows: tu PC" else "Otro aparato (router, NAS…): no es tu PC")
+                        }
+                    }
+                }
+            }
+            Field("Dirección de tu PC", host, { host = it.trim() }, Modifier.fillMaxWidth(), hint = "192.168.1.20 · 100.x.x.x (Tailscale) · mi-pc.local")
+            Muted("Con Tailscale: usa la IP 100.x.x.x de tu PC (la ves en la app de Tailscale). El puerto sigue siendo el 22, " +
+                "el mismo de siempre: Tailscale solo cambia la dirección.")
         }
-        Muted("Fuera de casa funciona con Tailscale: usa la IP 100.x.x.x de tu PC (la ves en la app de Tailscale).")
-
-        // Paso 3: usuario y contraseña; después la carpeta de ROMs se busca sola.
-        Text("3. Tu cuenta de Windows", fontWeight = FontWeight.Bold)
-        SpacedRow {
-            Field("Usuario", user, { user = it }, Modifier.weight(1f), hint = "el de C:\\Users\\…")
-            Field("Contraseña", pass, { pass = it }, Modifier.weight(1f), password = true)
-        }
-        Muted("La contraseña de la cuenta (no el PIN). Con cuenta de Microsoft, es la de esa cuenta; el usuario es el nombre de tu carpeta en C:\\Users.")
-        SpacedRow {
-            Button(enabled = !connecting && host.isNotBlank() && user.isNotBlank(), onClick = {
-                connecting = true
-                message = null
-                romsChoices = null
-                scope.launch {
-                    val r = runCatching {
-                        withContext(Dispatchers.IO) {
-                            SftpConn.connect(cfg()).use { c ->
-                                Prefs.fingerprint = c.fingerprint
-                                PcFinder.findRoms(c)
+        // Paso 3
+        StepCard(3, "Tu cuenta de Windows", "Para entrar a tus carpetas. La carpeta de ROMs, BIOS y respaldos se buscan solas.", done = Prefs.configured) {
+            SpacedRow {
+                Field("Usuario", user, { user = it }, Modifier.weight(1f), hint = "el de C:\\Users\\…")
+                Field("Contraseña", pass, { pass = it }, Modifier.weight(1f), password = true)
+            }
+            Muted("La contraseña de la cuenta, no el PIN. Con cuenta de Microsoft es la de esa cuenta; el usuario es el nombre de tu carpeta en C:\\Users.")
+            SpacedRow {
+                BigActionButton(if (connecting) "Conectando…" else "Conectar", Icons.Rounded.Link,
+                    enabled = !connecting && host.isNotBlank() && user.isNotBlank()) {
+                    connecting = true
+                    message = null
+                    romsChoices = null
+                    scope.launch {
+                        val r = runCatching {
+                            withContext(Dispatchers.IO) {
+                                SftpConn.connect(cfg()).use { c ->
+                                    Prefs.fingerprint = c.fingerprint
+                                    PcFinder.findRoms(c)
+                                }
                             }
                         }
+                        connecting = false
+                        r.onSuccess { dirs ->
+                            Prefs.host = host; Prefs.port = port.toIntOrNull() ?: 22; Prefs.user = user; Prefs.password = pass
+                            when {
+                                dirs.size == 1 -> { saveRoms(dirs[0].path); editing = false }
+                                dirs.isEmpty() -> { message = true to "Conectado. No encontré la carpeta de ROMs: elígela."; browse = true }
+                                else -> { romsChoices = dirs; message = true to "Conectado. ¿Cuál es tu carpeta de ROMs?" }
+                            }
+                        }.onFailure { message = false to (it.message ?: "Error") }
                     }
-                    connecting = false
-                    r.onSuccess { dirs ->
-                        Prefs.host = host; Prefs.port = port.toIntOrNull() ?: 22; Prefs.user = user; Prefs.password = pass
-                        when {
-                            dirs.size == 1 -> saveRoms(dirs[0].path)
-                            dirs.isEmpty() -> { message = true to "Conectado. No encontré la carpeta de ROMs: elígela."; browse = true }
-                            else -> { romsChoices = dirs; message = true to "Conectado. ¿Cuál es tu carpeta de ROMs?" }
-                        }
-                    }.onFailure { message = false to (it.message ?: "Error") }
                 }
-            }) { Text("Conectar") }
-            if (connecting) { CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp); Muted("Conectando y buscando tu carpeta de ROMs…") }
-        }
-        message?.let { (good, text) -> Text(text, color = if (good) Palette.ok else MaterialTheme.colorScheme.error) }
-        romsChoices?.let { list ->
-            list.forEach { d ->
-                TextButton(onClick = { saveRoms(d.path) }) { Text("${PcFinder.windowsPath(d.path)}  ·  ${d.platforms} plataformas") }
+                if (connecting) Muted("Conectando y buscando tu carpeta de ROMs…")
             }
-            TextButton(onClick = { browse = true }) { Text("Otra carpeta…") }
+            message?.let { (good, text) -> Text(text, color = if (good) Palette.ok else MaterialTheme.colorScheme.error, fontWeight = FontWeight.SemiBold) }
+            romsChoices?.let { list ->
+                list.forEach { d ->
+                    TextButton(onClick = { saveRoms(d.path); editing = false }) { Text("${PcFinder.windowsPath(d.path)}  ·  ${d.platforms} plataformas") }
+                }
+                TextButton(onClick = { browse = true }) { Text("Otra carpeta…") }
+            }
         }
-        if (Prefs.configured && romsChoices == null) TextButton(onClick = { browse = true }) { Text("Cambiar la carpeta de ROMs") }
+    }
 
-        TextButton(onClick = { manual = !manual }) { Text(if (manual) "Ocultar opciones" else "Más opciones (puerto, BIOS, respaldos)") }
-        if (manual) ManualPc()
+    // Para ajustar a mano (casi nunca hace falta).
+    Section("") {
+        SpacedRow(Modifier.fillMaxWidth().clickable { advanced = !advanced }) {
+            Icon(Icons.Rounded.Tune, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Column(Modifier.weight(1f)) {
+                Text("Avanzado", fontWeight = FontWeight.Bold)
+                Muted("Puerto, carpetas en el PC e identidad del servidor. La app los detecta sola; cámbialos solo si sabes que hace falta.")
+            }
+            Icon(if (advanced) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore, null)
+        }
+        if (advanced) {
+            ManualPc()
+            if (Prefs.configured) TextButton(onClick = { browse = true }) { Text("Elegir la carpeta de ROMs navegando…") }
+        }
     }
     if (browse) FolderPicker(cfg(), onPick = { browse = false; saveRoms(it) }, onClose = { browse = false })
+}
+
+/** Un paso de la conexión: número (o ✓ si ya está), título, para qué sirve y su contenido. */
+@Composable
+private fun StepCard(n: Int, title: String, detail: String, done: Boolean, content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
+    Section("") {
+        SpacedRow {
+            Box(Modifier.size(36.dp).clip(RoundedCornerShape(99.dp)).background(if (done) Palette.ok else MaterialTheme.colorScheme.primary),
+                contentAlignment = Alignment.Center) {
+                if (done) Icon(Icons.Rounded.Check, null, tint = Color.White)
+                else Text("$n", color = Color.White, fontWeight = FontWeight.Bold)
+            }
+            Column(Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Muted(detail)
+            }
+        }
+        content()
+    }
 }
 
 /** Datos que casi nunca hay que tocar: puerto, carpeta de BIOS y de respaldos en el PC. */
@@ -216,14 +285,18 @@ private fun ManualPc() {
     var roms by remember { mutableStateOf(Prefs.pcRoms) }
     var bios by remember { mutableStateOf(Prefs.pcBios) }
     var backups by remember { mutableStateOf(Prefs.pcBackups) }
-    Field("Puerto", port, { port = it.filter(Char::isDigit) }, Modifier.width(140.dp), number = true)
+    Field("Puerto SSH", port, { port = it.filter(Char::isDigit) }, Modifier.width(160.dp), number = true)
+    Muted("El 22 es el de siempre (también por Tailscale). Solo cámbialo si configuraste OpenSSH con otro.")
     Field("Carpeta de ROMs en el servidor", roms, { roms = it }, Modifier.fillMaxWidth(), hint = "D:\\Emulación\\ROMs")
     Field("Carpeta de BIOS (opcional)", bios, { bios = it }, Modifier.fillMaxWidth(), hint = "vacío = «bios» dentro de ROMs")
     Field("Respaldos de partidas (opcional)", backups, { backups = it }, Modifier.fillMaxWidth(), hint = "vacío = «RomSync» junto a ROMs")
     TextButton(onClick = {
         Prefs.port = port.toIntOrNull() ?: 22; Prefs.pcRoms = roms; Prefs.pcBios = bios; Prefs.pcBackups = backups
     }) { Text("Guardar") }
-    if (Prefs.fingerprint.isNotEmpty()) TextButton(onClick = { Prefs.fingerprint = "" }) { Text("Olvidar la identidad del servidor") }
+    if (Prefs.fingerprint.isNotEmpty()) {
+        Muted("Identidad del servidor (para notar si alguien se hace pasar por tu PC): ${Prefs.fingerprint.take(23)}…")
+        TextButton(onClick = { Prefs.fingerprint = "" }) { Text("Olvidar la identidad (si reinstalaste Windows u OpenSSH)") }
+    }
 }
 
 /** Navegar las carpetas del PC por SFTP y elegir una (sin escribir rutas). */
@@ -277,33 +350,81 @@ private fun FolderPicker(cfg: SftpConfig, onPick: (String) -> Unit, onClose: () 
 
 @Composable
 private fun TabletCard() {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
     var roms by remember { mutableStateOf(Prefs.romsDir) }
     var bios by remember { mutableStateOf(Prefs.biosDir) }
     var name by remember { mutableStateOf(Prefs.deviceName) }
+    var editName by remember { mutableStateOf(false) }
     var reserve by remember { mutableStateOf(Prefs.reserveGb.toFloat()) }
     val scope = appScope
+    // Elegir carpeta con el selector de Android (sin escribir rutas).
+    var picking by remember { mutableStateOf("") }
+    val picker = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenDocumentTree()) { uri ->
+        val path = uri?.let { treeToPath(it) }
+        if (uri != null && path == null) Notice.info("No se pudo usar esa carpeta: elige una del almacenamiento del dispositivo")
+        if (path != null) {
+            if (picking == "roms") { roms = path; Prefs.romsDir = path } else { bios = path; Prefs.biosDir = path }
+            Notice.info("Carpeta guardada: ${path.removePrefix(android.os.Environment.getExternalStorageDirectory().path)}")
+            scope.launch { Repo.refresh(pc = false) }
+        }
+    }
     Section("Este dispositivo") {
-        Field("Carpeta de ROMs", roms, { roms = it }, Modifier.fillMaxWidth())
-        Field("Carpeta de BIOS", bios, { bios = it }, Modifier.fillMaxWidth())
-        Field("Nombre del dispositivo (carpeta de sus respaldos)", name, { name = it }, Modifier.fillMaxWidth())
+        @Composable
+        fun FolderRow(title: String, path: String, what: String) = SpacedRow {
+            Icon(Icons.Rounded.Folder, null, tint = MaterialTheme.colorScheme.primary)
+            Column(Modifier.weight(1f)) {
+                Text(title, fontWeight = FontWeight.SemiBold)
+                Muted(path.removePrefix(android.os.Environment.getExternalStorageDirectory().path).ifEmpty { "/" }.let { "Almacenamiento$it" })
+            }
+            androidx.compose.material3.FilledTonalButton(onClick = { Sound.play(Sound.Fx.MOVE); picking = what; picker.launch(null) }) { Text("Elegir…") }
+        }
+        FolderRow("Carpeta de ROMs", roms, "roms")
+        FolderRow("Carpeta de BIOS", bios, "bios")
+        SpacedRow {
+            Icon(Icons.Rounded.TabletAndroid, null, tint = MaterialTheme.colorScheme.primary)
+            Column(Modifier.weight(1f)) {
+                Text("Nombre: $name", fontWeight = FontWeight.SemiBold)
+                Muted("Lo pone la app sola. Separa los respaldos de este dispositivo de los de otros en el servidor.")
+            }
+            TextButton(onClick = { editName = !editName }) { Text(if (editName) "Listo" else "Cambiar") }
+        }
+        if (editName) {
+            Field("Nombre del dispositivo", name, { name = it }, Modifier.fillMaxWidth())
+            Muted("Ojo: si lo cambias, los respaldos anteriores quedan con el nombre viejo (se ven igual al restaurar).")
+            TextButton(onClick = { Prefs.deviceName = name; name = Prefs.deviceName; editName = false }) { Text("Guardar nombre") }
+        }
         Column {
-            Text("Dejar siempre libres: ${reserve.toInt()} GB")
+            Text("Dejar siempre libres: ${reserve.toInt()} GB", fontWeight = FontWeight.SemiBold)
             Slider(value = reserve, onValueChange = { reserve = it }, valueRange = 0f..30f, steps = 29,
                 onValueChangeFinished = { Prefs.reserveGb = reserve.toInt() })
             Muted("Una descarga que deje menos libre que esto no empieza.")
         }
-        Button(onClick = {
-            Prefs.romsDir = roms; Prefs.biosDir = bios; Prefs.deviceName = name
-            scope.launch { Repo.refresh(pc = false) }
-        }) { Text("Guardar") }
     }
 }
+
+/** "content://…/tree/primary:ROMs" → "/storage/emulated/0/ROMs" (y las tarjetas SD a /storage/XXXX-XXXX/…). */
+private fun treeToPath(uri: android.net.Uri): String? = runCatching {
+    val id = android.provider.DocumentsContract.getTreeDocumentId(uri)
+    val vol = id.substringBefore(':')
+    val rel = id.substringAfter(':', "")
+    val base = if (vol.equals("primary", true)) android.os.Environment.getExternalStorageDirectory().path else "/storage/$vol"
+    if (rel.isEmpty()) base else "$base/$rel"
+}.getOrNull()?.takeIf { java.io.File(it).isDirectory }
 
 @Composable
 private fun ArtCard() {
     var key by remember { mutableStateOf(Prefs.sgdbKey) }
     Section("Carátulas (SteamGridDB)") {
-        Muted("Gratis en steamgriddb.com → Preferencias → API.")
+        val ctx = androidx.compose.ui.platform.LocalContext.current
+        if (Prefs.sgdbKey.isBlank()) {
+            Text("Sin clave: los juegos se ven sin carátula, fondo ni logo.", fontWeight = FontWeight.SemiBold)
+            Muted("Es gratis: entra con tu cuenta de Steam en SteamGridDB, copia la clave y pégala aquí.")
+            androidx.compose.material3.FilledTonalButton(onClick = {
+                runCatching { ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW,
+                    android.net.Uri.parse("https://www.steamgriddb.com/profile/preferences/api"))) }
+            }) { Text("Conseguir mi clave en SteamGridDB") }
+        } else Text("Conectado a SteamGridDB ✓", color = Palette.ok, fontWeight = FontWeight.SemiBold)
         Field("Clave de la API", key, { key = it }, Modifier.fillMaxWidth(), password = true)
         val scope = appScope
         var msg by remember { mutableStateOf<Pair<Boolean, String>?>(null) }
@@ -432,6 +553,28 @@ private fun LookControls() {
             }, label = { Text(label) }, shape = RoundedCornerShape(99.dp))
         }
     }
+    SpacedRow {
+        Column(Modifier.weight(1f)) {
+            Text("Pantalla completa", fontWeight = FontWeight.SemiBold)
+            Muted("Oculta la barra de arriba y los botones de Android; aparecen deslizando desde el borde.")
+        }
+        androidx.compose.material3.Switch(checked = UiState.fullscreen, onCheckedChange = {
+            Sound.play(Sound.Fx.TOGGLE); UiState.fullscreen = it; Prefs.fullscreen = it
+        })
+    }
+    SpacedRow {
+        Text("Descargas", Modifier.width(110.dp), fontWeight = FontWeight.SemiBold)
+        DownloadArt.styles.forEach { (id, label) ->
+            FilterChip(selected = DownloadArt.style == id, onClick = {
+                Sound.play(Sound.Fx.TOGGLE); DownloadArt.style = id; Prefs.dlStyle = id
+            }, label = { Text(label) }, shape = RoundedCornerShape(99.dp))
+        }
+    }
+    Muted(when (DownloadArt.style) {
+        "3ds" -> "Bloques que llenan el cubo del ícono y, al terminar, un regalo que se abre al entrar al juego."
+        "switch" -> "La carátula con una barra de avance abajo, como el menú de Switch."
+        else -> "Un anillo con el porcentaje sobre la carátula."
+    })
 }
 
 /** Medir la velocidad con el servidor (bajada y subida), sin tocar los juegos. */
@@ -445,12 +588,27 @@ private fun SpeedTestRow() {
             step = "Empezando…"; result = null
             appScope.launch {
                 result = runCatching { PcEdit.speedTest(ctx.cacheDir) { step = it } }.fold(
-                    { (d, u) -> "Bajada ${formatSpeed(d)} · Subida ${formatSpeed(u)}" }, { "No se pudo medir: ${it.message}" })
+                    { (d, u) -> "Bajada ${formatSpeed(d)} · Subida ${formatSpeed(u)}" +
+                        (if (PcEdit.lastRealUpload > 0) " (con un juego real: ${formatSpeed(PcEdit.lastRealUpload)})" else "") }, { "No se pudo medir: ${it.message}" })
                 step = null
             }
         }) { Text("Probar velocidad") }
-        if (step != null) { androidx.compose.material3.CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp); Muted(step!!) }
-        else result?.let { Text(it, fontWeight = FontWeight.SemiBold) }
+        if (step == null) result?.let { Text(it, fontWeight = FontWeight.SemiBold) }
     }
-    Muted("Baja 512 MB de un juego del servidor y sube 256 MB de prueba; no se guarda nada.")
+    // Mientras mide: el número grande que cambia en vivo y la barra de la fase (como Speedtest).
+    if (step != null) {
+        val shown by androidx.compose.animation.core.animateFloatAsState(PcEdit.liveSpeed / 1_000_000f,
+            androidx.compose.animation.core.tween(350), label = "velocidad")
+        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(MaterialTheme.colorScheme.primaryContainer).padding(18.dp),
+            horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(step!!, fontWeight = FontWeight.SemiBold)
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text("%.0f".format(shown), style = MaterialTheme.typography.displayMedium, fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary)
+                Text(" MB/s", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(bottom = 8.dp))
+            }
+            androidx.compose.material3.LinearProgressIndicator(progress = { PcEdit.liveFrac }, Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(99.dp)))
+        }
+    }
+    Muted("Baja 512 MB de un juego del servidor y sube 256 MB de prueba y 256 MB de un juego tuyo; no se guarda nada.")
 }

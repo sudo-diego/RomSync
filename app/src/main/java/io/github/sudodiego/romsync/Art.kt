@@ -109,10 +109,13 @@ object Art {
             // Switch: se busca por el nombre oficial (sacado del código del juego). Los archivos de algunas páginas
             // vienen con nombres disfrazados ("Zel Air Mata Kerajaan" = Tears of the Kingdom) y no se encontraba nada.
             val official = if (g.kind == "switch" && g.serial.length == 16) Tidy.officialNameFor(g.serial.uppercase()) else null
-            val found = search(key, official ?: g.title)
+            val dated = searchDated(key, official ?: g.title)
+            val found = dated.map { it.first to it.second }
             val want = official?.let(::norm) ?: fileTitle(g)
             // Antes se tomaba el primero si no había uno idéntico: "Aladdin" daba "Aladdin - Hidden Objects Game".
-            val best = found.firstOrNull { norm(it.second) == want } ?: found.firstOrNull { sameGame(it.second, want) }
+            // Con varios del mismo nombre (Link's Awakening de Game Boy y de Switch), en consolas nuevas el más nuevo y
+            // en las viejas el original.
+            val best = pickFor(g, dated, want)?.let { it.first to it.second }
             sgdbId = best?.first ?: found.firstOrNull()?.first ?: -1
             entry.put("sgdbId", sgdbId)
             if (best != null) entry.put("name", best.second).put("nameOk", true) else entry.put("nameOk", false)
@@ -151,10 +154,60 @@ object Art {
     }
 
     /** Autocompletado de SteamGridDB: (id, nombre). */
-    suspend fun search(key: String = Prefs.sgdbKey, q: String): List<Pair<Int, String>> = withContext(Dispatchers.IO) {
+    suspend fun search(key: String = Prefs.sgdbKey, q: String): List<Pair<Int, String>> = searchDated(key, q).map { it.first to it.second }
+
+    /** Igual que [search], con el año de lanzamiento (para separar un remake del original con el mismo nombre). */
+    suspend fun searchDated(key: String, q: String): List<Triple<Int, String, Long>> = withContext(Dispatchers.IO) {
         val o = getJson(key, "/search/autocomplete/" + URLEncoder.encode(q, "UTF-8").replace("+", "%20")) ?: return@withContext emptyList()
         val a = o.optJSONArray("data") ?: return@withContext emptyList()
-        (0 until a.length()).map { a.getJSONObject(it) }.map { it.getInt("id") to it.optString("name") }
+        (0 until a.length()).map { a.getJSONObject(it) }.map { Triple(it.getInt("id"), it.optString("name"), it.optLong("release_date")) }
+    }
+
+    /**
+     * Años en que cada consola tuvo juegos. Con varios juegos del mismo nombre (Resident Evil de PS1 y el remake de
+     * GameCube, Link's Awakening de Game Boy y de Switch) se elige el que salió en esos años; si ninguno, el más cercano.
+     */
+    private val systemYears = mapOf(
+        "nes" to 1983..1995, "famicom" to 1983..1995, "fds" to 1986..1992, "snes" to 1990..2000, "snesna" to 1990..2000, "sfc" to 1990..2000,
+        "n64" to 1996..2002, "gc" to 2001..2008, "wii" to 2006..2014, "wiiu" to 2012..2017, "switch" to 2017..2030,
+        "gb" to 1989..2003, "gbc" to 1998..2003, "gba" to 2001..2008, "nds" to 2004..2014, "n3ds" to 2011..2020,
+        "virtualboy" to 1995..1996, "psx" to 1994..2006, "ps2" to 2000..2013, "ps3" to 2006..2017, "psp" to 2004..2014,
+        "psvita" to 2011..2019, "genesis" to 1988..1998, "megadrive" to 1988..1998, "mastersystem" to 1985..1993,
+        "gamegear" to 1990..1997, "segacd" to 1991..1996, "saturn" to 1994..2000, "dreamcast" to 1998..2007,
+        "pcengine" to 1987..1999, "neogeo" to 1990..2004, "ngp" to 1998..2001, "ngpc" to 1999..2001,
+        "wonderswan" to 1999..2003, "wonderswancolor" to 2000..2003, "atari2600" to 1977..1992, "xbox" to 2001..2008,
+    )
+
+    /** De los resultados con el nombre buscado, el que corresponde a la consola del juego. */
+    private fun pickFor(g: Game, dated: List<Triple<Int, String, Long>>, want: String): Triple<Int, String, Long>? {
+        val same = dated.filter { norm(it.second) == want }.ifEmpty { dated.filter { sameGame(it.second, want) } }
+        if (same.size <= 1) return same.firstOrNull()
+        val years = systemYears[g.system] ?: return same.first()
+        fun year(t: Long) = if (t <= 0) null else java.util.Calendar.getInstance().apply { timeInMillis = t * 1000 }.get(java.util.Calendar.YEAR)
+        val inside = same.filter { s -> year(s.third)?.let { it in years } == true }
+        if (inside.isNotEmpty()) return inside.first()
+        return same.filter { year(it.third) != null }.minByOrNull { s ->
+            val y = year(s.third)!!
+            if (y < years.first) years.first - y else y - years.last
+        } ?: same.first()
+    }
+
+    /**
+     * Una sola vez: revisa los juegos cuyas imágenes se eligieron solas y, si con la regla de los años corresponde
+     * otro juego de SteamGridDB, las vuelve a buscar. Las subidas o elegidas a mano no se tocan.
+     */
+    suspend fun recheckAll(games: List<Game>) = withContext(Dispatchers.IO) {
+        if (Prefs.flag("artRecheckYears") || Prefs.sgdbKey.isBlank()) return@withContext
+        for (g in games.filter { it.kind != "shortcut" }) {
+            val entry = synchronized(index) { index[g.id] } ?: continue
+            val id = entry.optInt("sgdbId")
+            if (id <= 0 || entry.optBoolean("manual") || kinds.keys.any { custom(g.id, it).isFile }) continue
+            val official = if (g.kind == "switch" && g.serial.length == 16) Tidy.officialNameFor(g.serial.uppercase()) else null
+            val dated = runCatching { sem.withPermit { searchDated(Prefs.sgdbKey, official ?: g.title) } }.getOrNull() ?: continue
+            val pick = pickFor(g, dated, official?.let(::norm) ?: fileTitle(g)) ?: continue
+            if (pick.first != id) withContext(Dispatchers.Main) { forget(g.id) }
+        }
+        Prefs.setFlag("artRecheckYears", true)
     }
 
     private fun firstImage(key: String, kind: String, id: Int): String? {
@@ -217,7 +270,7 @@ object Art {
     private val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.Main)
 
     /** Lo que se baja de cada juego de una vez: la carátula, el fondo de la ficha y el logo (antes solo la carátula). */
-    private val bulkKinds = listOf("grid", "hero", "logo")
+    private val bulkKinds = listOf("grid", "hero", "logo", "icon") // también íconos: la vista de íconos queda lista sin esperar
 
     /** Si a un juego le falta alguna imagen que todavía no se buscó. */
     fun needsFetch(g: Game) = g.kind != "shortcut" && (needsName(g) || bulkKinds.any { cached(g.id, it) == null && !notFound(g.id, it) })
@@ -280,7 +333,7 @@ object Art {
     /** Fija a mano el juego de SteamGridDB (desde la ficha o la web) y borra lo descargado. */
     fun choose(gameId: String, sgdbId: Int, name: String = "") {
         synchronized(index) {
-            index[gameId] = JSONObject().put("sgdbId", sgdbId).apply { if (name.isNotBlank()) put("name", name).put("nameOk", true) }
+            index[gameId] = JSONObject().put("sgdbId", sgdbId).put("manual", true).apply { if (name.isNotBlank()) put("name", name).put("nameOk", true) }
         }
         kinds.keys.forEach { file(gameId, it).delete() }
         saveIndex()

@@ -1,5 +1,7 @@
 package io.github.sudodiego.romsync
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -177,7 +179,7 @@ object PcEdit {
                 if (c.stat(remote)?.size == f.size) { done += f.size; uploading[key] = done; continue }
                 val before = done
                 try {
-                    Local.romFile(f.path).inputStream().buffered(1 shl 20).use { input ->
+                    PrefetchInputStream(Local.romFile(f.path)).use { input ->
                         c.uploadFrom(remote, input) { sent ->
                             done = before + sent
                             uploading[key] = done
@@ -208,7 +210,27 @@ object PcEdit {
      * y los escribe en la caché, y sube 256 MB a un archivo temporal que después se borra. Devuelve (bajada, subida)
      * en bytes/s.
      */
+    /** Subida medida con un juego real en la última prueba (0 si no hubo). */
+    var lastRealUpload = 0L
+
+    /** Lo que se ve mientras mide: fase, velocidad del momento y avance de la fase (0..1). */
+    var liveSpeed by androidx.compose.runtime.mutableStateOf(0L)
+    var liveFrac by androidx.compose.runtime.mutableStateOf(0f)
+
     suspend fun speedTest(cache: java.io.File, onStep: (String) -> Unit): Pair<Long, Long> = Pc.io { c ->
+        // Velocidad del momento (ventana de medio segundo) para el número grande.
+        var winAt = System.nanoTime(); var winBytes = 0L
+        fun live(total: Long, done: Long, add: Long) {
+            winBytes += add
+            val now = System.nanoTime()
+            if (now - winAt > 400_000_000L) {
+                val inst = (winBytes * 1e9 / (now - winAt)).toLong()
+                liveSpeed = if (liveSpeed == 0L) inst else (liveSpeed * 0.6 + inst * 0.4).toLong()
+                winAt = now; winBytes = 0
+            }
+            liveFrac = (done.toFloat() / total).coerceIn(0f, 1f)
+        }
+        liveSpeed = 0; liveFrac = 0f
         val big = Repo.library?.games.orEmpty().flatMap { it.files }.maxByOrNull { it.size }
             ?: throw java.io.IOException("No hay juegos en el servidor para probar")
         val tmp = java.io.File(cache, "prueba-velocidad.bin")
@@ -223,7 +245,7 @@ object PcEdit {
                     while (got < want) {
                         val n = input.read(buf, 0, minOf(buf.size.toLong(), want - got).toInt())
                         if (n < 0) break
-                        out.write(buf, 0, n); got += n
+                        out.write(buf, 0, n); got += n; live(want, got, n.toLong())
                     }
                 }
             }
@@ -241,9 +263,26 @@ object PcEdit {
                 java.util.Arrays.fill(b, off, off + n, 7); left -= n; return n
             }
         }
+        liveSpeed = 0; liveFrac = 0f
+        var lastSent = 0L
         val t1 = System.nanoTime()
-        try { c.uploadFrom(remote, zeros) { true } } finally { runCatching { c.ch.rm(remote) } }
+        try { c.uploadFrom(remote, zeros) { n -> live(upSize, n, n - lastSent); lastSent = n; true } } finally { runCatching { c.ch.rm(remote) } }
         val up = (upSize * 1e9 / (System.nanoTime() - t1)).toLong()
+        // Además: subir 256 MB de un juego real del dispositivo (lee el almacenamiento como una copia de verdad).
+        val local = Repo.localFiles.maxByOrNull { it.size }
+        if (local != null) {
+            onStep("Probando la subida con un juego real…")
+            liveSpeed = 0; liveFrac = 0f
+            val t2 = System.nanoTime()
+            var sent = 0L
+            try {
+                PrefetchInputStream(Local.romFile(local.path)).use { input ->
+                    c.uploadFrom(remote, input) { n -> live(upSize, n, n - sent); sent = n; n < upSize }
+                }
+            } catch (_: java.io.InterruptedIOException) {
+            } finally { runCatching { c.ch.rm(remote) }; runCatching { c.ch.rm("$remote.part") } }
+            lastRealUpload = (sent * 1e9 / (System.nanoTime() - t2)).toLong()
+        }
         down to up
     }
 

@@ -1,5 +1,6 @@
 package io.github.sudodiego.romsync
 
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material.icons.rounded.Dns
@@ -30,7 +31,6 @@ import androidx.compose.material.icons.rounded.TabletAndroid
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.graphicsLayer
 import android.content.Context
-import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -124,7 +124,7 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
     val w = remember(Repo.localFiles, g) { Repo.where(g) }
     val sys = Repo.system(g.system)
     val dl = DownloadService.items.firstOrNull { it.id == g.id && it.status != DlStatus.DONE }
-    var askDelete by remember { mutableStateOf(false) }
+    var askDelete by remember { mutableStateOf<String?>(null) }
     var menu by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf(false) }
     var noSpace by remember { mutableStateOf<String?>(null) }
@@ -139,12 +139,23 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
     val scroll = rememberScrollState()
     val enter = remember(g.id) { Animatable(0f) }
     LaunchedEffect(g.id) { enter.animateTo(1f, spring(dampingRatio = 0.75f, stiffness = 260f)) }
+    @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+    androidx.compose.runtime.CompositionLocalProvider(androidx.compose.foundation.LocalOverscrollConfiguration provides null) {
     Column(Modifier.fillMaxSize().verticalScroll(scroll)) {
         // Fondo (hero) con degradado hacia la página; se mueve más lento que el scroll (paralaje).
-        Box(Modifier.fillMaxWidth().height(300.dp).graphicsLayer { translationY = scroll.value * 0.45f; clip = true }
-            .background(Brush.linearGradient(listOf(Color(sys.color), Color(0xFF0D1220))))) {
-            ArtImage(g, "hero", Modifier.fillMaxSize())
-            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color.Transparent, MaterialTheme.colorScheme.background))))
+        Box(Modifier.fillMaxWidth().height(300.dp).graphicsLayer { translationY = kotlin.math.round(scroll.value * 0.45f); clip = true }) {
+            // El fondo se vuelve transparente hacia abajo (máscara), en vez de fundirse a un color fijo: así se mezcla
+            // con el fondo animado de la app y no queda una línea blanca en el borde.
+            Box(Modifier.fillMaxSize()
+                .graphicsLayer { compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen }
+                .drawWithContent {
+                    drawContent()
+                    drawRect(Brush.verticalGradient(0f to Color.Black, 0.55f to Color.Black, 1f to Color.Transparent),
+                        blendMode = androidx.compose.ui.graphics.BlendMode.DstIn)
+                }
+                .background(Brush.linearGradient(listOf(Color(sys.color), Color(0xFF0D1220))))) {
+                ArtImage(g, "hero", Modifier.fillMaxSize())
+            }
             ArtImage(g, "logo", Modifier.align(Alignment.BottomEnd).padding(28.dp).height(100.dp).width(300.dp), ContentScale.Fit)
             IconButton(onClick = onBack, Modifier.padding(14.dp).size(48.dp).clip(RoundedCornerShape(99.dp)).background(Color(0x88000000))) {
                 Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Volver", tint = Color.White)
@@ -163,14 +174,15 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
                             scope.launch {
                                 val msg = runCatching { PcEdit.createM3u(g, onPc = w.presence != Presence.TABLET_ONLY && Prefs.configured) }
                                     .fold({ "Listo: $it" }, { it.message ?: "Error" })
-                                Toast.makeText(ctx, msg, Toast.LENGTH_LONG).show()
+                                Notice.info(msg)
                                 Repo.refresh()
                             }
                         })
-                    if (w.presence != Presence.MISSING || (w.presence != Presence.TABLET_ONLY && Prefs.configured))
-                        DropdownMenuItem(text = { Text(if (w.presence == Presence.MISSING) "Borrar del servidor…" else "Borrar…", color = MaterialTheme.colorScheme.error) },
-                            leadingIcon = { Icon(Icons.Rounded.Delete, null, tint = MaterialTheme.colorScheme.error) },
-                            onClick = { menu = false; askDelete = true })
+                    // Del servidor solo desde aquí (a propósito menos a mano que el botón grande).
+                    if (w.presence != Presence.TABLET_ONLY && Prefs.configured)
+                        DropdownMenuItem(text = { Text("Borrar del servidor…", color = MaterialTheme.colorScheme.error) },
+                            leadingIcon = { Icon(Icons.Rounded.Dns, null, tint = MaterialTheme.colorScheme.error) },
+                            onClick = { menu = false; askDelete = "srv" })
                 }
             }
         }
@@ -180,7 +192,13 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
                 alpha = enter.value; translationY = (1f - enter.value) * 80f
                 rotationZ = (1f - enter.value) * -4f
             }.focusHighlight().shadow(16.dp, RoundedCornerShape(18.dp)).clip(RoundedCornerShape(18.dp)).pressable { Sound.play(Sound.Fx.OPEN); editing = true }) {
-                Cover(g, Modifier.fillMaxWidth())
+                Cover(g, Modifier.fillMaxWidth()) {
+                    // Estilo 3DS: si llegó envuelto, se desenvuelve al abrir la ficha.
+                    if (g.id in DownloadArt.gifts) {
+                        GiftBox(Modifier.fillMaxSize(), opening = true)
+                        LaunchedEffect(g.id) { kotlinx.coroutines.delay(650); DownloadArt.unwrap(g.id) }
+                    } else DownloadOverlay(g)
+                }
                 Icon(Icons.Rounded.Edit, "Editar", Modifier.align(Alignment.TopEnd).padding(8.dp).size(34.dp)
                     .clip(RoundedCornerShape(99.dp)).background(Color(0xAA000000)).padding(7.dp), tint = Color.White)
             }
@@ -243,7 +261,7 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
                             scope.launch {
                                 val msg = runCatching { PcEdit.uploadFromTablet(g) }.fold({ "${g.title} ya está en el servidor" },
                                     { if (it is PcEdit.UploadCancelled) "Copia cancelada: no quedó nada a medias en el servidor" else "No se pudo copiar: ${it.message}" })
-                                Toast.makeText(ctx, msg, Toast.LENGTH_LONG).show()
+                                Notice.info(msg)
                                 Repo.refresh()
                             }
                         }) { Text("Copiar al servidor · ${formatSize(g.size)}") }
@@ -252,7 +270,7 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
                         // Sin nada para descargar, Borrar ocupa el lugar grande (igual que Descargar).
                         val alone = !(w.presence != Presence.INSTALLED && w.presence != Presence.TABLET_ONLY && toDownload.isNotEmpty()) &&
                             dl == null && !(w.presence == Presence.TABLET_ONLY && Prefs.configured && g.kind != "shortcut")
-                        BigDeleteButton(if (alone) Modifier.weight(1f) else Modifier) { Sound.play(Sound.Fx.WARN); askDelete = true }
+                        BigDeleteButton(if (alone) Modifier.weight(1f) else Modifier) { Sound.play(Sound.Fx.WARN); askDelete = "dev" }
                     }
                 }
                 dl?.takeIf { it.status == DlStatus.FAILED }?.let { Text("La descarga falló: ${it.error}", color = MaterialTheme.colorScheme.error) }
@@ -334,8 +352,9 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
             }
         }
     }
+    }
 
-    if (askDelete) DeleteDialog(g, w, onClose = { askDelete = false }, onGone = onBack)
+    askDelete?.let { what -> DeleteNow(g, w, what) { askDelete = null; if (it) onBack() } }
     if (editing) GameEditor(g) { editing = false }
 
     noSpace?.let { msg ->
@@ -438,7 +457,7 @@ private fun GameSavesSection(g: Game) {
                     Text(when {
                         busy != null -> busy
                         u == null -> "Sin partidas en el dispositivo"
-                        else -> "En el dispositivo: ${formatSize(u.bytes)} · última vez ${fmt.format(java.util.Date(u.newest))}"
+                        else -> "En el dispositivo: ${formatSize(u.bytes)} · jugaste ${formatAgo(u.newest)}"
                     })
                 }
                 val b = lastBackup?.get(l.emu.id)
@@ -447,13 +466,22 @@ private fun GameSavesSection(g: Game) {
                     !Prefs.configured -> false to "Sin servidor: no hay respaldo"
                     lastBackup == null -> null to "Respaldo: no se pudo revisar (sin conexión)"
                     b == null -> false to (if (u != null) "Sin respaldo en el servidor" else "Sin respaldo")
-                    u != null && bAt != null && u.newest > bAt + 60_000 -> false to "Respaldo desactualizado (${fmt.format(java.util.Date(bAt))}): jugaste después"
-                    else -> true to "Respaldada en el servidor" + (bAt?.let { " · ${fmt.format(java.util.Date(it))}" } ?: "")
+                    u != null && bAt != null && u.newest > bAt + 60_000 -> false to "Respaldo desactualizado (${formatAgo(bAt)}): jugaste después"
+                    else -> true to "Respaldada en el servidor" + (bAt?.let { " · ${formatAgo(it)}" } ?: "")
                 }
                 SpacedRow {
                     Icon(Icons.Rounded.CloudDone, null, tint = when (bOk) { true -> Palette.ok; false -> Palette.warn; null -> MaterialTheme.colorScheme.onSurfaceVariant })
                     Text(bText, color = if (bOk == false) Palette.warn else MaterialTheme.colorScheme.onSurface)
                 }
+                // Aviso: jugaste y hace más de dos semanas que no se respalda (o nunca).
+                if (u != null && Prefs.configured && lastBackup != null && (bAt == null || (u.newest > bAt + 60_000 && daysSince(bAt) >= 14)))
+                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Palette.warn.copy(alpha = 0.14f)).padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Icon(Icons.Rounded.Warning, null, tint = Palette.warn)
+                        Text(if (bAt == null) "Esta partida nunca se ha respaldado: si algo le pasa al dispositivo, se pierde."
+                            else "Hace ${formatAgo(bAt).removePrefix("hace ")} que no respaldas este juego y has seguido jugando.",
+                            fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                    }
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(enabled = u != null && busy == null && Prefs.configured, onClick = {
                         appScope.launch {
@@ -462,7 +490,7 @@ private fun GameSavesSection(g: Game) {
                                 Saves.Result.Unchanged, Saves.Result.Empty -> "No había nada que respaldar"
                                 is Saves.Result.Failed -> r.message
                             }
-                            Toast.makeText(ctx, msg, Toast.LENGTH_LONG).show()
+                            Notice.info(msg)
                             reload++
                         }
                     }) { Text("Respaldar en el servidor") }
@@ -491,7 +519,7 @@ private fun GameSavesSection(g: Game) {
                     deleteFor = null
                     appScope.launch {
                         val err = Saves.deleteUnit(ctx, l.emu, l.key)
-                        Toast.makeText(ctx, err ?: "Partidas borradas del dispositivo", Toast.LENGTH_LONG).show()
+                        Notice.info(err ?: "Partidas borradas del dispositivo")
                         reload++
                     }
                 }, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) { Text("Borrar partidas") }
@@ -539,7 +567,7 @@ private fun VitaInstallSection(g: Game) {
                 ask = false
                 appScope.launch {
                     val msg = runCatching { GameSaves.removeVitaInstall(i.first) }.fold({ "Quitado de Vita3K" }, { it.message ?: "Error" })
-                    Toast.makeText(ctx, msg, Toast.LENGTH_LONG).show()
+                    Notice.info(msg)
                     reload++
                 }
             }, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) { Text("Quitar") }
@@ -686,7 +714,7 @@ private fun TabletExtras(g: Game) {
         } else if (Prefs.configured) Button(onClick = {
             appScope.launch {
                 val msg = runCatching { PcEdit.uploadFiles(key, files) }.fold({ "Copiado al servidor" }, { "No se pudo copiar: ${it.message}" })
-                Toast.makeText(ctx, msg, Toast.LENGTH_LONG).show()
+                Notice.info(msg)
                 Repo.refresh()
             }
         }) { Text("Copiar al servidor · ${formatSize(files.sumOf { it.size })}") }
@@ -821,10 +849,15 @@ private fun DeleteConfirm(
                 appScope.launch {
                     val msgs = ArrayList<String>()
                     if (saves) withSaves.forEach { (l, _) -> Saves.deleteUnit(ctx, l.emu, l.key)?.let { msgs += it } }
-                    if (dev && onDevice) msgs += "Dispositivo: ${formatSize(Repo.delete(g))} libres"
-                    if (srv && onServer) msgs += runCatching { "Servidor: ${formatSize(Repo.deleteFromPc(g))}" }.getOrElse { "Servidor: ${it.message}" }
-                    Sound.play(Sound.Fx.DONE)
-                    Toast.makeText(ctx, msgs.joinToString(" · ").ifEmpty { "Listo" }, Toast.LENGTH_LONG).show()
+                    var failed: String? = null
+                    var freed = 0L
+                    if (dev && onDevice) freed += Repo.delete(g)
+                    if (srv && onServer) runCatching { freed += Repo.deleteFromPc(g) }.onFailure { failed = it.message }
+                    Sound.play(if (failed == null) Sound.Fx.DONE else Sound.Fx.WARN)
+                    // Aviso arriba a la derecha con la carátula yéndose al basurero (antes era un Toast).
+                    if (failed != null) Notice.show(g.id, g.title, "No se pudo borrar del servidor: $failed", Notice.Kind.ERROR)
+                    else Notice.show(g.id, g.title, (if (srv) "Borrado del servidor" else "Quitado del dispositivo") +
+                        " · ${formatSize(freed)} libres", Notice.Kind.DELETE)
                     if (gameLost) onGone()
                 }
             }, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) { Text("Borrar") }
@@ -919,4 +952,16 @@ fun CancelDownloadDialog(d: Download, onClose: () -> Unit) {
         },
         dismissButton = { TextButton(onClick = onClose) { Text("Seguir descargando") } },
     )
+}
+
+/**
+ * Borrar una sola cosa, directo al "¿Seguro?": "dev" quita el juego del dispositivo (botón grande), "srv" lo borra
+ * del servidor (menú ⋮). Las partidas se borran aparte, en la sección Partidas de la ficha.
+ */
+@Composable
+private fun DeleteNow(g: Game, w: Repo.Where, what: String, onClose: (gone: Boolean) -> Unit) {
+    val onDevice = w.presence != Presence.MISSING
+    val onServer = w.presence != Presence.TABLET_ONLY && Prefs.configured
+    DeleteConfirm(g, w, dev = what == "dev", srv = what == "srv", saves = false, onDevice = onDevice, onServer = onServer,
+        withSaves = emptyList(), onBack = { onClose(false) }, onClose = { onClose(false) }, onGone = { onClose(true) })
 }

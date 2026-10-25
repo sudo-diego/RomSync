@@ -1,6 +1,5 @@
 package io.github.sudodiego.romsync
 
-import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -102,7 +101,7 @@ fun CleanupDialog(onClose: () -> Unit) {
                             Repo.deleteJunk(selected.filter { !it.onPc }.map { it.file }, selected.filter { it.onPc }.map { it.file })
                         }.fold({ "Borrado · ${formatSize(it)} libres" }, { it.message ?: "Error" })
                         busy = false
-                        Toast.makeText(ctx, msg, Toast.LENGTH_LONG).show()
+                        Notice.info(msg)
                         onClose()
                     }
                 }) { Text("Borrar ${selected.size}") }
@@ -210,7 +209,7 @@ fun StrayBiosDialog(tablet: List<FileEntry>, pc: List<FileEntry>, onClose: () ->
                         Repo.moveBios(selected.filter { !it.onPc }.map { it.file }, selected.filter { it.onPc }.map { it.file })
                     }.fold({ "$it BIOS movida(s) a bios" }, { it.message ?: "Error" })
                     busy = false
-                    Toast.makeText(ctx, msg, Toast.LENGTH_LONG).show()
+                    Notice.info(msg)
                     onClose()
                 }
             }) { Text("Mover ${selected.size}") }

@@ -125,6 +125,16 @@ object Prefs {
     var icons: Boolean
         get() = sp.getBoolean("icons", false)
         set(v) = sp.edit().putBoolean("icons", v).apply()
+    /** Animación de descarga: "clasico", "3ds" o "switch". */
+    var dlStyle: String
+        get() = sp.getString("dlStyle", "clasico") ?: "clasico"
+        set(v) = sp.edit().putString("dlStyle", v).apply()
+    var gifts: Set<String>
+        get() = sp.getStringSet("gifts", emptySet()) ?: emptySet()
+        set(v) = sp.edit().putStringSet("gifts", v).apply()
+    var fullscreen: Boolean
+        get() = sp.getBoolean("fullscreen", false)
+        set(v) = sp.edit().putBoolean("fullscreen", v).apply()
     var background: String
         get() = sp.getString("background", "burbujas") ?: "burbujas"
         set(v) = sp.edit().putString("background", v).apply()

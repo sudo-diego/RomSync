@@ -1,5 +1,13 @@
 package io.github.sudodiego.romsync
 
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.Shield
+import androidx.compose.material.icons.rounded.Schedule
+import androidx.compose.material.icons.rounded.Inventory2
+import androidx.compose.material.icons.rounded.SportsEsports
+import androidx.compose.material.icons.rounded.Restore
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material3.Icon
 import androidx.compose.foundation.layout.Spacer
@@ -11,7 +19,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.rounded.CloudUpload
 import androidx.compose.material.icons.Icons
-import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
@@ -100,7 +107,7 @@ fun SavesScreen() {
                             val msg = Saves.backupAll(ctx, auto = false)
                             allBusy = false
                             Sound.play(Sound.Fx.DONE)
-                            Toast.makeText(ctx, msg, Toast.LENGTH_LONG).show()
+                            Notice.info(msg)
                         }
                     }
                 }
@@ -215,7 +222,7 @@ private fun EmulatorCard(emu: Emulator, state: SaveState?, onRestore: () -> Unit
                             is Saves.Result.Failed -> "${emu.name}: ${r.message}"
                         }
                         Saves.inspect(ctx, emu)
-                        Toast.makeText(ctx, msg, Toast.LENGTH_LONG).show()
+                        Notice.info(msg)
                     }
                 }, modifier = Modifier.focusHighlight(RoundedCornerShape(99.dp))) { Text("Respaldar") }
                 FilledTonalButton(enabled = busy == null && Prefs.configured, onClick = onRestore,
@@ -254,7 +261,7 @@ private fun EmulatorCard(emu: Emulator, state: SaveState?, onRestore: () -> Unit
                 askTransfer = false
                 scope.launch {
                     val e = Saves.transferToArmsx2(ctx)
-                    if (e != null) Toast.makeText(ctx, e, Toast.LENGTH_LONG).show() else transferDone = true
+                    if (e != null) Notice.info(e) else transferDone = true
                 }
             }) { Text("Pasar") }
         },
@@ -303,14 +310,30 @@ fun RestoreDialog(emu: Emulator, onlyKey: String? = null, onClose: () -> Unit) {
             selected = if (onlyKey == null) emptySet() else units.orEmpty().map { it.key }.toSet()
         }.onFailure { error = it.message }
     }
+    // Lo que hay ahora en el dispositivo, para decir si la partida del respaldo es más nueva o más vieja.
+    var current by remember { mutableStateOf<Map<String, Saves.Unit>>(emptyMap()) }
+    LaunchedEffect(emu) { current = runCatching { Saves.currentUnits(ctx, emu).associateBy { it.key } }.getOrDefault(emptyMap()) }
     val b = picked
     if (b != null && confirm) {
         val chosen = units.orEmpty().filter { it.key in selected }
+        // Las que pisarían una partida más nueva del dispositivo.
+        val older = chosen.mapNotNull { u -> current[u.key]?.takeIf { it.newest > u.newest + 60_000 }?.let { u to it } }
+        var sureOld by remember { mutableStateOf(false) }
         AlertDialog(
             onDismissRequest = { confirm = false },
-            title = { Text("¿Restaurar ${chosen.size} en ${emu.name}?") },
+            title = { Text(if (older.isNotEmpty()) "Ojo: vas a volver atrás" else "¿Restaurar ${chosen.size} en ${emu.name}?") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (older.isNotEmpty()) {
+                        Text("Estas partidas del respaldo son más viejas que las que tienes ahora. Si sigues, pierdes el progreso de después:",
+                            color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.SemiBold)
+                        older.take(5).forEach { (u, now) -> Text("• ${u.title}: respaldo de ${formatAgo(u.newest)}, la tuya es de ${formatAgo(now.newest)}") }
+                        Muted("Lo que tienes ahora se respalda antes, así que puedes volver a recuperarlo.")
+                        Row(Modifier.fillMaxWidth().clickable { sureOld = !sureOld }, verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                            Checkbox(sureOld, { sureOld = it })
+                            Text("Entiendo, quiero las partidas viejas", fontWeight = FontWeight.SemiBold)
+                        }
+                    }
                     chosen.take(6).forEach { Text("• ${it.title}") }
                     if (chosen.size > 6) Muted("y ${chosen.size - 6} más")
                     Text("Solo se reemplazan esas partidas. Las demás de ${emu.name} no se tocan.", fontWeight = FontWeight.SemiBold)
@@ -318,12 +341,12 @@ fun RestoreDialog(emu: Emulator, onlyKey: String? = null, onClose: () -> Unit) {
                 }
             },
             confirmButton = {
-                Button(onClick = {
+                Button(enabled = older.isEmpty() || sureOld, onClick = {
                     confirm = false
                     onClose()
                     scope.launch {
                         val e = Saves.restore(ctx, emu, b.id, only = selected)
-                        Toast.makeText(ctx, e ?: "${emu.name}: ${selected.size} restaurado(s)", Toast.LENGTH_LONG).show()
+                        Notice.info(e ?: "${emu.name}: ${selected.size} restaurado(s)")
                     }
                 }) { Text("Restaurar") }
             },
@@ -331,54 +354,133 @@ fun RestoreDialog(emu: Emulator, onlyKey: String? = null, onClose: () -> Unit) {
         )
         return
     }
-    AlertDialog(
-        onDismissRequest = onClose,
-        title = { Text(if (b == null) "Respaldos de ${emu.name}" else "${backupTitle(b)} · ${friendlyDate(b.at)}") },
-        text = {
-            LazyColumn(Modifier.fillMaxWidth().heightIn(max = 460.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                when {
-                    error != null -> item { Text(error!!, color = MaterialTheme.colorScheme.error) }
-                    b == null && list == null -> item { CircularProgressIndicator() }
-                    b == null && list!!.isEmpty() -> item { Muted("No hay respaldos en el servidor.") }
-                    b == null -> {
-                        // Desde la ficha de un juego: solo los respaldos que tienen ese juego (los viejos no lo dicen: se muestran).
-                        val shown = list!!.filter { onlyKey == null || it.keys.isEmpty() || onlyKey in it.keys }.take(30)
-                        item { Muted(if (onlyKey == null) "Elige un respaldo para ver qué trae. Mirar no cambia nada."
-                            else "Respaldos con partidas de este juego. Mirar no cambia nada.") }
-                        if (shown.isEmpty()) item { Muted("Ningún respaldo tiene partidas de este juego todavía.") }
-                        items(shown, key = { it.id }) { bk -> BackupRow(bk) { picked = bk } }
-                    }
-                    units == null -> item { SpacedRow { CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp); Muted("Abriendo el respaldo…") } }
-                    units!!.isEmpty() -> item { Muted("Este respaldo no tiene partidas de este juego. Prueba con otro.") }
-                    else -> {
-                        item {
-                            SpacedRow {
-                                Muted("Marca lo que quieres restaurar (${units!!.size} en total).", Modifier.weight(1f))
-                                TextButton(onClick = { selected = if (selected.size == units!!.size) emptySet() else units!!.map { it.key }.toSet() }) {
-                                    Text(if (selected.size == units!!.size) "Ninguno" else "Todos")
-                                }
-                            }
+    val fmt = remember { java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.MEDIUM, java.text.DateFormat.SHORT) }
+    ReviewSheet(
+        if (b == null) "Restaurar partidas de ${emu.name}" else backupTitle(b),
+        if (b == null) (if (onlyKey == null) "Elige un respaldo para ver qué trae. Mirar no cambia nada." else "Respaldos con partidas de este juego. Mirar no cambia nada.")
+        else "Respaldo del ${friendlyDate(b.at)} · ${formatSize(b.size)}. Marca lo que quieres traer al dispositivo.",
+        onClose = onClose,
+        footer = {
+            if (b == null) {
+                Muted("${list?.size ?: 0} respaldo(s) en el servidor", Modifier.weight(1f))
+                TextButton(onClick = onClose) { Text("Cerrar") }
+            } else {
+                TextButton(onClick = { picked = null; units = null }) { Text("‹ Otro respaldo") }
+                Column(Modifier.weight(1f)) {
+                    Text("${selected.size} de ${units?.size ?: 0} marcadas", fontWeight = FontWeight.Bold)
+                    Muted("Antes se respalda lo que tienes ahora")
+                }
+                BigActionButton("Restaurar (${selected.size})", Icons.Rounded.Restore, enabled = selected.isNotEmpty()) { confirm = true }
+            }
+        },
+    ) {
+        when {
+            error != null -> item { Text(error!!, color = MaterialTheme.colorScheme.error) }
+            b == null && list == null -> items(4) { SkeletonRow() }
+            b == null && list!!.isEmpty() -> item { Muted("No hay respaldos en el servidor.") }
+            b == null -> {
+                val shown = list!!.filter { onlyKey == null || it.keys.isEmpty() || onlyKey in it.keys }.take(40)
+                if (shown.isEmpty()) item { Muted("Ningún respaldo tiene partidas de este juego todavía.") }
+                // Agrupados por día ("hoy", "ayer", "lunes 13 de octubre").
+                shown.groupBy { friendlyDate(it.at).substringBefore(',') }.forEach { (day, bs) ->
+                    item(key = "d-$day") { Text(day.replaceFirstChar { it.uppercase() }, style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 6.dp)) }
+                    items(bs, key = { it.id }) { bk -> BackupCard(bk, latest = bk.id == shown.first().id) { picked = bk } }
+                }
+            }
+            units == null -> items(4) { SkeletonRow() }
+            units!!.isEmpty() -> item { Muted("Este respaldo no tiene partidas de este juego. Prueba con otro.") }
+            else -> {
+                item {
+                    SpacedRow {
+                        Muted("${units!!.size} partida(s) en este respaldo", Modifier.weight(1f))
+                        TextButton(onClick = { selected = if (selected.size == units!!.size) emptySet() else units!!.map { it.key }.toSet() }) {
+                            Text(if (selected.size == units!!.size) "Desmarcar todo" else "Marcar todo")
                         }
-                        items(units!!, key = { it.key }) { u ->
-                            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()
-                                .clickable { selected = if (u.key in selected) selected - u.key else selected + u.key }) {
-                                Checkbox(checked = u.key in selected, onCheckedChange = { selected = if (it) selected + u.key else selected - u.key })
-                                Column(Modifier.weight(1f)) {
-                                    Text(u.title, fontWeight = FontWeight.SemiBold)
-                                    Muted("${u.files} archivo(s) · ${formatSize(u.bytes)} · ${java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.SHORT, java.text.DateFormat.SHORT).format(java.util.Date(u.newest))}")
+                    }
+                }
+                items(units!!, key = { it.key }) { u ->
+                    val on = u.key in selected
+                    val game = remember(u.title) { gameForUnit(u.title) }
+                    val now = current[u.key]
+                    SheetCard(Modifier.clickable { selected = if (on) selected - u.key else selected + u.key }) {
+                        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                            Checkbox(on, { selected = if (it) selected + u.key else selected - u.key })
+                            if (game != null) Cover(game, Modifier.width(48.dp), showTitle = false)
+                            else androidx.compose.foundation.layout.Box(Modifier.size(48.dp).clip(RoundedCornerShape(12.dp))
+                                .background(MaterialTheme.colorScheme.primaryContainer), contentAlignment = androidx.compose.ui.Alignment.Center) {
+                                Icon(Icons.Rounded.SportsEsports, null, tint = MaterialTheme.colorScheme.primary)
+                            }
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text(u.title, fontWeight = FontWeight.Bold)
+                                Muted("Partida de ${formatAgo(u.newest)} · ${formatSize(u.bytes)}")
+                                when {
+                                    now == null -> Text("No la tienes en el dispositivo", color = Palette.ok, style = MaterialTheme.typography.bodySmall)
+                                    now.newest > u.newest + 60_000 -> Text("Ojo: la del dispositivo es más nueva (${formatAgo(now.newest)})",
+                                        color = Palette.warn, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodySmall)
+                                    now.newest + 60_000 < u.newest -> Text("Más nueva que la del dispositivo", color = Palette.ok, style = MaterialTheme.typography.bodySmall)
+                                    else -> Muted("Igual a la del dispositivo")
                                 }
                             }
                         }
                     }
                 }
             }
-        },
-        confirmButton = {
-            if (b != null && units != null) Button(enabled = selected.isNotEmpty(), onClick = { confirm = true }) { Text("Restaurar (${selected.size})") }
-            else TextButton(onClick = onClose) { Text("Cerrar") }
-        },
-        dismissButton = { if (b != null) TextButton(onClick = { picked = null; units = null }) { Text("Otro respaldo") } },
-    )
+        }
+    }
+}
+
+/** El juego de la biblioteca que corresponde a una partida (por el nombre), para mostrar su carátula. */
+private fun gameForUnit(title: String): Game? {
+    fun n(x: String) = x.lowercase().filter { it.isLetterOrDigit() }
+    val t = n(Saves.prettyUnitName(title))
+    if (t.length < 3) return null
+    return Repo.allGames().firstOrNull { n(it.title) == t } ?: Repo.allGames().firstOrNull { n(it.title).startsWith(t) || t.startsWith(n(it.title)) }
+}
+
+/** Mientras carga: un bloque gris que late (skeleton), en vez de un círculo solo. */
+@Composable
+fun SkeletonRow(height: androidx.compose.ui.unit.Dp = 72.dp) = SkeletonRow(Modifier.fillMaxWidth().height(height))
+
+@Composable
+fun SkeletonRow(modifier: Modifier) {
+    val t = androidx.compose.animation.core.rememberInfiniteTransition(label = "skeleton")
+    val a by t.animateFloat(0.35f, 0.75f, androidx.compose.animation.core.infiniteRepeatable(
+        androidx.compose.animation.core.tween(800), androidx.compose.animation.core.RepeatMode.Reverse), label = "alpha")
+    androidx.compose.foundation.layout.Box(modifier.clip(RoundedCornerShape(16.dp))
+        .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f * a / 0.5f)))
+}
+
+/** Un respaldo: ícono por tipo, qué es, cuándo, qué juegos trae y su tamaño. */
+@Composable
+private fun BackupCard(b: SaveBackupInfo, latest: Boolean, onClick: () -> Unit) {
+    val (icon, color) = when (b.kind) {
+        "todo" -> Icons.Rounded.Inventory2 to Palette.ok
+        "auto" -> Icons.Rounded.Schedule to Palette.ok
+        "juego" -> Icons.Rounded.SportsEsports to Palette.sky
+        "antes", "traspaso" -> Icons.Rounded.Shield to Palette.warn
+        else -> Icons.Rounded.Inventory2 to androidx.compose.ui.graphics.Color(0xFF475569)
+    }
+    SheetCard(Modifier.clickable { Sound.play(Sound.Fx.OPEN); onClick() }) {
+        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            androidx.compose.foundation.layout.Box(Modifier.size(46.dp).clip(RoundedCornerShape(14.dp)).background(color.copy(alpha = 0.15f)),
+                contentAlignment = androidx.compose.ui.Alignment.Center) { Icon(icon, null, tint = color) }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                SpacedRow {
+                    Text(backupTitle(b), fontWeight = FontWeight.Bold)
+                    if (latest) Pill("Más reciente", Palette.ok)
+                    if (b.keep) Pill("Se conserva", Palette.blue)
+                }
+                Muted(listOfNotNull(friendlyDate(b.at).substringAfter(", ", ""),
+                    if (b.games.isNotEmpty()) "${b.games.size} juego(s)" else "${b.files} archivo(s)", formatSize(b.size)).filter { it.isNotBlank() }.joinToString(" · "))
+                b.games.map(Saves::prettyUnitName).distinct().sorted().take(4).joinToString(", ").takeIf { it.isNotEmpty() }?.let {
+                    Text(it + if (b.games.size > 4) " y ${b.games.size - 4} más" else "", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                }
+            }
+            Icon(Icons.Rounded.ChevronRight, null)
+        }
+    }
 }
 
 /** Respaldar en el PC solo algunos juegos (por ejemplo antes de probar algo). */
@@ -421,7 +523,7 @@ private fun BackupOneDialog(emu: Emulator, onClose: () -> Unit) {
                         Saves.Result.Unchanged, Saves.Result.Empty -> "${emu.name}: no había nada que respaldar"
                         is Saves.Result.Failed -> "${emu.name}: ${r.message}"
                     }
-                    Toast.makeText(ctx, msg, Toast.LENGTH_LONG).show()
+                    Notice.info(msg)
                 }
             }) { Text("Respaldar (${selected.size})") }
         },

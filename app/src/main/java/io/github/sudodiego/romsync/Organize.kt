@@ -1,5 +1,6 @@
 package io.github.sudodiego.romsync
 
+import androidx.compose.ui.graphics.Color
 import androidx.compose.material.icons.rounded.CloudUpload
 import androidx.compose.material.icons.Icons
 import androidx.compose.foundation.border
@@ -7,7 +8,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.width
-import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -46,9 +46,36 @@ object Organize {
      * Grupos del mismo juego en la misma plataforma (versiones, regiones, formatos). Los que el usuario marcó "me quedo
      * con todas" no cuentan: tener varias versiones en la colección también está bien.
      */
-    fun duplicateGroups(): List<List<Game>> = Repo.allGames().filter { it.kind != "shortcut" && !Repo.isArchive(it) }
-        .groupBy { Repo.versionKey(it) }.filter { (k, v) -> v.size > 1 && k !in keptVersions }.values
-        .sortedBy { it.first().title.lowercase() }
+    /** Formatos de ROM conocidos: un archivo con otra extensión (como ".unh") suele ser una copia de otra app. */
+    private val knownExt = setOf(".zip", ".7z", ".nes", ".fds", ".sfc", ".smc", ".gb", ".gbc", ".gba", ".nds", ".3ds", ".cia", ".n64",
+        ".z64", ".v64", ".md", ".gen", ".sms", ".gg", ".pce", ".iso", ".chd", ".cue", ".rvz", ".wbfs", ".gcm", ".cso", ".pbp",
+        ".nsp", ".xci", ".wua", ".vpk", ".m3u", ".gdi", ".ws", ".wsc", ".ngp", ".ngc", ".a26", ".lnx")
+
+    /**
+     * Cuál conviene dejar. Si el mismo archivo está en dos plataformas, el de formato conocido (el otro casi siempre
+     * quedó en una carpeta equivocada); si no, la recomendación de siempre (región, formato).
+     */
+    fun recommend(vs: List<Game>): Pair<Game, String>? {
+        if (vs.map { it.system }.distinct().size > 1) {
+            val ok = vs.filter { Group.ext(it.primary) in knownExt }
+            if (ok.size == 1) return ok.first() to "formato normal de ${Repo.system(ok.first().system).short}; el otro parece estar en la carpeta equivocada"
+        }
+        return Advice.pick(vs)?.let { (g, why) -> g to why.ifBlank { "la mejor de las que tienes" } }
+    }
+
+    /** La clave con que se recuerda "me quedo con todas" para un grupo. */
+    fun groupKey(vs: List<Game>): String = if (vs.map { Repo.versionKey(it) }.distinct().size == 1) Repo.versionKey(vs.first())
+        else "otra|" + Group.stem(vs.first().primary.substringAfterLast('/')).lowercase()
+
+    fun duplicateGroups(): List<List<Game>> {
+        val games = Repo.allGames().filter { it.kind != "shortcut" && !Repo.isArchive(it) }
+        val same = games.groupBy { Repo.versionKey(it) }.filter { (k, v) -> v.size > 1 && k !in keptVersions }.values
+        // El mismo archivo en dos plataformas (Circus Charlie en nes y en snesna): casi siempre uno está de más.
+        val seen = same.flatten().map { it.id }.toSet()
+        val cross = games.filter { it.id !in seen }.groupBy { "otra|" + Group.stem(it.primary.substringAfterLast('/')).lowercase() }
+            .filter { (k, v) -> v.size > 1 && v.map { it.system }.distinct().size > 1 && k !in keptVersions }.values
+        return (same + cross).sortedBy { it.first().title.lowercase() }
+    }
 
     /** Estado para que la tarjeta y la lista se actualicen al marcar un grupo. */
     var keptVersions by androidx.compose.runtime.mutableStateOf(Prefs.keepAllVersions)
@@ -176,7 +203,7 @@ fun DuplicatesDialog(onClose: () -> Unit) {
                                 if (p != Presence.TABLET_ONLY && Prefs.configured) Repo.deleteFromPc(g)
                             }.onFailure { fails++ }
                         }
-                        Toast.makeText(ctx, if (fails == 0) "Listo: ${chosen.size} versión(es) borradas" else "$fails no se pudieron borrar", Toast.LENGTH_LONG).show()
+                        Notice.info(if (fails == 0) "Listo: ${chosen.size} versión(es) borradas" else "$fails no se pudieron borrar")
                     }
                 }, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) { Text("Borrar") }
             },
@@ -201,14 +228,15 @@ fun DuplicatesDialog(onClose: () -> Unit) {
                 color = Palette.warn, fontWeight = FontWeight.SemiBold)
         }
         items(groups, key = { Repo.versionKey(it.first()) }) { vs ->
-            val advice = remember(vs) { Advice.pick(vs) }
+            val advice = remember(vs) { Organize.recommend(vs) }
             val best = advice?.first ?: vs.first()
             SheetCard {
                 Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
                     Cover(best, Modifier.width(64.dp), showTitle = false)
                     Column(Modifier.weight(1f)) {
                         Text(best.title, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-                        Muted("${Repo.system(vs.first().system).name} · ${vs.size} versiones")
+                        val systems = vs.map { Repo.system(it.system).name }.distinct()
+                        Muted(if (systems.size > 1) "En ${systems.joinToString(" y ")} · ${vs.size} copias" else "${systems.first()} · ${vs.size} versiones")
                         advice?.let { (b, why) -> Text("Recomendada: ${versionName(b)} ($why)", color = Palette.ok, style = MaterialTheme.typography.bodySmall) }
                     }
                 }
@@ -218,7 +246,7 @@ fun DuplicatesDialog(onClose: () -> Unit) {
                     }) { Text("Dejar solo la recomendada") }
                     TextButton(onClick = {
                         selected = selected - vs.map { it.id }.toSet()
-                        Organize.keepAll(Repo.versionKey(vs.first()))
+                        Organize.keepAll(Organize.groupKey(vs))
                     }) { Text("Me quedo con todas") }
                 }
                 vs.forEach { v ->
@@ -230,6 +258,7 @@ fun DuplicatesDialog(onClose: () -> Unit) {
                                 maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             if (v.id == best.id) Pill("Recomendada", Palette.ok)
+                            if (vs.map { it.system }.distinct().size > 1) Pill("Carpeta ${v.primary.substringBefore('/')}", Color(0xFF64748B))
                             Pill(when (w.presence) {
                                 Presence.INSTALLED -> "En el dispositivo"
                                 Presence.PARTIAL -> "A medias"
@@ -323,11 +352,11 @@ fun TabletOnlyDialog(onClose: () -> Unit) {
                         }
                         copying = false
                         Sound.play(if (fails == 0 && stopped == 0) Sound.Fx.DONE else Sound.Fx.WARN)
-                        Toast.makeText(ctx, when {
+                        Notice.info(when {
                             stopped > 0 -> "Cancelado: ${finished.size} copiado(s), $stopped sin copiar"
                             fails == 0 -> "Listo: ${finished.size} juego(s) copiados al servidor"
                             else -> "$fails no se pudieron copiar"
-                        }, Toast.LENGTH_LONG).show()
+                        })
                         Repo.refresh()
                     }
                 }
@@ -348,7 +377,9 @@ fun TabletOnlyDialog(onClose: () -> Unit) {
                     Column(Modifier.weight(1f).clip(RoundedCornerShape(18.dp))
                         .clickable { selected = if (on) selected - g.id else selected + g.id }.padding(4.dp)) {
                         Box {
-                            Cover(g, Modifier.fillMaxWidth().then(if (on) Modifier.border(3.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(14.dp)) else Modifier))
+                            Cover(g, Modifier.fillMaxWidth().then(if (on) Modifier.border(3.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(14.dp)) else Modifier)) {
+                                DownloadOverlay(g)
+                            }
                             Checkbox(on, { selected = if (it) selected + g.id else selected - g.id }, Modifier.align(Alignment.TopEnd))
                         }
                         Text(g.title, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))

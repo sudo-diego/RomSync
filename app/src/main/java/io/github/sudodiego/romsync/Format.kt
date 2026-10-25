@@ -25,13 +25,25 @@ fun formatEta(remaining: Long, bps: Long): String {
     }
 }
 
+/**
+ * "hace 5 min", "hace 3 h", "ayer", "hace 4 días", "hace 2 semanas"; si pasaron más de dos meses, la fecha en
+ * español ("14 de agosto de 2026, 21:01").
+ */
 fun formatAgo(ms: Long): String {
     if (ms <= 0) return "nunca"
     val m = (System.currentTimeMillis() - ms) / 60000
+    val days = m / 1440
     return when {
         m < 1 -> "recién"
         m < 60 -> "hace $m min"
-        m < 48 * 60 -> "hace ${m / 60} h"
-        else -> "hace ${m / 1440} días"
+        m < 24 * 60 -> "hace ${m / 60} h"
+        days < 2 -> "ayer"
+        days < 7 -> "hace $days días"
+        days < 14 -> "hace 1 semana"
+        days < 60 -> "hace ${days / 7} semanas"
+        else -> java.text.SimpleDateFormat("d 'de' MMMM 'de' yyyy, HH:mm", java.util.Locale("es")).format(java.util.Date(ms))
     }
 }
+
+/** Días desde [ms] (para avisar que hace rato no se respalda). */
+fun daysSince(ms: Long) = if (ms <= 0) Long.MAX_VALUE else (System.currentTimeMillis() - ms) / 86_400_000

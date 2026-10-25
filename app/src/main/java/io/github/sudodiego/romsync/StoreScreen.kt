@@ -109,7 +109,12 @@ object StoreState {
 fun StoreScreen() {
     val scope = appScope
     val lib = Repo.library
-    val all = remember(lib, Repo.tabletOnly) { Repo.allGames() }
+    // Un acceso directo del frontend (GravityRush.dpt) de un juego que ya está en la biblioteca no es otra tarjeta.
+    val all = remember(lib, Repo.tabletOnly) {
+        val games = Repo.allGames()
+        val keys = games.filter { it.kind != "shortcut" }.map { Repo.versionKey(it) }.toSet()
+        games.filter { it.kind != "shortcut" || Repo.versionKey(it) !in keys }
+    }
     val localFiles = Repo.localFiles
     // Una tarjeta por juego: las versiones (región, formato, con mods) van juntas y se eligen adentro.
     // Se muestra la que está en la tablet o, si no, la de mejor formato.
@@ -604,6 +609,7 @@ private fun GameCard(g: Game, versions: Int = 1, modifier: Modifier = Modifier) 
             .combinedClickable(interactionSource = press, indication = null,
                 onClick = { if (selecting) toggle() else { Sound.play(Sound.Fx.OPEN); Nav.game = g } }, onLongClick = { toggle() })) {
             val overlay: @Composable () -> Unit = {
+                DownloadOverlay(g)
                 Box(Modifier.fillMaxSize().padding(8.dp)) {
                     if (selecting) Icon(if (selected) Icons.Rounded.CheckCircle else Icons.Rounded.RadioButtonUnchecked, null,
                         Modifier.align(Alignment.BottomEnd).size(30.dp).clip(RoundedCornerShape(99.dp)).background(Color(0xCC0D1220)),
@@ -670,8 +676,7 @@ private fun SelectionBar(sel: List<Game>) {
                 appScope.launch {
                     var fails = 0
                     for (g in list) runCatching { if (where == "tablet") Repo.delete(g) else Repo.deleteFromPc(g) }.onFailure { fails++ }
-                    android.widget.Toast.makeText(ctx, if (fails == 0) "Listo: ${list.size} borrado(s)" else "$fails no se pudieron borrar",
-                        android.widget.Toast.LENGTH_LONG).show()
+                    Notice.info(if (fails == 0) "Listo: ${list.size} borrado(s)" else "$fails no se pudieron borrar")
                 }
             }, colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) { Text("Borrar") }
         },

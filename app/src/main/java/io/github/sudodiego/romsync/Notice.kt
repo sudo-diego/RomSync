@@ -1,5 +1,8 @@
 package io.github.sudodiego.romsync
 
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.material.icons.rounded.ErrorOutline
+import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -42,19 +45,26 @@ import kotlinx.coroutines.delay
  * juego (su ícono, o si no la carátula o el logo de SteamGridDB) y un jingle. Tocarlo abre el juego.
  */
 object Notice {
-    data class Item(val gameId: String, val title: String, val text: String, val at: Long = System.nanoTime())
+    enum class Kind { DONE, DELETE, ERROR, INFO }
+    data class Item(val gameId: String, val title: String, val text: String, val kind: Kind = Kind.DONE, val at: Long = System.nanoTime())
 
     var current by mutableStateOf<Item?>(null)
         private set
 
-    fun show(gameId: String, title: String, text: String) {
+    fun show(gameId: String, title: String, text: String, kind: Kind = Kind.DONE) {
         android.os.Handler(android.os.Looper.getMainLooper()).post {
-            current = Item(gameId, title, text)
-            Sound.play(Sound.Fx.JINGLE)
+            current = Item(gameId, title, text, kind)
+            if (kind == Kind.DONE) Sound.play(Sound.Fx.JINGLE)
         }
     }
 
     fun dismiss() { current = null }
+
+    /** Reemplaza a los Toast de Android: un aviso igual al de "descarga terminada", sin juego. */
+    fun info(message: String) {
+        val bad = Regex("^(no |error|falló|sin )|no se pudo|no se pudieron|necesita|cancelad", RegexOption.IGNORE_CASE).containsMatchIn(message)
+        show("", message, if (bad) "Ojo" else "Listo", if (bad) Kind.ERROR else Kind.INFO)
+    }
 }
 
 @Composable
@@ -77,14 +87,30 @@ fun NoticeOverlay() {
                     Box(Modifier.size(64.dp).clip(RoundedCornerShape(14.dp)).background(MaterialTheme.colorScheme.primaryContainer),
                         contentAlignment = Alignment.Center) {
                         val kind = game?.let { g -> listOf("icon", "grid", "logo").firstOrNull { Art.cached(g.id, it) != null } }
-                        if (game != null && kind != null)
-                            ArtImage(game, kind, Modifier.fillMaxSize(), if (kind == "logo") ContentScale.Fit else ContentScale.Crop)
-                        else Icon(Icons.Rounded.CheckCircle, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(34.dp))
+                        val gone = androidx.compose.runtime.remember(n.at) { androidx.compose.animation.core.Animatable(0f) }
+                        LaunchedEffect(n.at) {
+                            if (n.kind == Notice.Kind.DELETE) { delay(250); gone.animateTo(1f, androidx.compose.animation.core.tween(700)) }
+                        }
+                        if (game != null && kind != null) ArtImage(game, kind, Modifier.fillMaxSize().graphicsLayer {
+                            val k = gone.value
+                            scaleX = 1f - 0.8f * k; scaleY = 1f - 0.8f * k; rotationZ = -25f * k; alpha = 1f - k
+                            translationY = 30f * k
+                        }, if (kind == "logo") ContentScale.Fit else ContentScale.Crop)
+                        when (n.kind) {
+                            Notice.Kind.DELETE -> Icon(Icons.Rounded.Delete, null, tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(34.dp).graphicsLayer { val k = gone.value; scaleX = k; scaleY = k; alpha = k })
+                            Notice.Kind.ERROR -> Icon(Icons.Rounded.ErrorOutline, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(34.dp))
+                            Notice.Kind.INFO -> Icon(Icons.Rounded.CheckCircle, null, tint = Palette.ok, modifier = Modifier.size(34.dp))
+                            Notice.Kind.DONE -> if (game == null || kind == null)
+                                Icon(Icons.Rounded.CheckCircle, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(34.dp))
+                        }
                     }
                     Column(Modifier.padding(end = 8.dp)) {
-                        Text(n.text, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold,
+                        Text(n.text, color = when (n.kind) { Notice.Kind.DONE -> MaterialTheme.colorScheme.primary; Notice.Kind.INFO -> Palette.ok
+                            else -> MaterialTheme.colorScheme.error },
+                            fontWeight = FontWeight.Bold,
                             style = MaterialTheme.typography.labelLarge)
-                        Text(n.title, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        Text(n.title, fontWeight = FontWeight.SemiBold, maxLines = 3, overflow = TextOverflow.Ellipsis)
                     }
                 }
             }

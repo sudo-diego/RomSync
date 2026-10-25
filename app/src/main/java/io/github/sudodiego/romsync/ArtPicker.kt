@@ -1,5 +1,14 @@
 package io.github.sudodiego.romsync
 
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Color
+import androidx.compose.material3.Button
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -56,59 +65,90 @@ fun ArtPicker(g: Game, kind: String = "grid", onClose: () -> Unit) {
         runCatching { Art.options(c.first, kind) }.onSuccess { images = it }.onFailure { error = it.message }
     }
 
-    AlertDialog(
-        onDismissRequest = onClose,
-        title = { Text(if (chosen == null) "$what de ${g.title}" else chosen!!.second) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                if (chosen == null) {
-                    OutlinedTextField(value = q, onValueChange = { q = it }, singleLine = true, modifier = Modifier.fillMaxWidth().gamepadText(),
-                        label = { Text("Buscar en SteamGridDB") }, trailingIcon = { TextButton(onClick = { search() }) { Text("Buscar") } })
-                }
-                when {
-                    error != null -> Text(error!!, color = MaterialTheme.colorScheme.error)
-                    saving -> CircularProgressIndicator()
-                    chosen == null && games == null -> CircularProgressIndicator()
-                    chosen == null -> {
-                        if (games!!.isEmpty()) Muted("Sin resultados: prueba con otro nombre (en inglés suele encontrar más).")
-                        Column(Modifier.heightIn(max = 360.dp)) {
-                            androidx.compose.foundation.lazy.LazyColumn {
-                                items(games!!.size) { i ->
-                                    val r = games!![i]
-                                    TextButton(onClick = { chosen = r }, Modifier.fillMaxWidth()) { Text(r.second, Modifier.weight(1f)) }
-                                }
-                            }
-                        }
-                    }
-                    images == null -> CircularProgressIndicator()
-                    images!!.isEmpty() -> Muted("No hay imágenes de ese tipo para este juego.")
-                    else -> LazyVerticalGrid(GridCells.Adaptive(if (kind == "grid") 110.dp else 220.dp), Modifier.heightIn(max = 420.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        items(images!!) { (thumb, url) ->
-                            AsyncImage(model = thumb, contentDescription = null, contentScale = if (kind == "logo") ContentScale.Fit else ContentScale.Crop,
-                                // Fondo mientras baja la miniatura (sin él la ventana parecía vacía varios segundos).
-                                modifier = Modifier.aspectRatio(when (kind) { "hero" -> 3f; "logo" -> 2f; else -> 2f / 3f }).clip(RoundedCornerShape(10.dp))
-                                    .background(MaterialTheme.colorScheme.surfaceVariant).clickable {
-                                    saving = true
-                                    scope.launch {
-                                        runCatching { Art.useUrl(g.id, kind, url) }.onFailure { error = it.message }
-                                        saving = false
-                                        if (error == null) {
-                                            // Elegido a mano: ese es el juego (su nombre oficial y, después, su fondo y logo).
-                                            if (kind == "grid") chosen?.let { (id, name) -> Art.choose(g.id, id, name); Repo.reapplyNames(); Art.startFetchAll(listOf(g), quiet = true) }
-                                            onClose()
-                                        }
-                                    }
-                                })
+    var savingUrl by remember { mutableStateOf<String?>(null) }
+    val ratio = when (kind) { "hero" -> 3f; "logo" -> 2f; "icon" -> 1f; else -> 2f / 3f }
+    val cell = if (kind == "grid" || kind == "icon") 150.dp else 300.dp
+    ReviewSheet(
+        if (chosen == null) "$what de ${g.title}" else chosen!!.second,
+        if (chosen == null) "Busca el juego en SteamGridDB y elige una imagen. Se guarda en el dispositivo."
+        else "Toca la que más te guste.",
+        onClose = onClose,
+        footer = {
+            if (chosen != null) TextButton(onClick = { chosen = null; images = null }) { Text("‹ Otro juego") }
+            else if (kind == "grid") TextButton(onClick = { Art.clear(g.id); onClose() }) { Text("Sin carátula") }
+            Spacer(Modifier.weight(1f))
+            TextButton(onClick = onClose) { Text("Cerrar") }
+        },
+    ) {
+        if (chosen == null) item {
+            SpacedRow {
+                OutlinedTextField(value = q, onValueChange = { q = it }, singleLine = true, modifier = Modifier.weight(1f).gamepadText(),
+                    label = { Text("Buscar en SteamGridDB") })
+                Button(onClick = { search() }) { Text("Buscar") }
+            }
+        }
+        when {
+            error != null -> item { Text(error!!, color = MaterialTheme.colorScheme.error) }
+            chosen == null && games == null -> items(5) { SkeletonRow(56.dp) }
+            chosen == null -> {
+                if (games!!.isEmpty()) item { Muted("Sin resultados: prueba con otro nombre (en inglés suele encontrar más).") }
+                items(games!!.size) { i ->
+                    val r = games!![i]
+                    SheetCard(Modifier.clickable { Sound.play(Sound.Fx.OPEN); chosen = r }) {
+                        SpacedRow {
+                            Text(r.second, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                            Text("Ver imágenes ›", color = MaterialTheme.colorScheme.primary)
                         }
                     }
                 }
             }
-        },
-        confirmButton = { TextButton(onClick = onClose) { Text("Cerrar") } },
-        dismissButton = {
-            if (chosen != null) TextButton(onClick = { chosen = null; images = null }) { Text("Otro juego") }
-            else if (kind == "grid") TextButton(onClick = { Art.clear(g.id); onClose() }) { Text("Sin carátula") }
-        },
-    )
+            images?.isEmpty() == true -> item { Muted("No hay imágenes de ese tipo para este juego.") }
+            else -> item {
+                // Cuadrícula hecha a mano (dentro de la lista de la hoja): columnas según el ancho.
+                androidx.compose.foundation.layout.BoxWithConstraints {
+                    val cols = (maxWidth / cell).toInt().coerceAtLeast(2)
+                    val list: List<Pair<String, String>?> = images ?: List(cols * 2) { null }
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        list.chunked(cols).forEach { row ->
+                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                row.forEach { img ->
+                                    Box(Modifier.weight(1f).aspectRatio(ratio).clip(RoundedCornerShape(12.dp))
+                                        .background(MaterialTheme.colorScheme.surfaceVariant)) {
+                                        if (img == null) SkeletonRow(Modifier.fillMaxSize())
+                                        else {
+                                            val (thumb, url) = img
+                                            coil.compose.SubcomposeAsyncImage(model = thumb, contentDescription = null,
+                                                contentScale = if (kind == "logo") ContentScale.Fit else ContentScale.Crop,
+                                                loading = { SkeletonRow(Modifier.fillMaxSize()) },
+                                                modifier = Modifier.fillMaxSize().clickable(enabled = savingUrl == null) {
+                                                    Sound.play(Sound.Fx.DONE)
+                                                    savingUrl = url
+                                                    scope.launch {
+                                                        runCatching { Art.useUrl(g.id, kind, url) }.onFailure { error = it.message }
+                                                        savingUrl = null
+                                                        if (error == null) {
+                                                            // Elegido a mano: ese es el juego (su nombre oficial y, después, su fondo y logo).
+                                                            if (kind == "grid") chosen?.let { (id, name) -> Art.choose(g.id, id, name); Repo.reapplyNames(); Art.startFetchAll(listOf(g), quiet = true) }
+                                                            onClose()
+                                                        }
+                                                    }
+                                                })
+                                            if (savingUrl == url) Box(Modifier.fillMaxSize().background(Color(0x99000000)), contentAlignment = Alignment.Center) {
+                                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                    CircularProgressIndicator(Modifier.size(28.dp), color = Color.White, strokeWidth = 3.dp)
+                                                    Text("Guardando…", color = Color.White, fontWeight = FontWeight.SemiBold)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                repeat(cols - row.size) { Box(Modifier.weight(1f)) }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
+

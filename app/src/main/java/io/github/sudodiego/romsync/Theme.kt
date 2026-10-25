@@ -67,6 +67,8 @@ object UiState {
     var accent by mutableStateOf(0xFFFF7A1AL)
     /** Fondo animado: "burbujas", "ondas" o "ninguno". */
     var background by mutableStateOf("burbujas")
+    /** Pantalla completa: sin la barra de arriba ni los botones de Android (se ven deslizando desde el borde). */
+    var fullscreen by mutableStateOf(false)
     /** Juegos como carátulas (eShop) o como íconos cuadrados (menú de Wii U). */
     var icons by mutableStateOf(false)
     /** Panel lateral abierto (con nombres) o colapsado (solo íconos). */

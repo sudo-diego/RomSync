@@ -1,5 +1,6 @@
 package io.github.sudodiego.romsync
 
+import kotlinx.coroutines.launch
 import android.content.Context
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -116,6 +117,7 @@ object Repo {
             compare()
             // Las carátulas, fondos y logos se bajan solos en segundo plano (antes, solo al abrir la ficha de cada juego).
             Art.startFetchAll(allGames(), quiet = true)
+            appScope.launch { runCatching { Art.recheckAll(allGames()) } } // en segundo plano: no frena la tienda
         } finally {
             refreshing = false
         }

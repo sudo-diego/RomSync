@@ -80,8 +80,7 @@ fun OrganizeScreen() {
         if (uri == null) return@rememberLauncherForActivityResult
         val ok = runCatching { ctx.contentResolver.openInputStream(uri)!!.use { SwitchId.useKeys(it.readBytes()) } }.getOrDefault(false)
         keysOk = ok
-        android.widget.Toast.makeText(ctx, if (ok) "Llaves guardadas en bios" else "Ese archivo no tiene las llaves (header_key)",
-            android.widget.Toast.LENGTH_LONG).show()
+        Notice.info(if (ok) "Llaves guardadas en bios" else "Ese archivo no tiene las llaves (header_key)")
         if (ok) appScope.launch { Tidy.scan() }
     }
     val noArt = remember(Repo.library, Repo.tabletOnly, Art.versions.size, Art.bulkTotal) { Repo.allGames().count { Art.needsFetch(it) } }
@@ -127,10 +126,10 @@ fun OrganizeScreen() {
                             val ok = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { SwitchId.findKeys() }
                             keysOk = ok
                             if (ok) {
-                                android.widget.Toast.makeText(ctx, "Llaves encontradas y guardadas en bios", android.widget.Toast.LENGTH_LONG).show()
+                                Notice.info("Llaves encontradas y guardadas en bios")
                                 Tidy.scan()
                             } else {
-                                android.widget.Toast.makeText(ctx, "No las encontré: elige dónde está prod.keys", android.widget.Toast.LENGTH_LONG).show()
+                                Notice.info("No las encontré: elige dónde está prod.keys")
                                 pickKeys.launch(arrayOf("*/*"))
                             }
                         }
@@ -262,7 +261,7 @@ private fun TidyDialog(onClose: () -> Unit) {
                     appScope.launch {
                         val msg = Tidy.run(chosen)
                         Sound.play(Sound.Fx.DONE)
-                        android.widget.Toast.makeText(ctx, msg, android.widget.Toast.LENGTH_LONG).show()
+                        Notice.info(msg)
                         onClose()
                     }
                 }

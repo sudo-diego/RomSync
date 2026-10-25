@@ -143,6 +143,8 @@ class MainActivity : ComponentActivity() {
         UiState.accent = Prefs.accent
         UiState.background = Prefs.background
         UiState.icons = Prefs.icons
+        UiState.fullscreen = Prefs.fullscreen
+        DownloadArt.init()
         UiState.sidebarOpen = Prefs.sidebarOpen
         // La tablet baja a 60 Hz cuando no se toca la pantalla y el carrusel automático se veía a saltos: se pide la
         // frecuencia más alta de la pantalla (misma resolución).
@@ -164,6 +166,14 @@ class MainActivity : ComponentActivity() {
                 androidx.core.view.WindowCompat.getInsetsController(window, view).apply {
                     isAppearanceLightStatusBars = !darkTheme
                     isAppearanceLightNavigationBars = !darkTheme
+                }
+            }
+            androidx.compose.runtime.LaunchedEffect(UiState.fullscreen) {
+                androidx.core.view.WindowCompat.getInsetsController(window, view).apply {
+                    if (UiState.fullscreen) {
+                        systemBarsBehavior = androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                        hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+                    } else show(androidx.core.view.WindowInsetsCompat.Type.systemBars())
                 }
             }
             RomSyncTheme {

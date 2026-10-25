@@ -565,6 +565,17 @@ private fun LookControls() {
             Sound.play(Sound.Fx.TOGGLE); UiState.fullscreen = it; Prefs.fullscreen = it
         })
     }
+    SpacedRow(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).clickable {
+        Sound.play(Sound.Fx.TOGGLE); UiState.lightAnim = !UiState.lightAnim; Prefs.lightAnim = UiState.lightAnim
+    }.padding(horizontal = 18.dp, vertical = 10.dp)) {
+        Column(Modifier.weight(1f)) {
+            Text("Optimizar las animaciones al descargar", fontWeight = FontWeight.SemiBold)
+            Muted("El fondo se mueve más lento mientras se descarga y gasta menos batería")
+        }
+        androidx.compose.material3.Switch(checked = UiState.lightAnim, onCheckedChange = {
+            Sound.play(Sound.Fx.TOGGLE); UiState.lightAnim = it; Prefs.lightAnim = it
+        })
+    }
     OptionRow("Al abrir una ficha", UiState.openAnims.toList(), UiState.openAnim) { UiState.openAnim = it; Prefs.openAnim = it }
     OptionRow("Animación de descarga", DownloadArt.styles.toList(), DownloadArt.style) { DownloadArt.style = it; Prefs.dlStyle = it }
     Muted(when (DownloadArt.style) {

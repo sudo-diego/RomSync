@@ -140,6 +140,9 @@ object Prefs {
     var openAnim: String
         get() = sp.getString("openAnim", "zoom") ?: "zoom"
         set(v) = sp.edit().putString("openAnim", v).apply()
+    var lightAnim: Boolean
+        get() = sp.getBoolean("lightAnim", false)
+        set(v) = sp.edit().putBoolean("lightAnim", v).apply()
     var fullscreen: Boolean
         get() = sp.getBoolean("fullscreen", false)
         set(v) = sp.edit().putBoolean("fullscreen", v).apply()

@@ -73,6 +73,8 @@ object UiState {
     val openAnims = linkedMapOf("zoom" to "Acercar", "derecha" to "Desde el lado", "abajo" to "Desde abajo", "ninguna" to "Ninguna")
     /** Pantalla completa: sin la barra de arriba ni los botones de Android (se ven deslizando desde el borde). */
     var fullscreen by mutableStateOf(false)
+    /** Fondo más lento mientras se descarga (gasta menos batería). */
+    var lightAnim by mutableStateOf(false)
     /** Juegos como carátulas (eShop) o como íconos cuadrados (menú de Wii U). */
     var icons by mutableStateOf(false)
     /** Panel lateral abierto (con nombres) o colapsado (solo íconos). */
@@ -250,10 +252,11 @@ fun AppBackground(modifier: Modifier = Modifier) {
     if (UiState.background != "ninguno") LaunchedEffect(Unit) {
         // Cada cuadro: limitarlo a 30 hacía que la tablet bajara la pantalla a 30 Hz (detecta a cuánto dibuja la app).
         val start = withFrameNanos { it }
-        // El fondo se mueve lento: 24 cuadros por segundo bastan (10 mientras se descarga), en vez de 120.
+        // El fondo se mueve lento: 24 cuadros por segundo bastan. Con la opción activada, 10 mientras se descarga.
         while (true) {
             withFrameNanos { time.floatValue = (it - start) / 1_000_000_000f }
-            kotlinx.coroutines.delay(if (DownloadService.items.any { it.status == DlStatus.RUNNING }) 100 else 41)
+            val slow = UiState.lightAnim && DownloadService.items.any { it.status == DlStatus.RUNNING }
+            kotlinx.coroutines.delay(if (slow) 100 else 41)
         }
     }
     val top = if (dark) Color(0xFF111827) else Color(0xFFF7F9FC)

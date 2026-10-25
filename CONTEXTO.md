@@ -32,8 +32,8 @@ neutro en la app y en las respuestas (sin voseo ni modismos).
 - **Mando** (inspirado en Steam Big Picture). Regla: lo mismo se hace igual en todas partes.
   - Anillo de foco y sonido en todo: botones de Material envueltos con el mismo nombre (`PadButtons.kt`), el resto con
     `focusHighlight` o la `Indication` de `Theme.kt`; cada movimiento de cruceta suena (`dispatchKeyEvent`).
-  - Cruceta y stick izquierdo: los maneja la app (`stick()` en `MainActivity`), una sola dirección a la vez (en diagonal
-    se queda la que iba), con repetición al mantener. L3/R3 no hacen nada.
+  - Cruceta y stick izquierdo: Android los convierte en flechas (no hacerlo a mano: esas flechas no movían el foco);
+    de una diagonal solo cuenta la primera dirección (`heldDpad` en `dispatchKeyEvent`). L3/R3 no hacen nada.
   - B va directo a "volver" (`onBackPressedDispatcher`; Compose lo usaba para salir de grupos de foco y se perdía):
     ficha → donde se entró; sección de la Tienda (plataforma, filtro, Ver todo) → inicio; pantalla principal → panel
     (se despliega); panel plegado → se despliega; panel desplegado → cierra la app. Derecha desde el panel vuelve a lo

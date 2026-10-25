@@ -137,7 +137,17 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
     // Al entrar con mando, el foco cae en el botón principal pero la ficha queda arriba (carátula y fondo a la vista).
     LaunchedEffect(g.id) { if (Nav.keys || Nav.pad) { kotlinx.coroutines.delay(150); scroll.scrollTo(0) } }
     val enter = remember(g.id) { Animatable(0f) }
-    LaunchedEffect(g.id) { enter.animateTo(1f, spring(dampingRatio = 0.75f, stiffness = 260f)) }
+    LaunchedEffect(g.id) {
+        // La carátula aparece cuando su imagen ya está cargada (con la misma clave que usa Cover, así queda lista),
+        // para que el fundido nunca muestre el momento de carga. Si tarda, aparece igual.
+        Art.cached(g.id, "grid")?.let { img ->
+            kotlinx.coroutines.withTimeoutOrNull(600) {
+                coil.Coil.imageLoader(ctx).execute(coil.request.ImageRequest.Builder(ctx).data(img)
+                    .memoryCacheKey("${img.path}:${img.lastModified()}:${Art.versions[g.id] ?: 0}").build())
+            }
+        }
+        enter.animateTo(1f, spring(dampingRatio = 0.75f, stiffness = 260f))
+    }
     @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
     androidx.compose.runtime.CompositionLocalProvider(androidx.compose.foundation.LocalOverscrollConfiguration provides null) {
     Column(Modifier.fillMaxSize().screenFocus { scroll.animateScrollBy(it) }.verticalScroll(scroll)) {

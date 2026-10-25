@@ -304,56 +304,21 @@ class MainActivity : ComponentActivity() {
     /** El mando manda L2/R2 como botones (además del eje): entonces el eje se ignora. */
     private var triggerKeys = false
     private var lastTrigger = 0L
-    private var stickDir = 0
     private var heldDpad = 0
-    private val repeater = android.os.Handler(android.os.Looper.getMainLooper())
-    private val repeatStep = object : Runnable {
-        override fun run() { if (stickDir != 0) { tapDpad(stickDir); repeater.postDelayed(this, 110) } }
-    }
-    private fun tapDpad(code: Int) {
-        val t = android.os.SystemClock.uptimeMillis()
-        super.dispatchKeyEvent(android.view.KeyEvent(t, t, android.view.KeyEvent.ACTION_DOWN, code, 0))
-        super.dispatchKeyEvent(android.view.KeyEvent(t, t, android.view.KeyEvent.ACTION_UP, code, 0))
-        Sound.play(Sound.Fx.MOVE)
-    }
-    /** La cruceta (como eje) y el stick izquierdo: gana la dirección más marcada; en diagonal se queda la que ya iba. */
-    private fun stick(ev: android.view.MotionEvent) {
-        val hx = ev.getAxisValue(android.view.MotionEvent.AXIS_HAT_X); val hy = ev.getAxisValue(android.view.MotionEvent.AXIS_HAT_Y)
-        val sx = ev.getAxisValue(android.view.MotionEvent.AXIS_X); val sy = ev.getAxisValue(android.view.MotionEvent.AXIS_Y)
-        val x = if (kotlin.math.abs(hx) > 0.5f) hx else if (kotlin.math.abs(sx) > 0.55f) sx else 0f
-        val y = if (kotlin.math.abs(hy) > 0.5f) hy else if (kotlin.math.abs(sy) > 0.55f) sy else 0f
-        val h = if (x > 0) android.view.KeyEvent.KEYCODE_DPAD_RIGHT else if (x < 0) android.view.KeyEvent.KEYCODE_DPAD_LEFT else 0
-        val v = if (y > 0) android.view.KeyEvent.KEYCODE_DPAD_DOWN else if (y < 0) android.view.KeyEvent.KEYCODE_DPAD_UP else 0
-        val dir = when {
-            h == 0 && v == 0 -> 0
-            h == 0 -> v
-            v == 0 -> h
-            stickDir == h || stickDir == v -> stickDir // diagonal: sigue la que ya iba
-            kotlin.math.abs(x) > kotlin.math.abs(y) -> h
-            else -> v
-        }
-        if (dir == stickDir) return
-        repeater.removeCallbacks(repeatStep)
-        stickDir = dir
-        if (dir != 0) {
-            Nav.keys = true; Nav.anyKey = true
-            tapDpad(dir)
-            repeater.postDelayed(repeatStep, 380)
-        }
-    }
+    private var heldAt = 0L
 
     override fun dispatchGenericMotionEvent(ev: android.view.MotionEvent): Boolean {
         if (ev.source and android.view.InputDevice.SOURCE_JOYSTICK == android.view.InputDevice.SOURCE_JOYSTICK &&
             ev.actionMasked == android.view.MotionEvent.ACTION_MOVE) {
-            stick(ev)
             val l = maxOf(ev.getAxisValue(android.view.MotionEvent.AXIS_LTRIGGER), ev.getAxisValue(android.view.MotionEvent.AXIS_BRAKE))
             val r = maxOf(ev.getAxisValue(android.view.MotionEvent.AXIS_RTRIGGER), ev.getAxisValue(android.view.MotionEvent.AXIS_GAS))
             if (!triggerKeys) {
                 if (l > 0.6f && !lt) { lt = true; padButton(android.view.KeyEvent.KEYCODE_BUTTON_L2) } else if (l < 0.3f) lt = false
                 if (r > 0.6f && !rt) { rt = true; padButton(android.view.KeyEvent.KEYCODE_BUTTON_R2) } else if (r < 0.3f) rt = false
             }
-            return true // el sistema no inventa flechas propias (mandaba las dos de una diagonal)
         }
+        // La cruceta (como eje) y el stick los convierte Android en flechas, que pasan por todo el camino del foco;
+        // de una diagonal se queda solo la primera dirección (filtro en dispatchKeyEvent).
         return super.dispatchGenericMotionEvent(ev)
     }
 
@@ -404,8 +369,10 @@ class MainActivity : ComponentActivity() {
             android.view.KeyEvent.KEYCODE_DPAD_LEFT, android.view.KeyEvent.KEYCODE_DPAD_RIGHT)
         if (event.keyCode in dpads && event.deviceId > 0) {
             if (event.action == android.view.KeyEvent.ACTION_DOWN) {
-                if (heldDpad != 0 && heldDpad != event.keyCode) return true
-                heldDpad = event.keyCode
+                // Otra dirección con una ya apretada = diagonal: no cuenta (salvo que la apretada lleve rato sin noticias:
+                // se perdió su soltar y no debe bloquear las demás).
+                if (heldDpad != 0 && heldDpad != event.keyCode && event.eventTime - heldAt < 700) return true
+                heldDpad = event.keyCode; heldAt = event.eventTime
             } else if (event.action == android.view.KeyEvent.ACTION_UP) {
                 if (event.keyCode != heldDpad) return true
                 heldDpad = 0

@@ -411,7 +411,7 @@ private fun GameSavesSection(g: Game) {
         links = ls
         units = ls.associate { l -> l.emu.id to runCatching { Saves.currentUnits(ctx, l.emu).firstOrNull { it.key == l.key } }.getOrNull() }
         if (Prefs.configured) lastBackup = runCatching {
-            Pc.use { c -> ls.associate { l -> l.emu.id to Backups.list(c, l.emu.id).firstOrNull { b -> b.keys.isEmpty() || l.key in b.keys } } }
+            Pc.io { c -> ls.associate { l -> l.emu.id to Backups.list(c, l.emu.id).firstOrNull { b -> b.keys.isEmpty() || l.key in b.keys } } }
         }.getOrNull()
     }
     val ls = links ?: return

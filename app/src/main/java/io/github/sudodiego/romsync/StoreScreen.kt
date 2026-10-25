@@ -140,8 +140,12 @@ object StoreState {
     var backTarget: String? = null
     /** Abrir una plataforma o "Ver todo" como una sección: el foco va al primer juego y B vuelve a [from]. */
     fun openSection(system: String = "", filter: StoreFilter = StoreFilter.ALL, from: String) {
+        if (this.system.isEmpty() && this.filter == StoreFilter.ALL && query.isBlank())
+            homeScroll = grid.firstVisibleItemIndex to grid.firstVisibleItemScrollOffset
         this.system = system; this.filter = filter; backTarget = from; focusTarget = "primero"
     }
+    /** Dónde estaba la lista del inicio al entrar a una sección (para volver ahí). */
+    var homeScroll: Pair<Int, Int>? = null
     fun home() { system = ""; filter = StoreFilter.ALL; query = ""; focusTarget = backTarget ?: "carrusel"; backTarget = null }
     /** Carátulas que ya aparecieron (su animación de entrada es solo la primera vez, no cada vez que se vuelve). */
     val appeared = HashSet<String>()
@@ -195,6 +199,14 @@ fun StoreScreen() {
     val firstPlatform = remember { androidx.compose.ui.focus.FocusRequester() }
     val filtered = StoreState.system.isNotEmpty() || StoreState.filter != StoreFilter.ALL || StoreState.query.isNotEmpty()
     androidx.activity.compose.BackHandler(enabled = filtered && Nav.game == null) { Sound.play(Sound.Fx.BACK); StoreState.home() }
+    // La lista es la misma para el inicio y las secciones: al entrar a una sección empieza arriba; al volver, donde estaba.
+    var wasFiltered by remember { mutableStateOf(filtered) }
+    LaunchedEffect(filtered) {
+        if (filtered == wasFiltered) return@LaunchedEffect
+        wasFiltered = filtered
+        if (filtered) StoreState.grid.scrollToItem(0)
+        else StoreState.homeScroll?.let { (i, o) -> StoreState.grid.scrollToItem(i, o); StoreState.homeScroll = null }
+    }
     // Al empezar a usar el mando sin nada enfocado en la Tienda, el foco va al carrusel (no al botón del panel).
     var storeHasFocus by remember { mutableStateOf(false) }
     // Con un mando conectado, Android pone su propio foco inicial (en el panel) un instante después: si no se ha
@@ -272,7 +284,7 @@ fun StoreScreen() {
                 }
                 if (games.isEmpty()) item(span = { GridItemSpan(maxLineSpan) }, key = "vacio") { EmptyState() }
                 itemsIndexed(games, key = { _, it -> it.id }) { idx, g ->
-                    GameCard(g, versionsOf(g), Modifier.animateItem().then(if (idx == 0) Modifier.focusWhen("primero") else Modifier)
+                    GameCard(g, versionsOf(g), Modifier.animateItem(fadeInSpec = null, fadeOutSpec = null).then(if (idx == 0) Modifier.focusWhen("primero") else Modifier)
                         .gridNav(idx, games))
                 }
             }
@@ -521,8 +533,11 @@ private fun Modifier.gridNav(idx: Int, games: List<Game>): Modifier {
         val info = li.visibleItemsInfo.firstOrNull { it.key == target.id }
         val top = li.viewportStartOffset + 24; val bottom = li.viewportEndOffset - 24
         if (info == null) {
-            val itemIndex = li.visibleItemsInfo.firstOrNull { it.key == games[idx].id }?.index?.let { it + (to - idx) }
-            if (itemIndex != null) scope.launch { StoreState.grid.animateScrollToItem(maxOf(0, itemIndex)) }
+            // La fila no se ve: se desplaza suave una fila (saltar con scrollToItem descartaba las carátulas un
+            // instante y se veía todo redibujarse).
+            val cur = li.visibleItemsInfo.firstOrNull { it.key == games[idx].id }
+            val step = ((cur?.size?.height ?: 600) + 24).toFloat()
+            scope.launch { StoreState.grid.animateScrollBy(if (down) step else -step) }
         } else if (info.offset.y < top) scope.launch { StoreState.grid.animateScrollBy((info.offset.y - top).toFloat()) }
         else if (info.offset.y + info.size.height > bottom) scope.launch { StoreState.grid.animateScrollBy((info.offset.y + info.size.height - bottom).toFloat()) }
         Sound.play(Sound.Fx.MOVE)
@@ -725,7 +740,7 @@ fun StorageCard() {
         }
         UsageBar(segments, height = 14.dp)
         LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            items(top) { (sys, size) ->
+            items(top, key = { it.key }) { (sys, size) ->
                 SpacedRow {
                     Box(Modifier.size(10.dp).clip(RoundedCornerShape(3.dp)).background(Color(Repo.system(sys).color)))
                     Text("${Repo.system(sys).short} ${formatSize(size)}", style = MaterialTheme.typography.bodySmall)

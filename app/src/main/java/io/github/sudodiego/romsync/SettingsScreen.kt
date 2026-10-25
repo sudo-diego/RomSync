@@ -335,7 +335,7 @@ private fun FolderPicker(cfg: SftpConfig, onPick: (String) -> Unit, onClose: () 
                 }
                 if (entries == null && error == null) item { CircularProgressIndicator() }
                 entries?.let { list ->
-                    items(list.size) { i ->
+                    items(list.size, key = { list[it] }) { i ->
                         TextButton(onClick = { dir = list[i] }, Modifier.fillMaxWidth()) {
                             Text("📁 " + list[i].substringAfterLast('/').ifEmpty { list[i] }, Modifier.weight(1f))
                         }

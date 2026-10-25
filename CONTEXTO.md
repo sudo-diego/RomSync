@@ -176,6 +176,13 @@ neutro en la app y en las respuestas (sin voseo ni modismos).
   su reloj) → un solo dibujo y un reloj común (`DownloadArt.doneAt`, `FINISH`, `WRAP`): terminan de caer los
   cubitos, el ícono se llena y recién ahí se envuelve. Sonido de los cubitos medido en la grabación de la eShop
   (seg. 30,7–31,6: tics de ~40 ms que alternan ~1230/1660 Hz, uno cada ~0,13 s) y recreado en `tools/sintetizar.py`.
+- Cuadrícula: al bajar a una fila fuera de la vista se saltaba con scrollToItem y las carátulas se descartaban un
+  instante y volvían con fundido ("se redibuja todo") → desplazamiento suave de una fila y `animateItem` sin fundido.
+  Regla: no saltar la lista para seguir el foco; listas siempre con `key`.
+- Volver del inicio de una sección dejaba la Tienda arriba (Explorar no existía y el foco caía en el carrusel) → se
+  guarda la posición al entrar (`homeScroll`) y se recupera al volver.
+- Los 4 tics de los cubitos sonaban como 2 en la tablet → un solo sonido con la tanda entera a su ritmo (bajada y subida).
+- Diagonal en la cruceta: al soltar la dirección que mandaba, la otra seguía apretada y no contaba → ahora pasa a contar.
 - Subida cortada dejaba `.part` en el PC (sin conexión no se podía borrar) → se anotan (`Prefs.pendingParts`) y se
   borran al volver a conectar (`SftpConn.cleanParts`).
 - Abajo en el carrusel descargaba el juego: A abría la ficha al apretar y al soltar apretaba Descargar.

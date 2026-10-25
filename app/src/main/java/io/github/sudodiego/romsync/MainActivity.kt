@@ -322,6 +322,7 @@ class MainActivity : ComponentActivity() {
     private var lastTrigger = 0L
     private var heldDpad = 0
     private var heldAt = 0L
+    private var pendingDpad = 0
 
     override fun dispatchGenericMotionEvent(ev: android.view.MotionEvent): Boolean {
         if (ev.source and android.view.InputDevice.SOURCE_JOYSTICK == android.view.InputDevice.SOURCE_JOYSTICK &&
@@ -387,11 +388,21 @@ class MainActivity : ComponentActivity() {
             if (event.action == android.view.KeyEvent.ACTION_DOWN) {
                 // Otra dirección con una ya apretada = diagonal: no cuenta (salvo que la apretada lleve rato sin noticias:
                 // se perdió su soltar y no debe bloquear las demás).
-                if (heldDpad != 0 && heldDpad != event.keyCode && event.eventTime - heldAt < 700) return true
+                if (heldDpad != 0 && heldDpad != event.keyCode && event.eventTime - heldAt < 700) {
+                    pendingDpad = event.keyCode; return true
+                }
                 heldDpad = event.keyCode; heldAt = event.eventTime
             } else if (event.action == android.view.KeyEvent.ACTION_UP) {
-                if (event.keyCode != heldDpad) return true
+                if (event.keyCode != heldDpad) { if (event.keyCode == pendingDpad) pendingDpad = 0; return true }
                 heldDpad = 0
+                val next = pendingDpad
+                if (next != 0) {
+                    pendingDpad = 0
+                    val r = super.dispatchKeyEvent(event)
+                    val t = android.os.SystemClock.uptimeMillis()
+                    dispatchKeyEvent(android.view.KeyEvent(t, t, android.view.KeyEvent.ACTION_DOWN, next, 0, 0, event.deviceId, 0, 0, event.source))
+                    return r
+                }
             }
         }
         // L3/R3 no hacen nada en la app (no se deja que el sistema los use como toques).

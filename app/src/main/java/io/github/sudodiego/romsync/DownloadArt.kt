@@ -212,7 +212,8 @@ private fun ThreeDsFill(g: Game, p: Float, upload: Boolean, modifier: Modifier, 
     var shownFill by remember { mutableStateOf(p) }
     var lastBatch by remember { mutableStateOf(-1L) }
     if (drops != lastDrops) {
-        if (lastDrops >= 0 && live) { shownFill = p; if (sound) Sound.play(Sound.Fx.CUBE, if ((drops % 2 == 0L) != upload) 1f else 1.335f) } // al bajar cae uno; al subir sale uno
+        // El sonido de la tanda (los 4 tics a su ritmo) empieza con el primero de la tanda (al bajar cae; al subir sale).
+        if (lastDrops >= 0 && live) { shownFill = p; if (sound && drops % 4 == 1L) Sound.play(if (upload) Sound.Fx.CUBE_UP else Sound.Fx.CUBE) }
         lastDrops = drops
     }
     // El riel suena cuando se mueve: al bajar, al empezar la tanda; al subir, cuando los cubitos llegan a él y se van.

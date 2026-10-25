@@ -90,7 +90,7 @@ fun ArtPicker(g: Game, kind: String = "grid", onClose: () -> Unit) {
             chosen == null && games == null -> items(5) { SkeletonRow(56.dp) }
             chosen == null -> {
                 if (games!!.isEmpty()) item { Muted("Sin resultados: prueba con otro nombre (en inglés suele encontrar más).") }
-                items(games!!.size) { i ->
+                items(games!!.size, key = { "r$it-" + games!![it].hashCode() }) { i ->
                     val r = games!![i]
                     SheetCard(Modifier.clickable { Sound.play(Sound.Fx.OPEN); chosen = r }) {
                         SpacedRow {

@@ -227,7 +227,7 @@ fun StoreScreen() {
         if (Nav.keys && !storeHasFocus && Nav.game == null && StoreState.focusTarget == null) StoreState.focusTarget = if (filtered) "primero" else "carrusel"
     }
     PadHints(listOfNotNull("A" to "Abrir", (if (filtered) "B" to "Inicio" else "B" to "Panel"), "X" to "Buscar", "Y" to "Vista",
-        "ZL ZR" to "Filtro", "−" to "Actualizar", "+" to "Orden", "L R" to "Sección"))
+        "ZL ZR" to "Filtro", "−" to "Actualizar", "+" to (if (StoreState.bySize) "Ordenar por nombre" else "Ordenar por tamaño"), "L R" to "Sección"))
     Box(Modifier.fillMaxSize().onFocusChanged { storeHasFocus = it.hasFocus }
         .screenFocus { StoreState.grid.animateScrollBy(it) }) {
         LazyVerticalGrid(

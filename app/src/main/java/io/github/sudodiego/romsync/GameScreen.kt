@@ -284,8 +284,8 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
                             }
                             // Cancelar no deja nada a medias en el servidor (se borra lo que alcanzó a subir).
                             TextButton(onClick = { Sound.play(Sound.Fx.WARN); PcEdit.cancelUpload(g.id) },
-                                modifier = Modifier.focusHighlight(RoundedCornerShape(99.dp))) { Text("Cancelar") }
-                        } else FilledTonalButton(modifier = Modifier.focusHighlight(RoundedCornerShape(99.dp)), onClick = {
+                                modifier = Modifier.focusHighlight(RoundedCornerShape(99.dp)).autoFocusPad()) { Text("Cancelar") }
+                        } else FilledTonalButton(modifier = Modifier.focusHighlight(RoundedCornerShape(99.dp)).autoFocusPad(), onClick = {
                             Sound.play(Sound.Fx.MOVE)
                             scope.launch {
                                 val msg = runCatching { PcEdit.uploadFromTablet(g) }.fold({ "${g.title} ya está en el servidor" },

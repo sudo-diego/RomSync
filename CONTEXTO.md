@@ -183,6 +183,12 @@ neutro en la app y en las respuestas (sin voseo ni modismos).
   guarda la posición al entrar (`homeScroll`) y se recupera al volver.
 - Los 4 tics de los cubitos sonaban como 2 en la tablet → un solo sonido con la tanda entera a su ritmo (bajada y subida).
 - Diagonal en la cruceta: al soltar la dirección que mandaba, la otra seguía apretada y no contaba → ahora pasa a contar.
+- El foco "luchaba" (volvía solo a donde estaba al moverse rápido tras volver de una sección o una ficha): la app lo
+  pedía dos veces → si hubo un movimiento de la cruceta mientras tanto (`Nav.moveStamp`), no insiste.
+- Al cambiar de filtro con los gatillos el foco se perdía → va al carrusel o al primer juego.
+- Al apretar Descargar o al terminar, el foco pasaba por el panel antes de Pausar/Borrar (el botón desaparecía) → el panel
+  solo acepta el foco cuando se va a él (`Nav.sidebarWelcome`: izquierda, B o pedido de la app).
+- 3DS: el aviso de descarga terminada (y su jingle) se adelantaba al regalo → espera a que terminen de caer los cubitos.
 - Subida cortada dejaba `.part` en el PC (sin conexión no se podía borrar) → se anotan (`Prefs.pendingParts`) y se
   borran al volver a conectar (`SftpConn.cleanParts`).
 - Abajo en el carrusel descargaba el juego: A abría la ficha al apretar y al soltar apretaba Descargar.

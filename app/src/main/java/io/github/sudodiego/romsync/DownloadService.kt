@@ -222,7 +222,13 @@ class DownloadService : Service() {
                     if (d.status == DlStatus.RUNNING) {
                         d.status = DlStatus.DONE
                         finished++
-                        if (!d.bios) { Notice.show(d.id, d.title, "Descarga terminada"); DownloadArt.wrap(d.id) }
+                        if (!d.bios) {
+                            DownloadArt.wrap(d.id)
+                            val wait = if (DownloadArt.style == "3ds") DownloadArt.FINISH else 0L
+                            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                                Notice.show(d.id, d.title, "Descarga terminada")
+                            }, wait)
+                        }
                         // Las terminadas se van solas de la lista (ya avisó el aviso de arriba).
                         android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
                             if (d.status == DlStatus.DONE) { items.remove(d); save() }

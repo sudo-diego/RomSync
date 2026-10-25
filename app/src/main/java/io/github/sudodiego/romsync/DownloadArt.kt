@@ -217,7 +217,7 @@ private fun ThreeDsFill(g: Game, p: Float, upload: Boolean, modifier: Modifier, 
         lastDrops = drops
     }
     // El riel suena cuando se mueve: al bajar, al empezar la tanda; al subir, cuando los cubitos llegan a él y se van.
-    val rails = batch * 2 + if (inBatch >= (if (upload) FALL else 0L)) 1 else 0
+    val rails = batch * 2 + if (inBatch >= (if (upload) 3 * GAP + FALL + 120 else 0L)) 1 else 0
     if (rails != lastBatch) {
         if (lastBatch >= 0 && sound && live && rails % 2 == 1L) Sound.play(Sound.Fx.RAIL)
         lastBatch = rails

@@ -243,7 +243,9 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
                             TextButton(onClick = { Sound.play(Sound.Fx.WARN); askCancel = true }, Modifier.focusHighlight(pill)) { Text("Cancelar") }
                             if (askCancel) CancelDownloadDialog(dl) { askCancel = false }
                         }
-                        w.presence != Presence.INSTALLED && w.presence != Presence.TABLET_ONLY && toDownload.isNotEmpty() -> {
+                        // Recién terminada, mientras se registra el archivo nuevo, no vuelve a asomar "Descargar".
+                        w.presence != Presence.INSTALLED && w.presence != Presence.TABLET_ONLY && toDownload.isNotEmpty() &&
+                            DownloadService.items.none { it.id == g.id && it.status == DlStatus.DONE } -> {
                             BigDownloadButton(
                                 if (w.presence == Presence.PARTIAL) "Descargar lo que falta" else "Descargar", formatSize(downloadSize),
                                 Modifier.weight(1f),

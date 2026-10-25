@@ -137,6 +137,8 @@ object Nav {
     var keys by mutableStateOf(false)
     /** Ya se apretó algún botón desde que se abrió la app. */
     var anyKey = false
+    /** Sube con cada movimiento de la cruceta: si cambió mientras la app devolvía el foco a algo, se deja de insistir. */
+    @Volatile var moveStamp = 0L
     /** Hay un mando conectado (las guías de botones se muestran solo así). */
     var pad by mutableStateOf(false)
     /** Cómo se llaman sus botones: "ps" (✕ ○ □ △) o "xbox" (A B X Y). Sale del último mando que se usó. */
@@ -145,6 +147,14 @@ object Nav {
     /** Foco del panel lateral (para volver a él con B desde la pantalla principal de una sección). */
     private val sidebar = HashMap<Tab, androidx.compose.ui.focus.FocusRequester>()
     fun sidebarFocus(t: Tab) = sidebar.getOrPut(t) { androidx.compose.ui.focus.FocusRequester() }
+    /**
+     * El panel acepta el foco solo cuando se va a él a propósito (izquierda, B o la app lo pide) o si ya está ahí.
+     * Si un botón desaparece (Descargar → Pausar, Pausar → Borrar), el foco no "cae" en el panel mientras aparece el otro.
+     */
+    @Volatile var sidebarAllowedUntil = 0L
+    fun allowSidebar() { sidebarAllowedUntil = android.os.SystemClock.uptimeMillis() + 600 }
+    val sidebarWelcome get() = inSidebar || android.os.SystemClock.uptimeMillis() < sidebarAllowedUntil || !keys
+    fun focusSidebar() { allowSidebar(); runCatching { sidebarFocus(tab).requestFocus() } }
     var inSidebar by mutableStateOf(false)
     /** Cambiando de pantalla (abrir o cerrar una ficha): el panel no acepta el foco mientras tanto. */
     var switching by mutableStateOf(false)
@@ -384,6 +394,10 @@ class MainActivity : ComponentActivity() {
         }
         val dpads = setOf(android.view.KeyEvent.KEYCODE_DPAD_UP, android.view.KeyEvent.KEYCODE_DPAD_DOWN,
             android.view.KeyEvent.KEYCODE_DPAD_LEFT, android.view.KeyEvent.KEYCODE_DPAD_RIGHT)
+        if (event.keyCode in dpads && event.action == android.view.KeyEvent.ACTION_DOWN) {
+            Nav.moveStamp++
+            if (event.keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT) Nav.allowSidebar()
+        }
         if (event.keyCode in dpads && event.deviceId > 0) {
             if (event.action == android.view.KeyEvent.ACTION_DOWN) {
                 // Otra dirección con una ya apretada = diagonal: no cuenta (salvo que la apretada lleve rato sin noticias:
@@ -471,7 +485,7 @@ fun AppShell() {
         // La sección no tiene nada que elegir (como Descargas vacía): el foco queda en ella en el panel.
         if (StoreState.focusTarget == t && (Nav.keys || Nav.pad)) {
             StoreState.focusTarget = null
-            runCatching { Nav.sidebarFocus(Nav.tab).requestFocus() }
+            Nav.focusSidebar()
         }
     }
     // B en la pantalla principal de una sección: al panel lateral (no sale de la app); B en el panel: de vuelta al contenido.
@@ -481,7 +495,7 @@ fun AppShell() {
         // Como en el menú de una consola: B lleva al panel y lo despliega; en el panel ya desplegado, B cierra la app.
         // Para volver al contenido, derecha (vuelve a lo último que se eligió).
         if (Nav.inSidebar) { if (Nav.sidebarShown) activity?.finish() else Nav.padOpen = true }
-        else { runCatching { Nav.sidebarFocus(Nav.tab).requestFocus() }; Nav.padOpen = true }
+        else { Nav.focusSidebar(); Nav.padOpen = true }
     }
 
     BackHandler(enabled = Nav.game != null) { Sound.play(Sound.Fx.BACK); Nav.game = null }
@@ -559,7 +573,7 @@ private fun Sidebar(active: Int, go: (Tab) -> Unit) {
             val scale by animateFloatAsState(if (isPressed) 0.94f else 1f, label = "s")
             // Cerrado: el ícono centrado (con el margen del panel abierto, el recuadro de foco quedaba corrido).
             Row(
-                Modifier.fillMaxWidth().height(52.dp).focusProperties { canFocus = !Nav.switching }.focusRequester(Nav.sidebarFocus(t)).graphicsLayer { scaleX = scale; scaleY = scale }
+                Modifier.fillMaxWidth().height(52.dp).focusProperties { canFocus = !Nav.switching && Nav.sidebarWelcome }.focusRequester(Nav.sidebarFocus(t)).graphicsLayer { scaleX = scale; scaleY = scale }
                     .focusHighlight(RoundedCornerShape(16.dp)).clip(RoundedCornerShape(16.dp)).background(bg)
                     .clickable(interactionSource = pressed, indication = null) { go(t) }
                     .padding(horizontal = if (open) 16.dp else 0.dp),

@@ -115,6 +115,9 @@ object StoreState {
                 val step = if (code == android.view.KeyEvent.KEYCODE_BUTTON_R2) 1 else -1
                 filter = filters[(filters.indexOf(filter) + step + filters.size) % filters.size]
                 Sound.play(Sound.Fx.MOVE)
+                // El foco va a lo primero de lo que se ve ahora (antes se perdía y caía en el panel).
+                val home = filter == StoreFilter.ALL && system.isEmpty() && query.isBlank()
+                appScope.launch { runCatching { grid.scrollToItem(0) }; requestFocusOn(if (home) "carrusel" else "primero") }
             }
             android.view.KeyEvent.KEYCODE_BUTTON_Y -> { UiState.icons = !UiState.icons; Prefs.icons = UiState.icons; Sound.play(Sound.Fx.TOGGLE) }
             android.view.KeyEvent.KEYCODE_BUTTON_X -> { searchArmed = true; runCatching { searchFocus.requestFocus() }; Sound.play(Sound.Fx.OPEN) }
@@ -201,6 +204,10 @@ fun StoreScreen() {
     androidx.activity.compose.BackHandler(enabled = filtered && Nav.game == null) { Sound.play(Sound.Fx.BACK); StoreState.home() }
     // La lista es la misma para el inicio y las secciones: al entrar a una sección empieza arriba; al volver, donde estaba.
     var wasFiltered by remember { mutableStateOf(filtered) }
+    val swap = remember { androidx.compose.animation.core.Animatable(1f) }
+    LaunchedEffect(filtered, StoreState.filter, StoreState.system) {
+        swap.snapTo(0f); swap.animateTo(1f, tween(280))
+    }
     LaunchedEffect(filtered) {
         if (filtered == wasFiltered) return@LaunchedEffect
         wasFiltered = filtered
@@ -224,8 +231,8 @@ fun StoreScreen() {
         .screenFocus { StoreState.grid.animateScrollBy(it) }) {
         LazyVerticalGrid(
             state = StoreState.grid,
+            modifier = Modifier.fillMaxSize().graphicsLayer { alpha = 0.35f + 0.65f * swap.value; translationY = (1f - swap.value) * 36f },
             columns = GridCells.Adaptive(if (UiState.icons) 124.dp else 158.dp),
-            modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 40.dp),
             horizontalArrangement = Arrangement.spacedBy(16.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp),
@@ -247,18 +254,21 @@ fun StoreScreen() {
                 item(span = { GridItemSpan(maxLineSpan) }, key = "destacados") { FeaturedCarousel(cards, firstPlatform) }
                 item(span = { GridItemSpan(maxLineSpan) }, key = "plataformas") { PlatformRow(systems, firstPlatform) }
                 val onTablet = cards.filter { Repo.where(it).presence.let { p -> p == Presence.INSTALLED || p == Presence.PARTIAL } && it.kind != "shortcut" }
-                val toGet = cards.filter { Repo.where(it).presence == Presence.MISSING && it.kind != "shortcut" }
-                if (onTablet.isNotEmpty()) item(span = { GridItemSpan(maxLineSpan) }, key = "fila-tablet") {
-                    StorePanel("En tu dispositivo", Icons.Rounded.TabletAndroid, Palette.ok) {
-                        ShelfRow(onTablet.shuffled(java.util.Random(StoreState.seed)), { StoreState.openSection(filter = StoreFilter.INSTALLED, from = "vertodo:tablet") }, ::versionsOf, "tablet")
-                    }
-                }
-                // Para descargar: tiles anchos con fondo y logo (como las promociones de la eShop), los que tienen imagen primero.
+                // Los del carrusel no se repiten aquí (antes "Para descargar" era casi lo mismo que el carrusel).
+                val inCarousel = featuredOf(cards).map { it.id }.toSet()
+                val toGet = cards.filter { Repo.where(it).presence == Presence.MISSING && it.kind != "shortcut" && it.id !in inCarousel }
+                // Lo más importante de la Tienda es descargar: primero "Para descargar", después lo que ya está.
+                // Tiles anchos con fondo y logo (como las promociones de la eShop), los que tienen imagen primero.
                 if (toGet.isNotEmpty()) item(span = { GridItemSpan(maxLineSpan) }, key = "fila-bajar") {
                     StorePanel("Para descargar", Icons.Rounded.CloudDownload, Color(UiState.accent)) {
                         WideShelf(toGet.shuffled(java.util.Random(StoreState.seed + 1)).sortedByDescending { Art.cached(it.id, "hero") != null }) {
                             StoreState.openSection(filter = StoreFilter.MISSING, from = "vertodo:bajar")
                         }
+                    }
+                }
+                if (onTablet.isNotEmpty()) item(span = { GridItemSpan(maxLineSpan) }, key = "fila-tablet") {
+                    StorePanel("En tu dispositivo", Icons.Rounded.TabletAndroid, Palette.ok) {
+                        ShelfRow(onTablet.shuffled(java.util.Random(StoreState.seed)), { StoreState.openSection(filter = StoreFilter.INSTALLED, from = "vertodo:tablet") }, ::versionsOf, "tablet")
                     }
                 }
                 // Una sola sección para explorar por plataforma (antes eran hasta 8 filas seguidas, una por consola).
@@ -299,12 +309,7 @@ fun StoreScreen() {
 /** Destacados: juegos con fondo (hero) en grande, pasan solos cada 6 s, como los banners de la eShop. */
 @Composable
 private fun FeaturedCarousel(cards: List<Game>, below: androidx.compose.ui.focus.FocusRequester) {
-    val featured = remember(cards, Art.versions.size) {
-        val toGet = cards.filter { it.kind != "shortcut" && Art.cached(it.id, "hero") != null && Repo.where(it).presence == Presence.MISSING }
-        // Si ya está todo descargado, se muestran los de siempre para que el inicio no quede vacío.
-        (toGet.ifEmpty { cards.filter { it.kind != "shortcut" && Art.cached(it.id, "hero") != null } })
-            .shuffled(java.util.Random(StoreState.seed)).take(6)
-    }
+    val featured = remember(cards, Art.versions.size) { featuredOf(cards) }
     if (featured.isEmpty()) return
     val pager = rememberPagerState { featured.size }
     // El carrusel es UN solo elemento para el mando: izquierda/derecha cambian de página y A abre la que se ve.
@@ -550,11 +555,25 @@ private fun Modifier.gridNav(idx: Int, games: List<Game>): Modifier {
  * Android mandaba el foco al panel lateral) y reintenta unas veces hasta que quede.
  */
 suspend fun refocus(request: () -> Unit) {
+    // Si el usuario se mueve mientras tanto, manda él: no se le devuelve el foco (antes "luchaba" y lo regresaba).
+    val stamp = Nav.moveStamp
     kotlinx.coroutines.delay(30)
     repeat(12) {
-        if (runCatching { request() }.isSuccess) { kotlinx.coroutines.delay(150); runCatching { request() }; return }
+        if (Nav.moveStamp != stamp) return
+        if (runCatching { request() }.isSuccess) {
+            kotlinx.coroutines.delay(150)
+            if (Nav.moveStamp == stamp) runCatching { request() }
+            return
+        }
         kotlinx.coroutines.delay(50)
     }
+}
+
+/** Los destacados del carrusel: 6 para descargar con imagen grande (si ya está todo descargado, de los que hay). */
+private fun featuredOf(cards: List<Game>): List<Game> {
+    val toGet = cards.filter { it.kind != "shortcut" && Art.cached(it.id, "hero") != null && Repo.where(it).presence == Presence.MISSING }
+    return (toGet.ifEmpty { cards.filter { it.kind != "shortcut" && Art.cached(it.id, "hero") != null } })
+        .shuffled(java.util.Random(StoreState.seed)).take(6)
 }
 
 /** Un panel del inicio: título con ícono de color y su contenido, para que cada sección se distinga. */

@@ -146,7 +146,8 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
                     .memoryCacheKey("${img.path}:${img.lastModified()}:${Art.versions[g.id] ?: 0}").build())
             }
         }
-        enter.animateTo(1f, spring(dampingRatio = 0.75f, stiffness = 260f))
+        if (UiState.coverAnim == "ninguna") enter.snapTo(1f)
+        else enter.animateTo(1f, tween(700, easing = androidx.compose.animation.core.FastOutSlowInEasing))
     }
     @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
     androidx.compose.runtime.CompositionLocalProvider(androidx.compose.foundation.LocalOverscrollConfiguration provides null) {
@@ -204,8 +205,13 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
             // transparencia: se veía una sombra entera bajo una carátula todavía transparente).
             Box(Modifier.width(200.dp).graphicsLayer {
                 val k = enter.value.coerceIn(0f, 1f)
-                alpha = k; translationY = (1f - k) * 80f
-                rotationZ = (1f - k) * -4f
+                alpha = k
+                when (UiState.coverAnim) {
+                    "acercar" -> { val s = 0.8f + 0.2f * k; scaleX = s; scaleY = s }
+                    "lado" -> translationX = (1f - k) * -160f
+                    "ninguna" -> {}
+                    else -> { translationY = (1f - k) * 80f; rotationZ = (1f - k) * -4f }
+                }
                 // Sin capa aparte: con ella la sombra quedaba recortada en un rectángulo mientras aparecía.
                 compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.ModulateAlpha
             }.notForDpad().softShadow(18.dp, 16.dp).clip(RoundedCornerShape(18.dp)).pressable { Sound.play(Sound.Fx.OPEN); editing = true }) {

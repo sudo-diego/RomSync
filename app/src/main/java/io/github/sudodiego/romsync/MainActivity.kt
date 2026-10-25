@@ -256,6 +256,7 @@ class MainActivity : ComponentActivity() {
         UiState.fullscreen = Prefs.fullscreen
         UiState.lightAnim = Prefs.lightAnim
         UiState.showShortcuts = Prefs.showShortcuts
+        UiState.coverAnim = Prefs.coverAnim
         UiState.openAnim = Prefs.openAnim
         DownloadArt.init()
         // Mando conectado o desconectado: se revisa al abrir y cada vez que cambia.

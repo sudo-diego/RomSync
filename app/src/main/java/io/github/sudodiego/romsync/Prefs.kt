@@ -140,6 +140,9 @@ object Prefs {
     var openAnim: String
         get() = sp.getString("openAnim", "zoom") ?: "zoom"
         set(v) = sp.edit().putString("openAnim", v).apply()
+    var coverAnim: String
+        get() = sp.getString("coverAnim", "subir") ?: "subir"
+        set(v) = sp.edit().putString("coverAnim", v).apply()
     var showShortcuts: Boolean
         get() = sp.getBoolean("showShortcuts", false)
         set(v) = sp.edit().putBoolean("showShortcuts", v).apply()

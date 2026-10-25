@@ -47,7 +47,7 @@ object Sound {
         app = ctx.applicationContext
         audio = app.getSystemService(AudioManager::class.java)
         runCatching {
-            val p = SoundPool.Builder().setMaxStreams(4).setAudioAttributes(attrs()).build()
+            val p = SoundPool.Builder().setMaxStreams(8).setAudioAttributes(attrs()).build()
             p.setOnLoadCompleteListener { _, id, status -> if (status == 0) synchronized(loaded) { loaded += id } }
             packRes.forEach { (pack, res) -> ids[pack] = res.map { p.load(app, it, 1) } }
             pool = p

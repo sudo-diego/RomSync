@@ -78,6 +78,14 @@ object DownloadArt {
     const val WRAP = 1100L
     fun now() = android.os.SystemClock.uptimeMillis()
     /** Cuánto falta para que el regalo quede envuelto (0 si ya está o si no se vio terminar). */
+    /** Recién terminó (estilo 3DS): siguen cayendo los últimos cubitos. Se decide al momento, sin esperar a ningún
+     *  efecto (si hubiera un cuadro sin saberlo, la animación se desarmaba y empezaba de cero). */
+    fun finishing(g: Game): Boolean {
+        if (style != "3ds") return false
+        DownloadService.items.firstOrNull { it.id == g.id && it.status == DlStatus.DONE } ?: return false
+        val t0 = doneAt[g.id] ?: return true
+        return now() - t0 < FINISH
+    }
     fun untilWrapped(id: String) = doneAt[id]?.let { maxOf(0L, it + FINISH + WRAP - now()) } ?: 0L
 
     /** Avance actual de un juego (descarga o subida), o null si no se está moviendo nada. */
@@ -94,15 +102,15 @@ fun DownloadOverlay(g: Game, modifier: Modifier = Modifier, sound: Boolean = fal
     val p = DownloadArt.progressOf(g)
     val gift = g.id in DownloadArt.gifts
     // Recién terminado: mientras caen los últimos cubitos sigue la misma animación (sin cortarla).
-    var finishing by remember(g.id) { mutableStateOf(false) }
-    LaunchedEffect(gift, p == null) {
+    var tick by remember(g.id) { mutableStateOf(0) }
+    val finishing = p == null && tick >= 0 && DownloadArt.finishing(g)
+    LaunchedEffect(finishing) {
+        if (!finishing) return@LaunchedEffect
         val t0 = DownloadArt.doneAt[g.id]
-        if (!gift || p != null || t0 == null) { finishing = false; return@LaunchedEffect }
-        val left = t0 + DownloadArt.FINISH - DownloadArt.now()
-        if (left > 0) { finishing = true; kotlinx.coroutines.delay(left) }
-        finishing = false
+        kotlinx.coroutines.delay(if (t0 == null) 100 else maxOf(1L, t0 + DownloadArt.FINISH - DownloadArt.now()))
+        tick++
     }
-    if (p == null && !gift) return
+    if (p == null && !gift && !finishing) return
     val shown by animateFloatAsState(p?.first ?: 1f,
         androidx.compose.animation.core.spring(stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow), label = "avance")
     val upload = p?.second == true
@@ -199,15 +207,20 @@ private fun ThreeDsFill(g: Game, p: Float, upload: Boolean, modifier: Modifier, 
     if (finishing && lastBatchShown == Long.MAX_VALUE) lastBatchShown = batch
     if (!finishing) lastBatchShown = Long.MAX_VALUE
     val live = batch <= lastBatchShown
-    val drops = batch * 4 + (0 until 4).count { k -> inBatch - k * GAP >= TRAVEL + FALL }
+    val drops = batch * 4 + (0 until 4).count { k -> inBatch - k * GAP >= if (upload) 0 else TRAVEL + FALL }
     var lastDrops by remember { mutableStateOf(-1L) }
     var shownFill by remember { mutableStateOf(p) }
     var lastBatch by remember { mutableStateOf(-1L) }
     if (drops != lastDrops) {
-        if (lastDrops >= 0 && live) { shownFill = p; if (sound) Sound.play(if (drops % 2 == 0L) Sound.Fx.CUBE else Sound.Fx.CUBE2) } // al bajar cae uno; al subir sale uno
+        if (lastDrops >= 0 && live) { shownFill = p; if (sound) Sound.play(if ((drops % 2 == 0L) != upload) Sound.Fx.CUBE else Sound.Fx.CUBE2) } // al bajar cae uno; al subir sale uno
         lastDrops = drops
     }
-    if (batch != lastBatch) { if (lastBatch >= 0 && sound && live) Sound.play(Sound.Fx.RAIL); lastBatch = batch }
+    // El riel suena cuando se mueve: al bajar, al empezar la tanda; al subir, cuando los cubitos llegan a él y se van.
+    val rails = batch * 2 + if (inBatch >= (if (upload) FALL else 0L)) 1 else 0
+    if (rails != lastBatch) {
+        if (lastBatch >= 0 && sound && live && rails % 2 == 1L) Sound.play(Sound.Fx.RAIL)
+        lastBatch = rails
+    }
     // El llenado avanza a saltos cortos (cada cubito); al terminar sube suave hasta lleno.
     val target = if (finishing || p >= 0.999f) 1f else shownFill
     val stepped by animateFloatAsState(target, if (finishing) tween(900) else tween(220), label = "llenado")

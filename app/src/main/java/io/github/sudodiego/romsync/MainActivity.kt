@@ -157,6 +157,11 @@ object Nav {
 
     /** Derecha desde el panel: de vuelta a lo último que se eligió en la sección; si ya no está, a su entrada. */
     fun backToContent() {
+        // Con una ficha abierta, a lo último elegido en la ficha (la sección de debajo no recibe el foco).
+        if (game != null) {
+            runCatching { lastFocus["game"]?.requestFocus() }
+            return
+        }
         val fr = lastFocus[tab.name]
         val r = fr?.let { runCatching { it.requestFocus() } }
         if (r == null || r.isFailure) { enter(tab); return }
@@ -475,7 +480,8 @@ fun AppShell() {
         Box(Modifier.fillMaxSize().then(if (UiState.fullscreen) Modifier else Modifier.safeDrawingPadding())) {
             if (wide) {
                 Row(Modifier.fillMaxSize()) {
-                    Sidebar(active, ::go)
+                    // El panel es su propia "pantalla": lo elegido ahí no cuenta como lo último de la sección o la ficha.
+                    androidx.compose.runtime.CompositionLocalProvider(LocalScreenKey provides "panel") { Sidebar(active, ::go) }
                     Box(Modifier.weight(1f)) { TabContent() }
                 }
             } else {

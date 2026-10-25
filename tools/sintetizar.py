@@ -256,9 +256,9 @@ def sfx():
                 if kind == 'retro': v = (1 if math.sin(TAU*f*t) > 0 else -1)*0.5 + 0.5*v
                 out.append(v*env)
             return out
-        cubo, cubo2 = tic(1230), tic(1660)
+        # Una sola nota: la otra (una cuarta arriba, ~1660 Hz) la hace la app tocándola más rápido.
+        cubo = tic(1230)
         save('cubo', cubo, .5)
-        save('cubo2', cubo2, .5)
         riel = [0.0]*int(.22*SR)
         for k in range(3):
             for i in range(int(.025*SR)):

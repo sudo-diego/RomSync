@@ -17,17 +17,17 @@ import android.util.Log
  * Respeta el foco de audio y se pausa en segundo plano. Un error de audio nunca cierra la app: se sigue sin sonido.
  */
 object Sound {
-    enum class Fx { MOVE, OPEN, BACK, DONE, WARN, TOGGLE, JINGLE, CUBE, RAIL, CUBE2 }
+    enum class Fx { MOVE, OPEN, BACK, DONE, WARN, TOGGLE, JINGLE, CUBE, RAIL }
 
     val packs = linkedMapOf("clasico" to "Clásico", "suave" to "Suave", "retro" to "Retro")
 
     private val packRes = mapOf(
         "clasico" to listOf(R.raw.sfx_clasico_mover, R.raw.sfx_clasico_abrir, R.raw.sfx_clasico_volver,
-            R.raw.sfx_clasico_listo, R.raw.sfx_clasico_aviso, R.raw.sfx_clasico_interruptor, R.raw.sfx_clasico_jingle, R.raw.sfx_clasico_cubo, R.raw.sfx_clasico_riel, R.raw.sfx_clasico_cubo2),
+            R.raw.sfx_clasico_listo, R.raw.sfx_clasico_aviso, R.raw.sfx_clasico_interruptor, R.raw.sfx_clasico_jingle, R.raw.sfx_clasico_cubo, R.raw.sfx_clasico_riel),
         "suave" to listOf(R.raw.sfx_suave_mover, R.raw.sfx_suave_abrir, R.raw.sfx_suave_volver,
-            R.raw.sfx_suave_listo, R.raw.sfx_suave_aviso, R.raw.sfx_suave_interruptor, R.raw.sfx_suave_jingle, R.raw.sfx_suave_cubo, R.raw.sfx_suave_riel, R.raw.sfx_suave_cubo2),
+            R.raw.sfx_suave_listo, R.raw.sfx_suave_aviso, R.raw.sfx_suave_interruptor, R.raw.sfx_suave_jingle, R.raw.sfx_suave_cubo, R.raw.sfx_suave_riel),
         "retro" to listOf(R.raw.sfx_retro_mover, R.raw.sfx_retro_abrir, R.raw.sfx_retro_volver,
-            R.raw.sfx_retro_listo, R.raw.sfx_retro_aviso, R.raw.sfx_retro_interruptor, R.raw.sfx_retro_jingle, R.raw.sfx_retro_cubo, R.raw.sfx_retro_riel, R.raw.sfx_retro_cubo2),
+            R.raw.sfx_retro_listo, R.raw.sfx_retro_aviso, R.raw.sfx_retro_interruptor, R.raw.sfx_retro_jingle, R.raw.sfx_retro_cubo, R.raw.sfx_retro_riel),
     )
 
     private lateinit var app: Context
@@ -58,7 +58,8 @@ object Sound {
     private fun attrs() = AudioAttributes.Builder()
         .setUsage(AudioAttributes.USAGE_GAME).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build()
 
-    fun play(fx: Fx) {
+    /** [rate]: velocidad (y altura) del sonido; 1.335 = una cuarta más agudo. */
+    fun play(fx: Fx, rate: Float = 1f) {
         if (!Prefs.sfxOn) return
         if (fx == Fx.MOVE) { // los toques muy seguidos no se amontonan
             val now = System.currentTimeMillis()
@@ -69,7 +70,7 @@ object Sound {
         val id = ids[Prefs.sfxPack]?.getOrNull(fx.ordinal) ?: return
         if (synchronized(loaded) { id !in loaded }) return
         val v = Prefs.sfxVolume / 100f
-        runCatching { p.play(id, v, v, 1, 0, 1f) }
+        runCatching { p.play(id, v, v, 1, 0, rate) }
     }
 
     /** Para escuchar un juego de sonidos al elegirlo. */

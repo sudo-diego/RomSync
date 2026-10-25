@@ -29,16 +29,28 @@ neutro en la app y en las respuestas (sin voseo ni modismos).
 
 ## Cómo funciona (por pantalla)
 
-- **Mando** (inspirado en Steam Big Picture): todo lo tocable lleva el mismo anillo de foco y suena al llegar (en la
-  `Indication` de `Theme.kt`); barra de botones abajo a la derecha (`PadBar`/`PadHints`) con glifos universales
-  (rombo de 4 puntos con el botón marcado, LB/RB y LT/RT con su forma y letra, View/Menu dibujados), solo con mando
-  conectado (`Nav.pad`). L/R cambian de sección; ZL/ZR (botón o gatillo analógico, sin contar doble) cambian la sección de
-  la Tienda; X buscar, Y vista, − actualizar, + orden. Al entrar a cada sección el foco va a lo principal
-  (`StoreState.focusTarget` + `Modifier.focusWhen`; si no hay nada, a esa sección en el panel). B: de una ficha o una
-  sección (plataforma, "Ver todo", Explorar) vuelve al inicio con el foco donde se entró; de la pantalla principal, al
-  panel lateral; del panel, al contenido. El carrusel es un solo elemento (izquierda/derecha cambian de página, A abre).
-  Filas: lo enfocado centrado a lo ancho (`CenteredFocus`); hacia abajo solo se mueve si no se ve entero (`MarginFocus`).
-  Campos de texto: el teclado sale con A. Ajustes con filas de opciones (`OptionRow`: izquierda/derecha cambian).
+- **Mando** (inspirado en Steam Big Picture). Regla: lo mismo se hace igual en todas partes.
+  - Anillo de foco y sonido en todo: botones de Material envueltos con el mismo nombre (`PadButtons.kt`), el resto con
+    `focusHighlight` o la `Indication` de `Theme.kt`; cada movimiento de cruceta suena (`dispatchKeyEvent`).
+  - Cruceta y stick izquierdo: los maneja la app (`stick()` en `MainActivity`), una sola dirección a la vez (en diagonal
+    se queda la que iba), con repetición al mantener. L3/R3 no hacen nada.
+  - B va directo a "volver" (`onBackPressedDispatcher`; Compose lo usaba para salir de grupos de foco y se perdía):
+    ficha → donde se entró; sección de la Tienda (plataforma, filtro, Ver todo) → inicio; pantalla principal → panel
+    (se despliega); panel plegado → se despliega; panel desplegado → cierra la app. Derecha desde el panel vuelve a lo
+    último elegido de la sección (`Nav.lastFocus`, lo anota `focusHighlight`); A en el panel entra a la sección y el foco
+    va a su primer elemento (`Nav.enter` + `focusWhen("entrada:TAB")`; Tienda: carrusel; si no hay nada, queda en el panel).
+  - La ficha se abre ENCIMA de la sección, que sigue viva debajo (invisible y fuera del mando): al volver todo está igual.
+    Mientras cambia de pantalla el panel no acepta el foco (`Nav.switching`), así no se "pasa" por él.
+  - Cada pantalla es un grupo (`Modifier.screenFocus`): la cruceta no sale por arriba/abajo/derecha (nunca cae en el botón
+    del panel, que es solo táctil) y, si no hay más elementos en esa dirección, la lista se desplaza hasta el final o el
+    principio (se ve el encabezado y lo último, como Shizuku en Ajustes).
+  - Cuadrícula de la Tienda: arriba/abajo van al de la misma columna (`gridNav`); el título dice plataforma y/o filtro.
+  - Carrusel: un solo elemento (izquierda/derecha cambian de página); A abre al SOLTAR (si no, el mismo A apretaba
+    Descargar en la ficha). Al empezar una descarga el foco pasa a Pausar.
+  - Guía de botones por pantalla (`PadHints`, una pila: la ficha encima de la sección), solo con mando (`Nav.pad`).
+    L/R sección; ZL/ZR filtros de la Tienda; X buscar, Y vista, − actualizar, + orden.
+  - Filas: lo enfocado centrado a lo ancho (`CenteredFocus`); hacia abajo solo se mueve si no se ve entero (`MarginFocus`).
+    Campos de texto: el teclado sale con A. Opciones (`OptionRow`) y deslizadores (`padSlider`): izquierda/derecha cambian.
 - Sombras: dibujadas como parte del contenido (`Modifier.softShadow`), no las del sistema: las del sistema no se
   desvanecen con las transiciones de pantalla y "saltaban". Las carátulas animan su aparición solo la primera vez.
 - **Tienda** (`StoreScreen.kt`): carrusel de destacados (al azar por apertura; la cruceta cambia de página y el foco va
@@ -153,6 +165,11 @@ neutro en la app y en las respuestas (sin voseo ni modismos).
   y activo mientras se usa.
 - "Sin respaldo" como advertencia en juegos sin partidas → "Todavía no hay partidas que respaldar".
 - Pantalla completa dejaba un hueco arriba (se reservaba el espacio de las barras ocultas).
+- B no hacía nada o había que apretarlo dos veces: Compose usaba atrás para salir de grupos de foco → B va directo.
+- Al entrar/salir de una ficha el foco pasaba unos segundos por el panel (y lo abría): la sección se desmontaba →
+  la ficha va encima y el panel no acepta foco durante el cambio.
+- Con el filtro Descargados, un juego borrado seguía apareciendo (la lista no se recalculaba con los archivos).
+- Abajo en el carrusel descargaba el juego: A abría la ficha al apretar y al soltar apretaba Descargar.
 
 ## Pendiente / ideas
 

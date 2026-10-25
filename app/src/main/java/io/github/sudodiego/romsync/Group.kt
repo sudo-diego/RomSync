@@ -69,7 +69,8 @@ object Group {
         return when {
             lower == ".nomedia" || lower in ignoredNames -> null
             e == ".parts" || e == ".crdownload" || e == ".tmp" || e == ".part" -> "Descarga a medias"
-            lower.startsWith(".") -> "Archivo oculto de otra app"
+            // Los ocultos NO: suelen ser de otra app que los necesita (".droiddeck-sync.json" de DroiDeck en ROMs/steam).
+            lower.startsWith(".") -> null
             reSaveCopy.matches(e) || isSaveCopy(name) || e == ".bak" -> "Copia vieja de una partida"
             else -> null
         }

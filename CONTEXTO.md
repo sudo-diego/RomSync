@@ -285,3 +285,14 @@ Descargas, y propone un plan (todo marcado, con "Desmarcar todo"); no cambia nad
 - Partidas rediseñada: resumen + "Respaldar todo" grande, tarjetas en cuadrícula con ícono y estado, no instalados
   en una línea, respaldo automático al final. Organizar en dos columnas (Juegos/Sistema | espacio y apps).
 - Sin probar en la tablet (adb inalámbrico no conectaba).
+
+## Ajustes a 0.3.0 (25-10-2026)
+
+- "Archivos que sobran" ya no marca archivos ocultos: son de otras apps (DroiDeck guarda `ROMs/steam/.droiddeck-sync.json`).
+  Solo descargas a medias y copias viejas de partidas. Test en GroupTest.
+- `ReviewSheet.kt`: hoja grande para revisar (encabezado, tarjetas, pie fijo con resumen y botón). Juegos por ordenar
+  agrupado por tipo (plegable, marcar grupo, "antes → después"); Repetidos con carátula, recomendada y atajos;
+  Sin copia en el servidor como cuadrícula de carátulas. Las dos últimas avisan ordenar primero si hay plan.
+- Ficha: sin "Borrar" si el juego no está en el dispositivo (del servidor: menú ⋮ "Borrar del servidor…").
+  Las partidas ya no están en el diálogo de Borrar: cada emulador en la sección Partidas tiene "Borrar del dispositivo…"
+  (respalda antes con `Saves.deleteUnit`).

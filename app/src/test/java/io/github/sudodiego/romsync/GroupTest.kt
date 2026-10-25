@@ -136,6 +136,8 @@ class GroupTest {
         assertTrue(Group.isIgnored("Spirit Tracks.opts"))
         assertEquals(null, Group.junkKind("Spirit Tracks.sav"))
         assertEquals(null, Group.junkKind("gamelist.xml"))
+        // Los ocultos son de otras apps (DroiDeck guarda su estado en ROMs/steam/.droiddeck-sync.json): nunca sobran.
+        assertEquals(null, Group.junkKind(".droiddeck-sync.json"))
         // Las BIOS de PS2 nunca son "basura" (se marcaban en la limpieza).
         listOf("SCPH-70012.bin", "SCPH-70012.MEC", "SCPH-70012.NVM", "SCPH-70012.rom1", "ps2-0230a-20080220.bin", ".scph39001.bin", "bios.bak")
             .forEach { assertEquals(it, null, Group.junkKind(it)) }

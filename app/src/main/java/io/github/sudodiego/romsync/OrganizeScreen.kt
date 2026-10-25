@@ -29,6 +29,7 @@ import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.Downloading
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Key
+import androidx.compose.material.icons.rounded.Dns
 import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilledTonalButton
@@ -208,62 +209,82 @@ private fun Fix(icon: ImageVector, title: String, detail: String, count: Int, ac
 }
 
 
-/** El plan de "Ordenar juegos": qué se va a hacer con cada archivo; todo marcado, se puede desmarcar. */
+/**
+ * El plan de "Ordenar juegos" agrupado por qué se hace (sacar de comprimidos, mover/renombrar, renombrar en el
+ * servidor, copias que sobran, consejos). Cada grupo se marca entero o de a uno, y se pliega; cada fila dice
+ * "antes → después". Todo viene marcado.
+ */
 @Composable
 private fun TidyDialog(onClose: () -> Unit) {
     val ctx = LocalContext.current
     val plan = Tidy.plan.orEmpty()
     val doable = plan.filter { it.kind != Tidy.Kind.INFO }
     var selected by remember(plan) { mutableStateOf(doable.map { it.id }.toSet()) }
-    AlertDialog(
-        onDismissRequest = { if (!Tidy.running) onClose() },
-        title = { Text("Ordenar juegos") },
-        text = {
-            if (Tidy.running) Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                androidx.compose.material3.LinearProgressIndicator(Modifier.fillMaxWidth())
-                Muted(Tidy.progress)
-            } else LazyColumn(Modifier.heightIn(max = 460.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                item { Muted("Así van a quedar. Los juegos de Switch se nombran con su nombre oficial y su TitleID.") }
-                item {
-                    val all = selected.size == doable.size
-                    TextButton(onClick = { selected = if (all) emptySet() else doable.map { it.id }.toSet() }) {
-                        Text(if (all) "Desmarcar todo" else "Marcar todo")
-                    }
+    data class G(val kind: Tidy.Kind, val title: String, val icon: androidx.compose.ui.graphics.vector.ImageVector, val color: androidx.compose.ui.graphics.Color)
+    val groups = listOf(
+        G(Tidy.Kind.EXTRACT, "Sacar de comprimidos", Icons.Rounded.Unarchive, Palette.blue),
+        G(Tidy.Kind.MOVE, "Mover y poner el nombre correcto", Icons.Rounded.DriveFileRenameOutline, Palette.ok),
+        G(Tidy.Kind.RENAME_SERVER, "Renombrar en el servidor", Icons.Rounded.Dns, Palette.indigo),
+        G(Tidy.Kind.DELETE, "Copias que sobran", Icons.Rounded.DeleteSweep, Palette.danger),
+        G(Tidy.Kind.INFO, "Para tener en cuenta (no se cambia nada)", Icons.Rounded.Info, Palette.warn),
+    )
+    // Los grupos grandes empiezan plegados para que se vea el resumen de todo.
+    var open by remember(plan) { mutableStateOf(groups.filter { g -> plan.count { it.kind == g.kind } in 1..6 }.map { it.kind }.toSet()) }
+    val chosen = doable.filter { it.id in selected }
+    ReviewSheet("Ordenar juegos",
+        if (Tidy.running) Tidy.progress else "Así van a quedar. Los de Switch con su nombre oficial y su código. Nada se borra sin comprobar que es una copia exacta.",
+        onClose = { if (!Tidy.running) onClose() },
+        footer = {
+            if (Tidy.running) {
+                androidx.compose.material3.LinearProgressIndicator(Modifier.weight(1f))
+            } else {
+                Column(Modifier.weight(1f)) {
+                    Text("${chosen.size} de ${doable.size} cambios", fontWeight = FontWeight.Bold)
+                    val freed = chosen.filter { it.kind == Tidy.Kind.DELETE }.sumOf { it.size }
+                    if (freed > 0) Muted("Libera ${formatSize(freed)}")
                 }
-                items(plan, key = { it.id }) { it ->
-                    val (icon, color) = when (it.kind) {
-                        Tidy.Kind.EXTRACT -> Icons.Rounded.Unarchive to Palette.blue
-                        Tidy.Kind.MOVE, Tidy.Kind.RENAME_SERVER -> Icons.Rounded.DriveFileRenameOutline to Palette.ok
-                        Tidy.Kind.DELETE -> Icons.Rounded.DeleteSweep to MaterialTheme.colorScheme.error
-                        Tidy.Kind.INFO -> Icons.Rounded.Info to MaterialTheme.colorScheme.onSurfaceVariant
-                    }
-                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
-                        .clickable(enabled = it.kind != Tidy.Kind.INFO) { selected = if (it.id in selected) selected - it.id else selected + it.id }
-                        .padding(6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        if (it.kind != Tidy.Kind.INFO) androidx.compose.material3.Checkbox(it.id in selected,
-                            { c -> selected = if (c) selected + it.id else selected - it.id })
-                        Icon(icon, null, tint = color)
-                        Column(Modifier.weight(1f)) {
-                            Text(if (it.kind == Tidy.Kind.DELETE) "Borrar: " + it.from.substringAfterLast('/') else it.title,
-                                fontWeight = FontWeight.SemiBold)
-                            Muted((if (it.kind == Tidy.Kind.DELETE) "" else "${it.from.substringAfterLast('/')} → ") + it.note +
-                                " · " + formatSize(it.size))
-                        }
+                TextButton(onClick = { selected = if (selected.size == doable.size) emptySet() else doable.map { it.id }.toSet() }) {
+                    Text(if (selected.size == doable.size) "Desmarcar todo" else "Marcar todo")
+                }
+                BigActionButton("Ordenar (${chosen.size})", Icons.Rounded.AutoFixHigh, enabled = chosen.isNotEmpty()) {
+                    appScope.launch {
+                        val msg = Tidy.run(chosen)
+                        Sound.play(Sound.Fx.DONE)
+                        android.widget.Toast.makeText(ctx, msg, android.widget.Toast.LENGTH_LONG).show()
+                        onClose()
                     }
                 }
             }
         },
-        confirmButton = {
-            if (!Tidy.running) Button(enabled = selected.isNotEmpty(), onClick = {
-                val chosen = doable.filter { it.id in selected }
-                appScope.launch {
-                    val msg = Tidy.run(chosen)
-                    Sound.play(Sound.Fx.DONE)
-                    android.widget.Toast.makeText(ctx, msg, android.widget.Toast.LENGTH_LONG).show()
-                    onClose()
+    ) {
+        if (plan.isEmpty()) item { Muted("Nada que ordenar.") }
+        groups.forEach { grp ->
+            val list = plan.filter { it.kind == grp.kind }
+            if (list.isEmpty()) return@forEach
+            item(key = "g-${grp.kind}") {
+                SheetCard {
+                    val ids = list.map { it.id }
+                    val isOpen = grp.kind in open
+                    GroupHeader(grp.icon, grp.color, grp.title, "${list.size} · ${formatSize(list.sumOf { it.size })}",
+                        if (grp.kind == Tidy.Kind.INFO) null else toggleState(ids, selected), isOpen,
+                        onToggle = { selected = if (ids.all { it in selected }) selected - ids.toSet() else selected + ids },
+                        onExpand = { open = if (isOpen) open - grp.kind else open + grp.kind })
+                    if (isOpen) list.forEach { it ->
+                        CheckRow(if (it.kind == Tidy.Kind.INFO) null else it.id in selected,
+                            { selected = if (it.id in selected) selected - it.id else selected + it.id }) {
+                            Column {
+                                val before = it.from.substringAfterLast('/')
+                                if (it.kind == Tidy.Kind.DELETE) Text(before, fontWeight = FontWeight.SemiBold)
+                                else {
+                                    Text(it.title, fontWeight = FontWeight.SemiBold)
+                                    if (before != it.title) Muted("antes: $before")
+                                }
+                                Muted(it.note + " · " + formatSize(it.size))
+                            }
+                        }
+                    }
                 }
-            }) { Text("Ordenar (${selected.size})") }
-        },
-        dismissButton = { if (!Tidy.running) TextButton(onClick = onClose) { Text("Cerrar") } },
-    )
+            }
+        }
+    }
 }

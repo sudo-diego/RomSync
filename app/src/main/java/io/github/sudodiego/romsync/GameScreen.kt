@@ -168,7 +168,7 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
                             }
                         })
                     if (w.presence != Presence.MISSING || (w.presence != Presence.TABLET_ONLY && Prefs.configured))
-                        DropdownMenuItem(text = { Text("Borrar…", color = MaterialTheme.colorScheme.error) },
+                        DropdownMenuItem(text = { Text(if (w.presence == Presence.MISSING) "Borrar del servidor…" else "Borrar…", color = MaterialTheme.colorScheme.error) },
                             leadingIcon = { Icon(Icons.Rounded.Delete, null, tint = MaterialTheme.colorScheme.error) },
                             onClick = { menu = false; askDelete = true })
                 }
@@ -240,7 +240,7 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
                             }
                         }) { Text("Copiar al servidor · ${formatSize(g.size)}") }
                     }
-                    if ((w.presence != Presence.MISSING || Prefs.configured) && dl?.status != DlStatus.RUNNING) {
+                    if (w.presence != Presence.MISSING && dl?.status != DlStatus.RUNNING) {
                         // Sin nada para descargar, Borrar ocupa el lugar grande (igual que Descargar).
                         val alone = !(w.presence != Presence.INSTALLED && w.presence != Presence.TABLET_ONLY && toDownload.isNotEmpty()) &&
                             dl == null && !(w.presence == Presence.TABLET_ONLY && Prefs.configured && g.kind != "shortcut")
@@ -403,6 +403,7 @@ private fun GameSavesSection(g: Game) {
     var links by remember(g) { mutableStateOf<List<GameSaves.Link>?>(null) }
     var units by remember(g) { mutableStateOf<Map<String, Saves.Unit?>>(emptyMap()) }
     var restoreFor by remember { mutableStateOf<GameSaves.Link?>(null) }
+    var deleteFor by remember { mutableStateOf<Pair<GameSaves.Link, Saves.Unit>?>(null) }
     var reload by remember { mutableStateOf(0) }
     // Último respaldo en el servidor que trae este juego (por emulador); null = no se pudo ver (sin conexión).
     var lastBackup by remember(g) { mutableStateOf<Map<String, SaveBackupInfo?>?>(null) }
@@ -458,11 +459,38 @@ private fun GameSavesSection(g: Game) {
                         }
                     }) { Text("Respaldar en el servidor") }
                     OutlinedButton(enabled = busy == null && Prefs.configured, onClick = { restoreFor = l }) { Text("Restaurar…") }
+                    if (u != null) TextButton(enabled = busy == null, onClick = { Sound.play(Sound.Fx.WARN); deleteFor = l to u },
+                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) { Text("Borrar del dispositivo…") }
                 }
             }
         }
     }
     restoreFor?.let { l -> RestoreDialog(l.emu, onlyKey = l.key) { restoreFor = null; reload++ } }
+    deleteFor?.let { (l, u) ->
+        AlertDialog(
+            onDismissRequest = { deleteFor = null },
+            title = { Text("¿Borrar las partidas de ${g.title}?") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("De ${l.emu.name} en este dispositivo (${formatSize(u.bytes)}). El juego no se toca.")
+                    if (Prefs.configured) Text("Antes se respaldan en el servidor: las recuperas con Restaurar.", fontWeight = FontWeight.SemiBold)
+                    else Text("No hay servidor para respaldarlas: se pierden para siempre.", color = MaterialTheme.colorScheme.error,
+                        fontWeight = FontWeight.SemiBold)
+                }
+            },
+            confirmButton = {
+                Button(onClick = {
+                    deleteFor = null
+                    appScope.launch {
+                        val err = Saves.deleteUnit(ctx, l.emu, l.key)
+                        Toast.makeText(ctx, err ?: "Partidas borradas del dispositivo", Toast.LENGTH_LONG).show()
+                        reload++
+                    }
+                }, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) { Text("Borrar partidas") }
+            },
+            dismissButton = { TextButton(onClick = { deleteFor = null }) { Text("Cancelar") } },
+        )
+    }
 }
 
 /** Vita: el juego se instala DENTRO de Vita3K; el archivo de ROMs es solo el instalador o un acceso directo. */
@@ -718,12 +746,9 @@ private fun DeleteDialog(g: Game, w: Repo.Where, onClose: () -> Unit, onGone: ()
                 }
                 Card(Icons.Rounded.TabletAndroid, "Del dispositivo",
                     if (!onDevice) "No está en el dispositivo"
-                    else "Libera ${formatSize(w.localSize)}. Tus partidas se quedan." + if (onServer) " Lo vuelves a descargar cuando quieras." else "",
+                    else "Libera ${formatSize(w.localSize)}. Tus partidas se quedan (se borran aparte, en Partidas)." +
+                        if (onServer) " Lo vuelves a descargar cuando quieras." else "",
                     "Quitar", false, onDevice) { confirm = "dev" }
-                if (withSaves.isNotEmpty()) Card(Icons.Rounded.Save, "Sus partidas del dispositivo",
-                    withSaves.joinToString(" · ") { (l, u) -> "${l.emu.name}: ${formatSize(u.bytes)}" } +
-                        if (Prefs.configured) ". Se respaldan en el servidor antes de borrarlas." else ". Sin servidor: se pierden.",
-                    "Borrar partidas", !Prefs.configured, true) { confirm = "saves" }
                 if (Prefs.configured) {
                     Text("Servidor", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.error,
                         modifier = Modifier.padding(top = 6.dp))

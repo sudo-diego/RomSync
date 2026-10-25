@@ -34,7 +34,6 @@ private data class Junk(val file: FileEntry, val onPc: Boolean, val kind: String
 
 private val explain = mapOf(
     "Descarga a medias" to "Quedó de una descarga que no terminó (de otra app). Se puede borrar.",
-    "Archivo oculto de otra app" to "Archivos que empiezan con punto: los deja otra app y no son juegos.",
     "Copia vieja de una partida" to "Copias que hizo el emulador (\".SAV(1)\"). La partida de verdad es el .sav sin número: esa no aparece aquí.",
 )
 

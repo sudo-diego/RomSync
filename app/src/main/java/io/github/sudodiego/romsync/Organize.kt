@@ -1,5 +1,12 @@
 package io.github.sudodiego.romsync
 
+import androidx.compose.material.icons.rounded.CloudUpload
+import androidx.compose.material.icons.Icons
+import androidx.compose.foundation.border
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.width
 import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -133,7 +140,10 @@ private fun Step(n: Int, title: String, desc: String, count: Int, onOpen: () -> 
     }
 }
 
-/** Cada juego repetido con la versión recomendada; marcas las que sobran y se borran del PC y de la tablet. */
+/**
+ * Juegos repetidos: una tarjeta por juego, con su carátula, la versión recomendada destacada y dos atajos ("Dejar solo
+ * la recomendada", "Me quedo con todas"). Lo marcado se borra del servidor y del dispositivo; las partidas no.
+ */
 @Composable
 fun DuplicatesDialog(onClose: () -> Unit) {
     val ctx = LocalContext.current
@@ -149,7 +159,7 @@ fun DuplicatesDialog(onClose: () -> Unit) {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     chosen.take(8).forEach { Text("• ${it.name} · ${formatSize(it.size)}") }
                     if (chosen.size > 8) Muted("y ${chosen.size - 8} más")
-                    Text("Se borran del servidor y del dispositivo (libera ${formatSize(chosen.sumOf { it.size })} en el servidor).", fontWeight = FontWeight.SemiBold)
+                    Text("Se borran del servidor y del dispositivo (libera ${formatSize(chosen.sumOf { it.size })}).", fontWeight = FontWeight.SemiBold)
                     Muted("Las partidas no se borran.")
                 }
             },
@@ -174,89 +184,123 @@ fun DuplicatesDialog(onClose: () -> Unit) {
         )
         return
     }
-    AlertDialog(
-        onDismissRequest = onClose,
-        title = { Text("Juegos repetidos") },
-        text = {
-            LazyColumn(Modifier.fillMaxWidth().heightIn(max = 480.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                item { Muted("Marca las versiones que sobran, o toca «Me quedo con todas» si las quieres en tu colección (no se vuelve a preguntar).") }
-                if (groups.isEmpty()) item { Muted("Nada que revisar.") }
-                items(groups, key = { Repo.versionKey(it.first()) }) { vs ->
-                    val advice = remember(vs) { Advice.pick(vs) }
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        SpacedRow {
-                            Text("${Group.cleanTitle(vs.first().name).first} · ${Repo.system(vs.first().system).short}",
-                                Modifier.weight(1f), fontWeight = FontWeight.Bold)
-                            TextButton(onClick = {
-                                selected = selected - vs.map { it.id }.toSet()
-                                Organize.keepAll(Repo.versionKey(vs.first()))
-                            }) { Text("Me quedo con todas") }
-                        }
-                        advice?.let { (best, why) ->
-                            Text("Conviene quedarse con: ${best.name} ($why)", color = Palette.ok, style = MaterialTheme.typography.bodySmall)
-                        }
-                        vs.forEach { v ->
-                            val w = Repo.where(v)
-                            Row(Modifier.fillMaxWidth().clickable { selected = if (v.id in selected) selected - v.id else selected + v.id },
-                                verticalAlignment = Alignment.CenterVertically) {
-                                Checkbox(checked = v.id in selected, onCheckedChange = { selected = if (it) selected + v.id else selected - v.id })
-                                Column(Modifier.weight(1f)) {
-                                    Text(v.name, style = MaterialTheme.typography.bodyMedium)
-                                    Muted(listOfNotNull(Group.ext(v.primary).removePrefix(".").uppercase().ifEmpty { "Carpeta" }, formatSize(v.size),
-                                        when (w.presence) {
-                                            Presence.INSTALLED -> "en el dispositivo"
-                                            Presence.PARTIAL -> "a medias en el dispositivo"
-                                            Presence.TABLET_ONLY -> "solo en el dispositivo"
-                                            Presence.MISSING -> "solo en el servidor"
-                                        }, if (advice?.first?.id == v.id) "recomendada" else null).joinToString(" · "))
-                                }
+    ReviewSheet("Juegos repetidos", "El mismo juego en varias versiones. Marca las que sobran, o quédate con todas si las quieres en tu colección.",
+        onClose = onClose,
+        footer = {
+            Column(Modifier.weight(1f)) {
+                Text("${chosen.size} versión(es) para borrar", fontWeight = FontWeight.Bold)
+                if (chosen.isNotEmpty()) Muted("Libera ${formatSize(chosen.sumOf { it.size })}")
+            }
+            Button(enabled = chosen.isNotEmpty(), onClick = { confirm = true },
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) { Text("Borrar (${chosen.size})") }
+        },
+    ) {
+        if (groups.isEmpty()) item { Muted("Nada que revisar.") }
+        if (Tidy.plan.orEmpty().any { it.kind != Tidy.Kind.INFO }) item {
+            Text("Antes conviene «Juegos por ordenar»: varios de estos pueden ser descargas sin ordenar (comprimidos, nombres raros) y se arreglan solos.",
+                color = Palette.warn, fontWeight = FontWeight.SemiBold)
+        }
+        items(groups, key = { Repo.versionKey(it.first()) }) { vs ->
+            val advice = remember(vs) { Advice.pick(vs) }
+            val best = advice?.first ?: vs.first()
+            SheetCard {
+                Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Cover(best, Modifier.width(64.dp), showTitle = false)
+                    Column(Modifier.weight(1f)) {
+                        Text(Group.cleanTitle(vs.first().name).first, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                        Muted("${Repo.system(vs.first().system).name} · ${vs.size} versiones")
+                        advice?.let { (b, why) -> Text("Recomendada: ${versionName(b)} ($why)", color = Palette.ok, style = MaterialTheme.typography.bodySmall) }
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    androidx.compose.material3.FilledTonalButton(onClick = {
+                        selected = selected - vs.map { it.id }.toSet() + vs.filter { it.id != best.id }.map { it.id }
+                    }) { Text("Dejar solo la recomendada") }
+                    TextButton(onClick = {
+                        selected = selected - vs.map { it.id }.toSet()
+                        Organize.keepAll(Repo.versionKey(vs.first()))
+                    }) { Text("Me quedo con todas") }
+                }
+                vs.forEach { v ->
+                    val w = Repo.where(v)
+                    CheckRow(v.id in selected, { selected = if (v.id in selected) selected - v.id else selected + v.id }) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Column(Modifier.weight(1f)) {
+                                Text(versionName(v), fontWeight = if (v.id == best.id) FontWeight.Bold else FontWeight.Normal)
+                                Muted(v.name)
                             }
+                            if (v.id == best.id) Pill("Recomendada", Palette.ok)
+                            Pill(when (w.presence) {
+                                Presence.INSTALLED -> "En el dispositivo"
+                                Presence.PARTIAL -> "A medias"
+                                Presence.TABLET_ONLY -> "Solo en el dispositivo"
+                                Presence.MISSING -> "En el servidor"
+                            }, if (w.presence == Presence.MISSING) Palette.blue else Palette.warn.takeIf { w.presence == Presence.TABLET_ONLY } ?: Palette.ok)
                         }
                     }
                 }
             }
-        },
-        confirmButton = { Button(enabled = selected.isNotEmpty(), onClick = { confirm = true }) { Text("Borrar (${selected.size})") } },
-        dismissButton = { TextButton(onClick = onClose) { Text("Cerrar") } },
-    )
+        }
+    }
 }
 
-/** Los juegos que solo están en la tablet, para copiarlos todos al PC de una vez. */
+/** "USA · RVZ · 1,2 GB": región o etiqueta, formato y tamaño. */
+private fun versionName(v: Game) = listOfNotNull(
+    Names.get(v.id) ?: v.tags.firstOrNull { t -> t.any { it.isLetter() } && t.length <= 24 },
+    Group.ext(v.primary).removePrefix(".").uppercase().ifEmpty { "Carpeta" }, formatSize(v.size),
+).joinToString(" · ")
+
+/** Juegos sin copia en el servidor: carátulas en cuadrícula para marcar y copiar todo de una vez. */
 @Composable
 fun TabletOnlyDialog(onClose: () -> Unit) {
     val ctx = LocalContext.current
     val list = remember(Repo.tabletOnly) { Organize.tabletOnly() }
     var selected by remember(list) { mutableStateOf(list.map { it.id }.toSet()) }
-    AlertDialog(
-        onDismissRequest = onClose,
-        title = { Text("Juegos sin copia en el servidor") },
-        text = {
-            LazyColumn(Modifier.fillMaxWidth().heightIn(max = 460.dp)) {
-                item { Muted("Se copian a la misma carpeta en el servidor. El dispositivo no cambia.", Modifier.padding(bottom = 8.dp)) }
-                items(list, key = { it.id }) { g ->
-                    val up = PcEdit.uploading[g.id]
-                    Row(Modifier.fillMaxWidth().clickable { selected = if (g.id in selected) selected - g.id else selected + g.id },
-                        verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(checked = g.id in selected, onCheckedChange = { selected = if (it) selected + g.id else selected - g.id })
-                        Column(Modifier.weight(1f)) {
-                            Text(g.title, fontWeight = FontWeight.SemiBold)
-                            Muted("${Repo.system(g.system).short} · ${formatSize(g.size)}" + (up?.let { " · copiando ${formatSize(it)}" } ?: ""))
-                        }
-                    }
+    val chosen = list.filter { it.id in selected }
+    val busy = PcEdit.uploading.isNotEmpty()
+    ReviewSheet("Sin copia en el servidor", "Solo están en este dispositivo: si se pierde o se borra, se pierden. Se copian a la misma carpeta en el servidor; aquí no cambia nada.",
+        onClose = onClose,
+        footer = {
+            Column(Modifier.weight(1f)) {
+                Text("${chosen.size} juego(s) · ${formatSize(chosen.sumOf { it.size })}", fontWeight = FontWeight.Bold)
+                if (busy) Muted("Copiando…")
+            }
+            BigActionButton("Copiar al servidor", Icons.Rounded.CloudUpload, enabled = chosen.isNotEmpty() && !busy && Prefs.configured) {
+                appScope.launch {
+                    var fails = 0
+                    for (g in chosen) runCatching { PcEdit.uploadFromTablet(g) }.onFailure { fails++ }
+                    Sound.play(Sound.Fx.DONE)
+                    Toast.makeText(ctx, if (fails == 0) "Listo: ${chosen.size} juego(s) copiados al servidor" else "$fails no se pudieron copiar", Toast.LENGTH_LONG).show()
+                    Repo.refresh()
                 }
             }
         },
-        confirmButton = {
-            Button(enabled = selected.isNotEmpty() && PcEdit.uploading.isEmpty(), onClick = {
-                val todo = list.filter { it.id in selected }
-                appScope.launch {
-                    var fails = 0
-                    for (g in todo) runCatching { PcEdit.uploadFromTablet(g) }.onFailure { fails++ }
-                    Toast.makeText(ctx, if (fails == 0) "Listo: ${todo.size} juego(s) copiados al servidor" else "$fails no se pudieron copiar", Toast.LENGTH_LONG).show()
-                    Repo.refresh()
+    ) {
+        if (list.isEmpty()) item { Muted("Todo tiene copia en el servidor.") }
+        if (Tidy.plan.orEmpty().any { it.kind != Tidy.Kind.INFO }) item {
+            Text("Antes conviene «Juegos por ordenar»: varios de estos pueden ser descargas sin ordenar (comprimidos, nombres raros) y se arreglan solos.",
+                color = Palette.warn, fontWeight = FontWeight.SemiBold)
+        }
+        // De a 4 por fila: carátula, nombre, plataforma y tamaño; tocar marca o desmarca.
+        items(list.chunked(4), key = { it.first().id }) { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                row.forEach { g ->
+                    val on = g.id in selected
+                    val up = PcEdit.uploading[g.id]
+                    Column(Modifier.weight(1f).clip(RoundedCornerShape(18.dp))
+                        .clickable { selected = if (on) selected - g.id else selected + g.id }.padding(4.dp)) {
+                        Box {
+                            Cover(g, Modifier.fillMaxWidth().then(if (on) Modifier.border(3.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(14.dp)) else Modifier))
+                            Checkbox(on, { selected = if (it) selected + g.id else selected - g.id }, Modifier.align(Alignment.TopEnd))
+                        }
+                        Text(g.title, fontWeight = FontWeight.SemiBold, maxLines = 2, modifier = Modifier.padding(top = 6.dp))
+                        Muted("${Repo.system(g.system).short} · ${formatSize(g.size)}")
+                        if (up != null) androidx.compose.material3.LinearProgressIndicator(
+                            progress = { up.toFloat() / g.size.coerceAtLeast(1) }, Modifier.fillMaxWidth().padding(top = 4.dp))
+                    }
                 }
-            }) { Text("Copiar al servidor (${formatSize(list.filter { it.id in selected }.sumOf { it.size })})") }
-        },
-        dismissButton = { TextButton(onClick = onClose) { Text("Cerrar") } },
-    )
+                repeat(4 - row.size) { Box(Modifier.weight(1f)) }
+            }
+        }
+    }
 }

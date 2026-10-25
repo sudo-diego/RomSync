@@ -198,17 +198,15 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
                 rotationZ = (1f - k) * -4f
             }.notForDpad().softShadow(18.dp, 16.dp).clip(RoundedCornerShape(18.dp)).pressable { Sound.play(Sound.Fx.OPEN); editing = true }) {
                 Cover(g, Modifier.fillMaxWidth()) {
-                    // Estilo 3DS: si llegó envuelto, se desenvuelve al abrir la ficha.
-                    if (g.id in DownloadArt.gifts) {
-                        // Primero se ve envolverse (si recién terminó), una pausa y recién ahí se abre.
-                        var opening by remember(g.id) { mutableStateOf(false) }
-                        GiftBox(g, Modifier.fillMaxSize(), opening = opening)
-                        LaunchedEffect(g.id) {
-                            kotlinx.coroutines.delay(if (g.id in DownloadArt.wrappedSeen) 500 else 1800)
-                            opening = true
-                            kotlinx.coroutines.delay(750); DownloadArt.unwrap(g.id)
-                        }
-                    } else DownloadOverlay(g, sound = true)
+                    // Un solo dibujo para todo (descarga, final y regalo), así al terminar no se corta nada.
+                    // Estilo 3DS: si hay regalo, primero termina de envolverse, una pausa y recién ahí se abre.
+                    var opening by remember(g.id) { mutableStateOf(false) }
+                    DownloadOverlay(g, sound = true, opening = opening)
+                    if (g.id in DownloadArt.gifts) LaunchedEffect(g.id) {
+                        kotlinx.coroutines.delay(DownloadArt.untilWrapped(g.id) + 500)
+                        opening = true
+                        kotlinx.coroutines.delay(750); DownloadArt.unwrap(g.id)
+                    }
                 }
                 Icon(Icons.Rounded.Edit, "Editar", Modifier.align(Alignment.TopEnd).padding(8.dp).size(34.dp)
                     .clip(RoundedCornerShape(99.dp)).background(Color(0xAA000000)).padding(7.dp), tint = Color.White)

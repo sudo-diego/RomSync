@@ -65,7 +65,12 @@ class SftpConn private constructor(private val session: Session, val ch: Channel
                 s.disconnect()
                 throw IOException("El servidor no ofrece SFTP: ${e.message}", e)
             }
-            return SftpConn(s, ch, fp)
+            return SftpConn(s, ch, fp).also { it.cleanParts() }
+        }
+
+        private val partsLock = Any()
+        private fun notePart(path: String, on: Boolean) = synchronized(partsLock) {
+            runCatching { Prefs.pendingParts = if (on) Prefs.pendingParts + path else Prefs.pendingParts - path }
         }
 
         private fun explain(e: JSchException): String {
@@ -201,20 +206,31 @@ class SftpConn private constructor(private val session: Session, val ch: Channel
         }
     }
 
+    /**
+     * Los .part que quedaron de una subida cortada (se cayó la conexión o se cerró la app y no se alcanzaron a borrar):
+     * se borran apenas se vuelve a conectar, así no quedan sobrando en el PC.
+     */
+    fun cleanParts() {
+        val pending = runCatching { Prefs.pendingParts }.getOrDefault(emptySet())
+        for (p in pending) if (runCatching { if (stat(p) != null) ch.rm(p) }.isSuccess) notePart(p, false)
+    }
+
     /** Escribe un archivo: primero a .part y al final se renombra (un corte no deja un archivo roto). */
     fun upload(path: String, write: (OutputStream) -> Unit) {
         mkdirs(path.substringBeforeLast('/'))
         val tmp = "$path.part"
+        notePart(tmp, true)
         try {
             ch.put(tmp, ChannelSftp.OVERWRITE).use(write)
             if (stat(path) != null) ch.rm(path)
             ch.rename(tmp, path)
+            notePart(tmp, false)
         } catch (e: SftpException) {
-            runCatching { ch.rm(tmp) }
+            if (runCatching { ch.rm(tmp) }.isSuccess) notePart(tmp, false)
             throw IOException("No se pudo guardar en el servidor: ${e.message}", e)
         } catch (e: Exception) {
             // Cancelado (o cualquier otro corte): no queda un .part a medias en el servidor.
-            runCatching { ch.rm(tmp) }
+            if (runCatching { ch.rm(tmp) }.isSuccess) notePart(tmp, false)
             throw e
         }
     }
@@ -227,6 +243,7 @@ class SftpConn private constructor(private val session: Session, val ch: Channel
     fun uploadFrom(path: String, input: InputStream, progress: (Long) -> Boolean) {
         mkdirs(path.substringBeforeLast('/'))
         val tmp = "$path.part"
+        notePart(tmp, true)
         var done = 0L
         var stopped = false
         val monitor = object : com.jcraft.jsch.SftpProgressMonitor {
@@ -243,11 +260,12 @@ class SftpConn private constructor(private val session: Session, val ch: Channel
             if (stopped) throw java.io.InterruptedIOException("Cancelado")
             if (stat(path) != null) ch.rm(path)
             ch.rename(tmp, path)
+            notePart(tmp, false)
         } catch (e: SftpException) {
-            runCatching { ch.rm(tmp) }
+            if (runCatching { ch.rm(tmp) }.isSuccess) notePart(tmp, false)
             throw IOException("No se pudo guardar en el servidor: ${e.message}", e)
         } catch (e: Exception) {
-            runCatching { ch.rm(tmp) }
+            if (runCatching { ch.rm(tmp) }.isSuccess) notePart(tmp, false)
             throw e
         }
     }

@@ -65,10 +65,20 @@ object DownloadArt {
         private set
 
     fun init() { style = Prefs.dlStyle; gifts = Prefs.gifts }
-    fun wrap(id: String) { if (style == "3ds") { gifts = gifts + id; Prefs.gifts = gifts } }
+    fun wrap(id: String) { if (style == "3ds") { doneAt[id] = now(); gifts = gifts + id; Prefs.gifts = gifts } }
     fun unwrap(id: String) { if (id in gifts) { gifts = gifts - id; Prefs.gifts = gifts } }
-    /** Regalos que ya se vieron envolverse (la animación de envolver es una vez, no cada vez que aparece la carátula). */
-    val wrappedSeen = HashSet<String>()
+
+    /*
+     * El final en estilo 3DS sigue un reloj común (no el de cada dibujo: al terminar, la ficha y Descargas se reacomodan
+     * y la animación se cortaba): desde [doneAt] caen los cubitos que faltan y el ícono se llena ([FINISH]); después se
+     * envuelve el regalo ([WRAP]).
+     */
+    val doneAt = HashMap<String, Long>()
+    const val FINISH = 1700L
+    const val WRAP = 1100L
+    fun now() = android.os.SystemClock.uptimeMillis()
+    /** Cuánto falta para que el regalo quede envuelto (0 si ya está o si no se vio terminar). */
+    fun untilWrapped(id: String) = doneAt[id]?.let { maxOf(0L, it + FINISH + WRAP - now()) } ?: 0L
 
     /** Avance actual de un juego (descarga o subida), o null si no se está moviendo nada. */
     fun progressOf(g: Game): Pair<Float, Boolean>? {
@@ -80,17 +90,27 @@ object DownloadArt {
 
 /** La capa que va encima de la carátula mientras se mueve el juego (o el regalo, si recién terminó en estilo 3DS). */
 @Composable
-fun DownloadOverlay(g: Game, modifier: Modifier = Modifier, sound: Boolean = false) {
+fun DownloadOverlay(g: Game, modifier: Modifier = Modifier, sound: Boolean = false, opening: Boolean = false) {
     val p = DownloadArt.progressOf(g)
     val gift = g.id in DownloadArt.gifts
+    // Recién terminado: mientras caen los últimos cubitos sigue la misma animación (sin cortarla).
+    var finishing by remember(g.id) { mutableStateOf(false) }
+    LaunchedEffect(gift, p == null) {
+        val t0 = DownloadArt.doneAt[g.id]
+        if (!gift || p != null || t0 == null) { finishing = false; return@LaunchedEffect }
+        val left = t0 + DownloadArt.FINISH - DownloadArt.now()
+        if (left > 0) { finishing = true; kotlinx.coroutines.delay(left) }
+        finishing = false
+    }
     if (p == null && !gift) return
     val shown by animateFloatAsState(p?.first ?: 1f,
         androidx.compose.animation.core.spring(stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow), label = "avance")
     val upload = p?.second == true
     Box(modifier.fillMaxSize()) {
         when {
-            p == null -> GiftBox(g, Modifier.fillMaxSize())
-            DownloadArt.style == "3ds" -> ThreeDsFill(g, shown, upload, Modifier.fillMaxSize(), sound)
+            DownloadArt.style == "3ds" && (p != null || finishing) ->
+                ThreeDsFill(g, if (p != null) shown else 1f, upload, Modifier.fillMaxSize(), sound, finishing = p == null)
+            p == null -> GiftBox(g, Modifier.fillMaxSize(), opening)
             DownloadArt.style == "switch" -> SwitchBar(shown, upload, Modifier.fillMaxSize())
             else -> ClassicRing(shown, upload, Modifier.fillMaxSize())
         }
@@ -123,7 +143,7 @@ private fun SwitchBar(p: Float, upload: Boolean, modifier: Modifier) {
 
 /** Tiempos de una tanda de 4 bloques (ms): salen con 240 ms de diferencia, viajan por el riel y caen; luego una pausa. */
 private const val CYCLE = 2800L
-private const val GAP = 240L
+private const val GAP = 140L // como en la eShop: caen seguidos, uno cada ~0,13 s
 private const val TRAVEL = 900L
 private const val FALL = 300L
 
@@ -162,7 +182,7 @@ private fun IconTile(side: androidx.compose.ui.unit.Dp, modifier: Modifier = Mod
  * suena al empezar a moverse (solo si [sound]). El ícono se revela de abajo hacia arriba con el avance.
  */
 @Composable
-private fun ThreeDsFill(g: Game, p: Float, upload: Boolean, modifier: Modifier, sound: Boolean) {
+private fun ThreeDsFill(g: Game, p: Float, upload: Boolean, modifier: Modifier, sound: Boolean, finishing: Boolean = false) {
     // Reloj: tanda actual y milisegundos dentro de ella.
     var clock by remember { mutableStateOf(0L) }
     LaunchedEffect(Unit) {
@@ -174,17 +194,24 @@ private fun ThreeDsFill(g: Game, p: Float, upload: Boolean, modifier: Modifier, 
     val fromRight = java.util.Random(batch * 7919 + g.id.hashCode()).nextBoolean()
     // Como en la 3DS, el ícono se rellena cuando cae cada cubito (por tandas, no de a poco): cada caída deja ver lo
     // que se bajó hasta ese momento. Los sonidos van con lo que se ve: el riel al empezar la tanda y uno por cubito.
+    // Al terminar ya no llegan tandas nuevas: solo terminan de caer los de la tanda en curso.
+    var lastBatchShown by remember { mutableStateOf(Long.MAX_VALUE) }
+    if (finishing && lastBatchShown == Long.MAX_VALUE) lastBatchShown = batch
+    if (!finishing) lastBatchShown = Long.MAX_VALUE
+    val live = batch <= lastBatchShown
     val drops = batch * 4 + (0 until 4).count { k -> inBatch - k * GAP >= TRAVEL + FALL }
     var lastDrops by remember { mutableStateOf(-1L) }
     var shownFill by remember { mutableStateOf(p) }
     var lastBatch by remember { mutableStateOf(-1L) }
     if (drops != lastDrops) {
-        if (lastDrops >= 0) { shownFill = p; if (sound) Sound.play(Sound.Fx.CUBE) } // al bajar cae uno; al subir sale uno
+        if (lastDrops >= 0 && live) { shownFill = p; if (sound) Sound.play(if (drops % 2 == 0L) Sound.Fx.CUBE else Sound.Fx.CUBE2) } // al bajar cae uno; al subir sale uno
         lastDrops = drops
     }
-    if (batch != lastBatch) { if (lastBatch >= 0 && sound) Sound.play(Sound.Fx.RAIL); lastBatch = batch }
-    if (p >= 0.999f) shownFill = 1f
-    val fill = if (upload) p else shownFill
+    if (batch != lastBatch) { if (lastBatch >= 0 && sound && live) Sound.play(Sound.Fx.RAIL); lastBatch = batch }
+    // El llenado avanza a saltos cortos (cada cubito); al terminar sube suave hasta lleno.
+    val target = if (finishing || p >= 0.999f) 1f else shownFill
+    val stepped by animateFloatAsState(target, if (finishing) tween(900) else tween(220), label = "llenado")
+    val fill = if (upload) p else stepped
     BoxWithConstraints(modifier.background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color(0xFFF2F9FF), Color(0xFFD6ECFF))))) {
         val side = minOf(maxWidth, maxHeight) * 0.5f
         val sidePx = with(androidx.compose.ui.platform.LocalDensity.current) { side.toPx() }
@@ -195,6 +222,7 @@ private fun ThreeDsFill(g: Game, p: Float, upload: Boolean, modifier: Modifier, 
             val cx = size.width / 2 - cube / 2
             val tileTop = size.height / 2 - sidePx * 0.54f
             for (k in 0 until 4) {
+                if (!live) break
                 var t = inBatch - k * GAP
                 if (t < 0) continue
                 if (upload) t = TRAVEL + FALL - t
@@ -242,10 +270,18 @@ private fun Modifier.drawWithClipBottom(p: Float) = this.then(Modifier.drawWithC
  */
 @Composable
 fun GiftBox(g: Game, modifier: Modifier, opening: Boolean = false) {
-    val first = remember(g.id) { g.id !in DownloadArt.wrappedSeen }
-    val wrap = remember(g.id) { Animatable(if (first) 0f else 1f) }
+    // El envoltorio sigue el reloj común: si este dibujo aparece a mitad (la pantalla se reacomodó), sigue desde ahí.
+    val start = DownloadArt.doneAt[g.id]?.plus(DownloadArt.FINISH)
+    val wrap = remember(g.id) {
+        Animatable(if (start == null) 1f else ((DownloadArt.now() - start).toFloat() / DownloadArt.WRAP).coerceIn(0f, 1f))
+    }
     val open = remember { Animatable(0f) }
-    LaunchedEffect(g.id) { if (first) { DownloadArt.wrappedSeen += g.id; wrap.animateTo(1f, tween(1100)) } }
+    LaunchedEffect(g.id) {
+        if (start == null || wrap.value >= 1f) return@LaunchedEffect
+        val wait = start - DownloadArt.now()
+        if (wait > 0) kotlinx.coroutines.delay(wait)
+        wrap.animateTo(1f, tween(((1f - wrap.value) * DownloadArt.WRAP).toInt().coerceAtLeast(1), easing = androidx.compose.animation.core.LinearEasing))
+    }
     LaunchedEffect(opening) { if (opening) open.animateTo(1f, tween(700)) }
     val accent = Color(UiState.accent)
     val paper = androidx.compose.ui.graphics.lerp(accent, Color(0xFFFF4D8D), 0.35f)

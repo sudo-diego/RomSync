@@ -129,6 +129,10 @@ object Prefs {
     var dlStyle: String
         get() = sp.getString("dlStyle", "clasico") ?: "clasico"
         set(v) = sp.edit().putString("dlStyle", v).apply()
+    /** Archivos .part que se están escribiendo en el servidor (si la conexión se corta, se borran al volver a conectar). */
+    var pendingParts: Set<String>
+        get() = sp.getStringSet("pendingParts", emptySet()) ?: emptySet()
+        set(v) = sp.edit().putStringSet("pendingParts", v).apply()
     var gifts: Set<String>
         get() = sp.getStringSet("gifts", emptySet()) ?: emptySet()
         set(v) = sp.edit().putStringSet("gifts", v).apply()

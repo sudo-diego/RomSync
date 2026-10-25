@@ -245,19 +245,20 @@ def sfx():
         start = int(.36*SR); j = j + [0.0]*max(0, start + len(chord) - len(j))
         for i, v in enumerate(chord): j[start + i] += v
         save('jingle', j, .6)
-        # 3DS: cubito que cae. Un "pop" redondo y suave al estilo Nintendo (antes era un golpe seco): un tono que sube
-        # rápido de altura, con un armónico suave y una cola corta.
-        n = int(.16*SR); cubo = []
-        base = {'clasico': 520, 'suave': 440, 'retro': 600}.get(kind, 520)
-        ph = 0.0
-        for i in range(n):
-            t = i/SR
-            f = base * (1 + 0.9*(1 - math.exp(-t*55)))
-            ph += TAU*f/SR
-            env = (1 - math.exp(-t*900)) * math.exp(-t*22)
-            v = math.sin(ph) + 0.25*math.sin(2*ph) + (0.18*math.sin(3*ph) if kind == 'retro' else 0)
-            cubo.append(v*env)
-        save('cubo', cubo, .55)
+        # 3DS: cubitos que caen. Medido en la grabación de la eShop (segundos 30,7 a 31,6): tics cortos y brillantes,
+        # como de xilófono, que alternan dos notas a una cuarta (~1230 y ~1660 Hz) y se apagan en ~40 ms.
+        def tic(f, n=int(.09*SR)):
+            out = []
+            for i in range(n):
+                t = i/SR
+                env = (1 - math.exp(-t*2500)) * math.exp(-t*(55 if kind != 'suave' else 40))
+                v = math.sin(TAU*f*t) + 0.18*math.sin(TAU*2*f*t)*math.exp(-t*90)
+                if kind == 'retro': v = (1 if math.sin(TAU*f*t) > 0 else -1)*0.5 + 0.5*v
+                out.append(v*env)
+            return out
+        cubo, cubo2 = tic(1230), tic(1660)
+        save('cubo', cubo, .5)
+        save('cubo2', cubo2, .5)
         riel = [0.0]*int(.22*SR)
         for k in range(3):
             for i in range(int(.025*SR)):

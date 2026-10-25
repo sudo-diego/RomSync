@@ -512,9 +512,15 @@ private fun Modifier.gridNav(idx: Int, games: List<Game>): Modifier {
         val target = games.getOrNull(to.coerceAtMost(games.size - 1)) ?: return@onPreviewKeyEvent true
         if (down && idx / cols == (games.size - 1) / cols) return@onPreviewKeyEvent true // última fila
         StoreState.focusTarget = "juego:${target.id}"
-        // Que la fila de destino esté en pantalla (si no, su carátula no existe todavía).
-        val itemIndex = li.visibleItemsInfo.firstOrNull { it.key == games[idx].id }?.index?.let { it + (to - idx) }
-        if (itemIndex != null) scope.launch { StoreState.grid.animateScrollToItem(maxOf(0, itemIndex - cols)) }
+        // Desplazar solo lo justo para que la fila de destino se vea entera (antes saltaba una fila de más y se
+        // redibujaban las carátulas); si ya se ve, nada.
+        val info = li.visibleItemsInfo.firstOrNull { it.key == target.id }
+        val top = li.viewportStartOffset + 24; val bottom = li.viewportEndOffset - 24
+        if (info == null) {
+            val itemIndex = li.visibleItemsInfo.firstOrNull { it.key == games[idx].id }?.index?.let { it + (to - idx) }
+            if (itemIndex != null) scope.launch { StoreState.grid.animateScrollToItem(maxOf(0, itemIndex)) }
+        } else if (info.offset.y < top) scope.launch { StoreState.grid.animateScrollBy((info.offset.y - top).toFloat()) }
+        else if (info.offset.y + info.size.height > bottom) scope.launch { StoreState.grid.animateScrollBy((info.offset.y + info.size.height - bottom).toFloat()) }
         Sound.play(Sound.Fx.MOVE)
         true
     }

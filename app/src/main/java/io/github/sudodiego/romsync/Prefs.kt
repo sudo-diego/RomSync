@@ -132,6 +132,10 @@ object Prefs {
     var gifts: Set<String>
         get() = sp.getStringSet("gifts", emptySet()) ?: emptySet()
         set(v) = sp.edit().putStringSet("gifts", v).apply()
+    /** Cómo se abre una ficha: "zoom", "derecha", "abajo" o "ninguna". */
+    var openAnim: String
+        get() = sp.getString("openAnim", "zoom") ?: "zoom"
+        set(v) = sp.edit().putString("openAnim", v).apply()
     var fullscreen: Boolean
         get() = sp.getBoolean("fullscreen", false)
         set(v) = sp.edit().putBoolean("fullscreen", v).apply()

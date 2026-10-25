@@ -565,6 +565,7 @@ private fun LookControls() {
             Sound.play(Sound.Fx.TOGGLE); UiState.fullscreen = it; Prefs.fullscreen = it
         })
     }
+    OptionRow("Al abrir una ficha", UiState.openAnims.toList(), UiState.openAnim) { UiState.openAnim = it; Prefs.openAnim = it }
     OptionRow("Animación de descarga", DownloadArt.styles.toList(), DownloadArt.style) { DownloadArt.style = it; Prefs.dlStyle = it }
     Muted(when (DownloadArt.style) {
         "3ds" -> "Bloques que llenan el cubo del ícono y, al terminar, un regalo que se abre al entrar al juego."

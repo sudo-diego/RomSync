@@ -68,6 +68,9 @@ object UiState {
     var accent by mutableStateOf(0xFFFF7A1AL)
     /** Fondo animado: "burbujas", "ondas" o "ninguno". */
     var background by mutableStateOf("burbujas")
+    /** Cómo se abre una ficha (ver [openAnims]). */
+    var openAnim by mutableStateOf("zoom")
+    val openAnims = linkedMapOf("zoom" to "Acercar", "derecha" to "Desde el lado", "abajo" to "Desde abajo", "ninguna" to "Ninguna")
     /** Pantalla completa: sin la barra de arriba ni los botones de Android (se ven deslizando desde el borde). */
     var fullscreen by mutableStateOf(false)
     /** Juegos como carátulas (eShop) o como íconos cuadrados (menú de Wii U). */

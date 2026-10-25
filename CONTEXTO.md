@@ -39,12 +39,15 @@ neutro en la app y en las respuestas (sin voseo ni modismos).
     (se despliega); panel plegado → se despliega; panel desplegado → cierra la app. Derecha desde el panel vuelve a lo
     último elegido de la sección (`Nav.lastFocus`, lo anota `focusHighlight`); A en el panel entra a la sección y el foco
     va a su primer elemento (`Nav.enter` + `focusWhen("entrada:TAB")`; Tienda: carrusel; si no hay nada, queda en el panel).
+  - Animación al abrir una ficha elegible en Ajustes (Acercar, Desde el lado, Desde abajo, Ninguna; `UiState.openAnim`),
+    sin animar el tamaño (`using null`: si no, la ficha crecía desde arriba a la izquierda).
   - La ficha se abre ENCIMA de la sección, que sigue viva debajo (invisible y fuera del mando): al volver todo está igual.
     Mientras cambia de pantalla el panel no acepta el foco (`Nav.switching`), así no se "pasa" por él.
   - Cada pantalla es un grupo (`Modifier.screenFocus`): la cruceta no sale por arriba/abajo/derecha (nunca cae en el botón
     del panel, que es solo táctil) y, si no hay más elementos en esa dirección, la lista se desplaza hasta el final o el
     principio (se ve el encabezado y lo último, como Shizuku en Ajustes).
-  - Cuadrícula de la Tienda: arriba/abajo van al de la misma columna (`gridNav`); el título dice plataforma y/o filtro.
+  - Cuadrícula de la Tienda: arriba/abajo van al de la misma columna (`gridNav`) y desplaza solo lo justo (saltar una fila de más
+    redibujaba las carátulas); el título dice plataforma y/o filtro.
   - Carrusel: un solo elemento (izquierda/derecha cambian de página); A abre al SOLTAR (si no, el mismo A apretaba
     Descargar en la ficha). Al empezar una descarga el foco pasa a Pausar.
   - Guía de botones por pantalla (`PadHints`, una pila: la ficha encima de la sección), solo con mando (`Nav.pad`).

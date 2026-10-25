@@ -1,5 +1,8 @@
 package io.github.sudodiego.romsync
 
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideInHorizontally
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.focus.focusProperties
@@ -229,6 +232,7 @@ class MainActivity : ComponentActivity() {
         UiState.background = Prefs.background
         UiState.icons = Prefs.icons
         UiState.fullscreen = Prefs.fullscreen
+        UiState.openAnim = Prefs.openAnim
         DownloadArt.init()
         // Mando conectado o desconectado: se revisa al abrir y cada vez que cambia.
         Nav.checkPad()
@@ -586,8 +590,18 @@ private fun TabContent() {
         // La ficha encima (de una ficha se puede pasar a otra: cada una entra con su animación).
         AnimatedContent(
             targetState = Nav.game?.id,
-            transitionSpec = { (fadeIn(tween(260)) + scaleIn(tween(300), initialScale = 0.97f)) togetherWith
-                (fadeOut(tween(160)) + scaleOut(tween(200), targetScale = 0.98f)) },
+            // Sin animar el tamaño (sin esto la ficha "crecía" desde arriba a la izquierda) y con el estilo elegido.
+            transitionSpec = {
+                when (UiState.openAnim) {
+                    "derecha" -> (fadeIn(tween(220)) + slideInHorizontally(tween(320)) { it / 6 }) togetherWith
+                        (fadeOut(tween(180)) + slideOutHorizontally(tween(260)) { it / 6 })
+                    "abajo" -> (fadeIn(tween(220)) + slideInVertically(tween(320)) { it / 8 }) togetherWith
+                        (fadeOut(tween(180)) + slideOutVertically(tween(260)) { it / 8 })
+                    "ninguna" -> fadeIn(tween(90)) togetherWith fadeOut(tween(90))
+                    else -> (fadeIn(tween(240)) + scaleIn(tween(300), initialScale = 0.94f)) togetherWith
+                        (fadeOut(tween(160)) + scaleOut(tween(200), targetScale = 0.96f))
+                } using null
+            },
             label = "ficha",
         ) { id ->
             val game = id?.let { Nav.game?.takeIf { g -> g.id == it } ?: Repo.game(it) }

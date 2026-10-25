@@ -29,10 +29,16 @@ neutro en la app y en las respuestas (sin voseo ni modismos).
 
 ## Cómo funciona (por pantalla)
 
-- **Mando** (`MainActivity.dispatchKeyEvent`, `StoreState.onPadButton`): L1/R1 cambian de sección; en la Tienda L2/R2
-  filtros, Y carátulas/íconos, X buscar, Start orden, Select actualizar. Con mando conectado (`Nav.pad`, detectado con
-  InputManager) esos controles salen del recorrido de la cruceta (`notForDpad`) y muestran su botón (`PadHint`). Al abrir
-  una ficha con mando el foco cae en Descargar. Sin "estiramiento" al pasar el borde del scroll en toda la app.
+- **Mando** (`MainActivity`, `StoreState.onPadButton`, `Components.kt`): como en Switch/Steam Deck. Barra de botones abajo
+  a la derecha (`PadBar`, cada pantalla pone los suyos con `PadHints`), solo con mando conectado (`Nav.pad`, InputManager);
+  los nombres se adaptan al mando que se usa (`Nav.padStyle`: PlayStation ✕○□△ L1/R1 L2/R2 Create/Options; Xbox/GameSir
+  A B X Y LB/RB LT/RT View/Menu). L/R cambian de sección; ZL/ZR filtros de la Tienda (también como gatillos analógicos,
+  `dispatchGenericMotionEvent`); X buscar, Y vista, − actualizar, + orden; B quita filtros/plataforma. Lo enfocado queda
+  centrado (`CenteredFocus`, `LocalBringIntoViewSpec`); al volver de una ficha con B el foco vuelve a su carátula
+  (`StoreState.returnTo`, listas con estado guardado). Los controles que se usan con botones salen de la cruceta solo
+  mientras se usa mando (`notForDpad` con `Nav.keys`; al tocar la pantalla vuelven).
+- Sombras: dibujadas como parte del contenido (`Modifier.softShadow`), no las del sistema: las del sistema no se
+  desvanecen con las transiciones de pantalla y "saltaban". Las carátulas animan su aparición solo la primera vez.
 - **Tienda** (`StoreScreen.kt`): carrusel de destacados (al azar por apertura; la cruceta cambia de página y el foco va
   con ella), plataformas (tarjeta con el ícono del emulador elegido para esa plataforma; se cambia manteniendo
   presionado o con el chip al filtrar), "En tu dispositivo", "Para descargar" en tiles anchos (fondo + logo) y un solo
@@ -139,7 +145,12 @@ neutro en la app y en las respuestas (sin voseo ni modismos).
   los encabezados de los RAR del servidor por SFTP y propone borrarlos si lo de adentro ya está suelto e idéntico.
 - Mensajes sin sentido: "las partidas no se borran" al borrar una copia sin partidas; "antes:" en consejos que no
   cambian nada; DLC con ícono "i" cuando titledb aún no sabe cuántos existen.
-- El botón del panel lateral cerraba la ficha en vez de abrir el panel.
+- El botón del panel lateral cerraba la ficha en vez de abrir el panel (y dentro de la ficha el panel no se podía abrir).
+- Guías de botones con nombres de Nintendo para un mando de PlayStation y un GameSir → según el mando.
+- Con mando conectado no se podía tocar el buscador, y al escribir perdía el foco → solo fuera de la cruceta con mando,
+  y activo mientras se usa.
+- "Sin respaldo" como advertencia en juegos sin partidas → "Todavía no hay partidas que respaldar".
+- Pantalla completa dejaba un hueco arriba (se reservaba el espacio de las barras ocultas).
 
 ## Pendiente / ideas
 

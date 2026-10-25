@@ -136,6 +136,7 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
     else w.missing
     val downloadSize = toDownload.sumOf { it.size }
 
+    PadHints(listOf("A" to "Elegir", "B" to "Volver", "L R" to "Sección"))
     val scroll = rememberScrollState()
     val enter = remember(g.id) { Animatable(0f) }
     LaunchedEffect(g.id) { enter.animateTo(1f, spring(dampingRatio = 0.75f, stiffness = 260f)) }
@@ -197,15 +198,18 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
                 val k = enter.value.coerceIn(0f, 1f)
                 alpha = k; translationY = (1f - k) * 80f
                 rotationZ = (1f - k) * -4f
-                shadowElevation = 16.dp.toPx() * k * k
-                shape = RoundedCornerShape(18.dp); clip = true
-                compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.ModulateAlpha
-            }.focusHighlight().clip(RoundedCornerShape(18.dp)).pressable { Sound.play(Sound.Fx.OPEN); editing = true }) {
+            }.focusHighlight().softShadow(18.dp, 16.dp).clip(RoundedCornerShape(18.dp)).pressable { Sound.play(Sound.Fx.OPEN); editing = true }) {
                 Cover(g, Modifier.fillMaxWidth()) {
                     // Estilo 3DS: si llegó envuelto, se desenvuelve al abrir la ficha.
                     if (g.id in DownloadArt.gifts) {
-                        GiftBox(Modifier.fillMaxSize(), opening = true)
-                        LaunchedEffect(g.id) { kotlinx.coroutines.delay(650); DownloadArt.unwrap(g.id) }
+                        // Primero se ve envolverse (si recién terminó), una pausa y recién ahí se abre.
+                        var opening by remember(g.id) { mutableStateOf(false) }
+                        GiftBox(g, Modifier.fillMaxSize(), opening = opening)
+                        LaunchedEffect(g.id) {
+                            kotlinx.coroutines.delay(if (g.id in DownloadArt.wrappedSeen) 500 else 1800)
+                            opening = true
+                            kotlinx.coroutines.delay(700); DownloadArt.unwrap(g.id)
+                        }
                     } else DownloadOverlay(g)
                 }
                 Icon(Icons.Rounded.Edit, "Editar", Modifier.align(Alignment.TopEnd).padding(8.dp).size(34.dp)
@@ -229,8 +233,9 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
                     when {
                         dl != null && dl.status != DlStatus.FAILED -> {
                             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                LinearProgressIndicator(progress = { dl.done.toFloat() / dl.total.coerceAtLeast(1) }, Modifier.fillMaxWidth())
-                                Muted("${formatSize(dl.done)} de ${formatSize(dl.total)}  ${formatSpeed(dl.speed)}  ${formatEta(dl.total - dl.done, dl.speed)}")
+                                LinearProgressIndicator(progress = { dl.done.toFloat() / dl.total.coerceAtLeast(1) }, Modifier.fillMaxWidth().height(8.dp))
+                                Text("${formatSize(dl.done)} de ${formatSize(dl.total)}", fontWeight = FontWeight.SemiBold)
+                                Muted(listOf(formatSpeed(dl.speed), formatEta(dl.total - dl.done, dl.speed)).filter { it.isNotBlank() }.joinToString(" · "))
                             }
                             val pill = RoundedCornerShape(99.dp)
                             if (dl.status == DlStatus.PAUSED) FilledTonalButton(onClick = { Sound.play(Sound.Fx.MOVE); DownloadService.resume(ctx, dl) },
@@ -474,7 +479,9 @@ private fun GameSavesSection(g: Game) {
                 val (bOk, bText) = when {
                     !Prefs.configured -> false to "Sin servidor: no hay respaldo"
                     lastBackup == null -> null to "Respaldo: no se pudo revisar (sin conexión)"
-                    b == null -> false to (if (u != null) "Sin respaldo en el servidor" else "Sin respaldo")
+                    // Sin partidas no hay nada que respaldar: no es una advertencia.
+                    b == null && u == null -> null to "Todavía no hay partidas que respaldar"
+                    b == null -> false to "Sin respaldo en el servidor"
                     u != null && bAt != null && u.newest > bAt + 60_000 -> false to "Respaldo desactualizado (${formatAgo(bAt)}): jugaste después"
                     else -> true to "Respaldada en el servidor" + (bAt?.let { " · ${formatAgo(it)}" } ?: "")
                 }

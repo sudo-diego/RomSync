@@ -121,7 +121,7 @@ private fun NowDownloading(d: Download) {
         if (g != null) ArtImage(g, "hero", Modifier.fillMaxSize())
         Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(listOf(Color(0xE6000000), Color(0x66000000)))))
         Row(Modifier.fillMaxSize().padding(20.dp), horizontalArrangement = Arrangement.spacedBy(20.dp), verticalAlignment = Alignment.CenterVertically) {
-            if (g != null) Cover(g, Modifier.width(130.dp), showTitle = false) { DownloadOverlay(g) }
+            if (g != null) Cover(g, Modifier.width(130.dp), showTitle = false) { DownloadOverlay(g, sound = true) }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Descargando", color = Color.White.copy(alpha = 0.8f), style = MaterialTheme.typography.labelLarge)
                 Text(d.title, color = Color.White, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, maxLines = 2)

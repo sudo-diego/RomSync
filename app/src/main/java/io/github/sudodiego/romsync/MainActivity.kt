@@ -96,6 +96,18 @@ enum class Tab(val label: String, val icon: ImageVector) {
 }
 
 /** Estado de navegación de la app (pestaña y juego abierto). */
+/** Al moverse con la cruceta, el elemento enfocado queda centrado en la lista (si no, quedaba pegado al borde). */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+val CenteredFocus = object : androidx.compose.foundation.gestures.BringIntoViewSpec {
+    override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float {
+        // Si ya se ve entero con un margen, no se mueve (así el dedo no hace saltar la lista).
+        val margin = containerSize * 0.08f
+        if (!Nav.keys && offset >= 0 && offset + size <= containerSize) return 0f
+        if (Nav.keys) return offset - (containerSize - size) / 2f
+        return if (offset < margin) offset - margin else if (offset + size > containerSize - margin) offset + size - (containerSize - margin) else 0f
+    }
+}
+
 object Nav {
     var tab by mutableStateOf(Tab.STORE)
     var game by mutableStateOf<Game?>(null)
@@ -104,10 +116,20 @@ object Nav {
     var keys by mutableStateOf(false)
     /** Hay un mando conectado (las guías de botones se muestran solo así). */
     var pad by mutableStateOf(false)
+    /** Cómo se llaman sus botones: "ps" (✕ ○ □ △) o "xbox" (A B X Y). Sale del último mando que se usó. */
+    var padStyle by mutableStateOf("xbox")
+    fun styleOf(d: android.view.InputDevice?): String? = d?.let { if (it.vendorId == 0x054C) "ps" else "xbox" }
     /** El panel lateral dentro de una ficha (empieza cerrado para dejarle espacio al juego). */
     var sidebarInGame by mutableStateOf(false)
 
     fun checkPad() {
+        for (id in android.view.InputDevice.getDeviceIds()) {
+            val d = android.view.InputDevice.getDevice(id) ?: continue
+            if (!d.isVirtual && d.sources and android.view.InputDevice.SOURCE_GAMEPAD == android.view.InputDevice.SOURCE_GAMEPAD) {
+                if (!pad) styleOf(d)?.let { st -> padStyle = st }
+                break
+            }
+        }
         pad = android.view.InputDevice.getDeviceIds().any { id ->
             val d = android.view.InputDevice.getDevice(id) ?: return@any false
             !d.isVirtual && (d.sources and android.view.InputDevice.SOURCE_GAMEPAD == android.view.InputDevice.SOURCE_GAMEPAD ||
@@ -190,6 +212,10 @@ class MainActivity : ComponentActivity() {
             }
             androidx.compose.runtime.LaunchedEffect(UiState.fullscreen) {
                 androidx.core.view.WindowCompat.getInsetsController(window, view).apply {
+                    window.attributes = window.attributes.apply {
+                        layoutInDisplayCutoutMode = if (UiState.fullscreen) android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+                        else android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_DEFAULT
+                    }
                     if (UiState.fullscreen) {
                         systemBarsBehavior = androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
                         hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
@@ -199,11 +225,16 @@ class MainActivity : ComponentActivity() {
             RomSyncTheme {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                     if (!Nav.hasFilesAccess) FilesAccessScreen { openFilesAccess() } else androidx.compose.foundation.layout.Box {
-                        // Sin el "estiramiento" al pasar el borde del scroll: deformaba sombras y carátulas.
+                        // Sin el "estiramiento" al pasar el borde del scroll (deformaba sombras y carátulas) y, al moverse con
+                        // la cruceta, lo enfocado queda centrado (como en consola: nunca pegado al borde ni bajo el panel).
                         @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
-                        androidx.compose.runtime.CompositionLocalProvider(androidx.compose.foundation.LocalOverscrollConfiguration provides null) {
+                        androidx.compose.runtime.CompositionLocalProvider(
+                            androidx.compose.foundation.LocalOverscrollConfiguration provides null,
+                            androidx.compose.foundation.gestures.LocalBringIntoViewSpec provides CenteredFocus,
+                        ) {
                             AppShell()
                         }
+                        PadBar(Modifier.align(Alignment.BottomEnd).padding(18.dp))
                         NoticeOverlay()
                     }
                 }
@@ -216,28 +247,47 @@ class MainActivity : ComponentActivity() {
         return super.dispatchTouchEvent(ev)
     }
 
-    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
-        if (!Nav.keys && event.keyCode != android.view.KeyEvent.KEYCODE_BACK) Nav.keys = true
-        if (event.action == android.view.KeyEvent.ACTION_DOWN) {
-            val step = when (event.keyCode) {
-                android.view.KeyEvent.KEYCODE_BUTTON_L1 -> -1
-                android.view.KeyEvent.KEYCODE_BUTTON_R1 -> 1
-                else -> 0
-            }
-            if (step != 0) {
+    /** Gatillos analógicos (ZL/ZR en muchos mandos no son botones sino ejes): se tratan como L2/R2 al pasar la mitad. */
+    private var lt = false
+    private var rt = false
+    override fun dispatchGenericMotionEvent(ev: android.view.MotionEvent): Boolean {
+        if (ev.source and android.view.InputDevice.SOURCE_JOYSTICK == android.view.InputDevice.SOURCE_JOYSTICK) {
+            val l = maxOf(ev.getAxisValue(android.view.MotionEvent.AXIS_LTRIGGER), ev.getAxisValue(android.view.MotionEvent.AXIS_BRAKE))
+            val r = maxOf(ev.getAxisValue(android.view.MotionEvent.AXIS_RTRIGGER), ev.getAxisValue(android.view.MotionEvent.AXIS_GAS))
+            if (l > 0.6f && !lt) { lt = true; padButton(android.view.KeyEvent.KEYCODE_BUTTON_L2) } else if (l < 0.3f) lt = false
+            if (r > 0.6f && !rt) { rt = true; padButton(android.view.KeyEvent.KEYCODE_BUTTON_R2) } else if (r < 0.3f) rt = false
+        }
+        return super.dispatchGenericMotionEvent(ev)
+    }
+
+    /** Botones del mando que no son de la cruceta (devuelve true si se usaron). */
+    private fun padButton(code: Int): Boolean {
+        Nav.keys = true
+        when (code) {
+            android.view.KeyEvent.KEYCODE_BUTTON_L1, android.view.KeyEvent.KEYCODE_BUTTON_R1 -> {
                 val tabs = Tab.entries
+                val step = if (code == android.view.KeyEvent.KEYCODE_BUTTON_R1) 1 else -1
                 Nav.game = null
                 Nav.tab = tabs[(tabs.indexOf(Nav.tab) + step + tabs.size) % tabs.size]
                 Sound.play(Sound.Fx.MOVE)
                 return true
             }
         }
-        // Botones del mando de la Tienda (filtros, vista, buscar, ordenar, actualizar).
-        if (event.action == android.view.KeyEvent.ACTION_DOWN && event.repeatCount == 0 && Nav.tab == Tab.STORE && Nav.game == null &&
-            StoreState.onPadButton(event.keyCode)) return true
-        if (event.action == android.view.KeyEvent.ACTION_UP && Nav.tab == Tab.STORE && Nav.game == null && event.keyCode in setOf(
-                android.view.KeyEvent.KEYCODE_BUTTON_L2, android.view.KeyEvent.KEYCODE_BUTTON_R2, android.view.KeyEvent.KEYCODE_BUTTON_Y,
-                android.view.KeyEvent.KEYCODE_BUTTON_X, android.view.KeyEvent.KEYCODE_BUTTON_START, android.view.KeyEvent.KEYCODE_BUTTON_SELECT)) return true
+        return Nav.tab == Tab.STORE && Nav.game == null && StoreState.onPadButton(code)
+    }
+
+    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
+        if (event.source and android.view.InputDevice.SOURCE_GAMEPAD == android.view.InputDevice.SOURCE_GAMEPAD)
+            Nav.styleOf(event.device)?.let { if (it != Nav.padStyle) Nav.padStyle = it }
+        if (!Nav.keys && event.keyCode != android.view.KeyEvent.KEYCODE_BACK) Nav.keys = true
+        // L/R, ZL/ZR, X, Y, −, +: se usan al bajar el botón; al soltarlo no hacen nada más.
+        val padKeys = setOf(android.view.KeyEvent.KEYCODE_BUTTON_L1, android.view.KeyEvent.KEYCODE_BUTTON_R1,
+            android.view.KeyEvent.KEYCODE_BUTTON_L2, android.view.KeyEvent.KEYCODE_BUTTON_R2, android.view.KeyEvent.KEYCODE_BUTTON_Y,
+            android.view.KeyEvent.KEYCODE_BUTTON_X, android.view.KeyEvent.KEYCODE_BUTTON_START, android.view.KeyEvent.KEYCODE_BUTTON_SELECT)
+        if (event.keyCode in padKeys) {
+            if (event.action == android.view.KeyEvent.ACTION_DOWN && event.repeatCount == 0 && padButton(event.keyCode)) return true
+            if (event.action == android.view.KeyEvent.ACTION_UP) return true
+        }
         // A = elegir y B = volver también si el sistema no los traduce solo (algunos controles no lo hacen).
         val mapped = when (event.keyCode) {
             android.view.KeyEvent.KEYCODE_BUTTON_A -> android.view.KeyEvent.KEYCODE_DPAD_CENTER
@@ -291,7 +341,8 @@ fun AppShell() {
 
     Box(Modifier.fillMaxSize()) {
         AppBackground()
-        Box(Modifier.fillMaxSize().safeDrawingPadding()) {
+        // En pantalla completa no se reserva el espacio de las barras de Android (quedaba un hueco arriba).
+        Box(Modifier.fillMaxSize().then(if (UiState.fullscreen) Modifier else Modifier.safeDrawingPadding())) {
             if (wide) {
                 Row(Modifier.fillMaxSize()) {
                     Sidebar(active, ::go)
@@ -312,7 +363,6 @@ fun AppShell() {
                                 label = { Text(t.label) },
                             )
                         }
-        if (Nav.pad) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) { PadHint("R1 ▼") }
                     }
                 }
             }
@@ -345,8 +395,6 @@ private fun Sidebar(active: Int, go: (Tab) -> Unit) {
             }
         }
         Spacer(Modifier.height(8.dp))
-        // Con mando: L1 y R1 cambian de sección.
-        if (Nav.pad) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) { PadHint("L1 ▲") }
         Tab.entries.forEach { t ->
             val selected = Nav.tab == t && Nav.game == null
             val bg by animateColorAsState(if (selected) MaterialTheme.colorScheme.primary else Color.Transparent, tween(220), label = "bg")

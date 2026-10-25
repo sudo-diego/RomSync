@@ -125,6 +125,14 @@ object StoreState {
         }
         return true
     }
+    /** La lista y cada fila guardan dónde estaban: al volver de una ficha queda todo igual. */
+    val grid = androidx.compose.foundation.lazy.grid.LazyGridState()
+    private val rows = HashMap<String, androidx.compose.foundation.lazy.LazyListState>()
+    fun row(key: String) = rows.getOrPut(key) { androidx.compose.foundation.lazy.LazyListState() }
+    /** El juego cuya carátula tenía el foco al abrir una ficha: al volver con B, el foco vuelve ahí. */
+    var returnTo by mutableStateOf<String?>(null)
+    /** Carátulas que ya aparecieron (su animación de entrada es solo la primera vez, no cada vez que se vuelve). */
+    val appeared = HashSet<String>()
     /** Selección múltiple (mantener presionada una tarjeta): ids de juegos. */
     var selection by mutableStateOf(setOf<String>())
 }
@@ -172,8 +180,15 @@ fun StoreScreen() {
 
     // Con la cruceta, abajo desde el carrusel va a la PRIMERA plataforma (no a la que quede más al centro).
     val firstPlatform = remember { androidx.compose.ui.focus.FocusRequester() }
+    val filtered = StoreState.system.isNotEmpty() || StoreState.filter != StoreFilter.ALL || StoreState.query.isNotEmpty()
+    androidx.activity.compose.BackHandler(enabled = filtered && Nav.game == null) {
+        Sound.play(Sound.Fx.BACK); StoreState.system = ""; StoreState.filter = StoreFilter.ALL; StoreState.query = ""
+    }
+    PadHints(listOfNotNull("A" to "Abrir", (if (filtered) "B" to "Quitar filtros" else null), "X" to "Buscar", "Y" to "Vista",
+        "ZL ZR" to "Filtro", "−" to "Actualizar", "+" to "Orden", "L R" to "Sección"))
     Box(Modifier.fillMaxSize()) {
         LazyVerticalGrid(
+            state = StoreState.grid,
             columns = GridCells.Adaptive(if (UiState.icons) 124.dp else 158.dp),
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 40.dp),
@@ -200,7 +215,7 @@ fun StoreScreen() {
                 val toGet = cards.filter { Repo.where(it).presence == Presence.MISSING && it.kind != "shortcut" }
                 if (onTablet.isNotEmpty()) item(span = { GridItemSpan(maxLineSpan) }, key = "fila-tablet") {
                     StorePanel("En tu dispositivo", Icons.Rounded.TabletAndroid, Palette.ok) {
-                        ShelfRow(onTablet.shuffled(java.util.Random(StoreState.seed)), { StoreState.filter = StoreFilter.INSTALLED }, ::versionsOf)
+                        ShelfRow(onTablet.shuffled(java.util.Random(StoreState.seed)), { StoreState.filter = StoreFilter.INSTALLED }, ::versionsOf, "tablet")
                     }
                 }
                 // Para descargar: tiles anchos con fondo y logo (como las promociones de la eShop), los que tienen imagen primero.
@@ -240,6 +255,10 @@ private fun FeaturedCarousel(cards: List<Game>, below: androidx.compose.ui.focus
     if (featured.isEmpty()) return
     val pager = rememberPagerState { featured.size }
     val pageFocus = remember(featured.size) { List(featured.size) { androidx.compose.ui.focus.FocusRequester() } }
+    LaunchedEffect(Nav.game) {
+        val i = featured.indexOfFirst { it.id == StoreState.returnTo }
+        if (Nav.game == null && i >= 0) { pager.scrollToPage(i); kotlinx.coroutines.delay(60); runCatching { pageFocus[i].requestFocus() }; StoreState.returnTo = null }
+    }
     val carouselScope = androidx.compose.runtime.rememberCoroutineScope()
     // Con el foco del control encima, no pasa solo (si no, se lleva el foco a otra página).
     var focusedIn by remember { mutableStateOf(false) }
@@ -281,7 +300,7 @@ private fun FeaturedCarousel(cards: List<Game>, below: androidx.compose.ui.focus
                         true
                     }
                     .onFocusChanged { if (it.isFocused && (pager.currentPage != i || pager.isScrollInProgress)) carouselScope.launch { pager.scrollToPage(i) } }
-                    .focusHighlight(RoundedCornerShape(26.dp), grow = 1f).clip(RoundedCornerShape(26.dp)).pressable { Sound.play(Sound.Fx.OPEN); Nav.game = g },
+                    .focusHighlight(RoundedCornerShape(26.dp), grow = 1f).clip(RoundedCornerShape(26.dp)).pressable { Sound.play(Sound.Fx.OPEN); StoreState.returnTo = g.id; Nav.game = g },
             ) {
                 Box(Modifier.fillMaxSize().background(Brush.linearGradient(listOf(Color(Repo.system(g.system).color), Color(0xFF0D1220)))))
                 // El fondo se mueve un poco contra el gesto (paralaje).
@@ -312,7 +331,7 @@ private fun FeaturedCarousel(cards: List<Game>, below: androidx.compose.ui.focus
 /** Fila de tiles anchos (fondo + logo + tamaño), como las promociones de la eShop; al final "Ver todo". */
 @Composable
 private fun WideShelf(games: List<Game>, onAll: () -> Unit) {
-    LazyRow(horizontalArrangement = Arrangement.spacedBy(16.dp), contentPadding = PaddingValues(horizontal = 18.dp, vertical = 10.dp)) {
+    LazyRow(state = StoreState.row("bajar"), horizontalArrangement = Arrangement.spacedBy(16.dp), contentPadding = PaddingValues(horizontal = 18.dp, vertical = 10.dp)) {
         items(games.take(10), key = { it.id }) { g -> WideTile(g) }
         if (games.size > 10) item(key = "ver-todo") { SeeAllCard(games.size, Modifier.size(200.dp, 200.dp), onAll) }
     }
@@ -321,7 +340,7 @@ private fun WideShelf(games: List<Game>, onAll: () -> Unit) {
 @Composable
 private fun WideTile(g: Game) {
     val sys = Repo.system(g.system)
-    Box(Modifier.size(360.dp, 200.dp).focusHighlight(RoundedCornerShape(22.dp), grow = 1.02f).shadow(8.dp, RoundedCornerShape(22.dp))
+    Box(Modifier.size(360.dp, 200.dp).focusHighlight(RoundedCornerShape(22.dp), grow = 1.03f).softShadow(22.dp)
         .clip(RoundedCornerShape(22.dp))
         .background(Brush.linearGradient(listOf(Color(sys.color), Color(0xFF0D1220))))
         .pressable { Sound.play(Sound.Fx.OPEN); Nav.game = g }) {
@@ -364,7 +383,7 @@ private fun ExploreSection(systems: List<SystemInfo>, cards: List<Game>, version
             }
         }
         androidx.compose.animation.AnimatedContent(sel, label = "explorar") { id ->
-            ShelfRow(cards.filter { it.system == id }.shuffled(java.util.Random(StoreState.seed + id.hashCode())), { StoreState.system = id }, versions)
+            ShelfRow(cards.filter { it.system == id }.shuffled(java.util.Random(StoreState.seed + id.hashCode())), { StoreState.system = id }, versions, "explorar-$id")
         }
     }
 }
@@ -400,9 +419,9 @@ private fun SeeAllCard(count: Int, modifier: Modifier, onClick: () -> Unit) {
 
 /** Fila de juegos que se desliza: hasta 10 y al final "Ver todo". Con margen para que la tarjeta con foco no se corte. */
 @Composable
-private fun ShelfRow(games: List<Game>, onAll: () -> Unit, versions: (Game) -> Int) {
+private fun ShelfRow(games: List<Game>, onAll: () -> Unit, versions: (Game) -> Int, key: String = "") {
     val w = if (UiState.icons) 124.dp else 158.dp
-    LazyRow(horizontalArrangement = Arrangement.spacedBy(16.dp), contentPadding = PaddingValues(horizontal = 18.dp, vertical = 10.dp)) {
+    LazyRow(state = StoreState.row("fila-$key"), horizontalArrangement = Arrangement.spacedBy(16.dp), contentPadding = PaddingValues(horizontal = 18.dp, vertical = 10.dp)) {
         items(games.take(10), key = { it.id }) { g -> GameCard(g, versions(g), Modifier.width(w)) }
         if (games.size > 10) item(key = "ver-todo") {
             SeeAllCard(games.size, Modifier.width(w).aspectRatio(if (UiState.icons) 1f else 2f / 3f), onAll)
@@ -522,7 +541,6 @@ private fun Header(onRefresh: () -> Unit) {
             },
             confirmButton = { TextButton(onClick = { showConn = false }) { Text("Cerrar") } },
         )
-        PadHint("Select")
         FilledTonalIconButton(onClick = { Sound.play(Sound.Fx.MOVE); onRefresh() }, enabled = !Repo.refreshing, modifier = Modifier.notForDpad()) {
             if (Repo.refreshing) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
             else Icon(Icons.Rounded.Refresh, "Actualizar")
@@ -574,8 +592,9 @@ private fun Toolbar(systems: List<SystemInfo>) {
             TextField(
                 value = StoreState.query, onValueChange = { StoreState.query = it },
                 modifier = Modifier.weight(1f).focusRequester(StoreState.searchFocus)
-                    .focusProperties { canFocus = !(Nav.keys || Nav.pad) || StoreState.searchArmed }
-                    .onFocusChanged { if (!it.isFocused && StoreState.searchArmed) StoreState.searchArmed = false }
+                    .focusProperties { canFocus = !Nav.keys || StoreState.searchArmed }
+                    // Mientras se usa, sigue activo (si no, al escribir con teclado o mando perdía el foco).
+                    .onFocusChanged { StoreState.searchArmed = it.isFocused }
                     .gamepadText(), singleLine = true, placeholder = { Text(if (Nav.pad) "Buscar (X)" else "Buscar") },
                 leadingIcon = { Icon(Icons.Rounded.Search, null) },
                 trailingIcon = {
@@ -588,12 +607,10 @@ private fun Toolbar(systems: List<SystemInfo>) {
                 ),
             )
             // Carátulas (eShop) o íconos (menú de Wii U).
-            PadHint("Y")
             FilledTonalIconButton(onClick = { Sound.play(Sound.Fx.TOGGLE); UiState.icons = !UiState.icons; Prefs.icons = UiState.icons },
                 modifier = Modifier.notForDpad()) {
                 Icon(if (UiState.icons) Icons.Rounded.ViewModule else Icons.Rounded.Apps, if (UiState.icons) "Ver carátulas" else "Ver íconos")
             }
-            PadHint("Start")
             Box {
                 FilledTonalIconButton(onClick = { Sound.play(Sound.Fx.MOVE); sortOpen = true }, modifier = Modifier.notForDpad()) {
                     Icon(Icons.AutoMirrored.Rounded.Sort, "Ordenar")
@@ -605,12 +622,10 @@ private fun Toolbar(systems: List<SystemInfo>) {
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            PadHint("L2")
             StoreFilter.entries.forEach { f ->
                 FilterChip(selected = StoreState.filter == f, onClick = { Sound.play(Sound.Fx.MOVE); StoreState.filter = f },
                     label = { Text(f.label) }, shape = RoundedCornerShape(99.dp), modifier = Modifier.notForDpad())
             }
-            PadHint("R2")
             // Plataforma elegida (desde las tarjetas del inicio): un chip con su nombre para quitarla.
             systems.firstOrNull { it.id == StoreState.system }?.let { cur ->
                 Spacer(Modifier.weight(1f))
@@ -659,8 +674,14 @@ private fun GameCard(g: Game, versions: Int = 1, modifier: Modifier = Modifier) 
     val scale by animateFloatAsState(if (pressed) 0.94f else if (selected) 0.97f else 1f,
         spring(dampingRatio = 0.55f, stiffness = 500f), label = "tarjeta")
     // Aparece subiendo un poco la primera vez.
-    val shown = remember { Animatable(0f) }
-    LaunchedEffect(Unit) { shown.animateTo(1f, tween(320)) }
+    val first = remember { g.id !in StoreState.appeared }
+    val shown = remember { Animatable(if (first) 0f else 1f) }
+    LaunchedEffect(Unit) { if (first) { StoreState.appeared += g.id; shown.animateTo(1f, tween(320)) } }
+    // Al volver de su ficha con el mando, el foco vuelve a esta carátula.
+    val focus = remember { androidx.compose.ui.focus.FocusRequester() }
+    LaunchedEffect(Nav.game) {
+        if (Nav.game == null && StoreState.returnTo == g.id) { kotlinx.coroutines.delay(60); runCatching { focus.requestFocus() }; StoreState.returnTo = null }
+    }
     Column(modifier.graphicsLayer {
         scaleX = scale; scaleY = scale; alpha = shown.value; translationY = (1f - shown.value) * 24f
         // Sin capa aparte al desvanecer: con ella la sombra quedaba recortada en un rectángulo al pasar rápido.
@@ -668,12 +689,11 @@ private fun GameCard(g: Game, versions: Int = 1, modifier: Modifier = Modifier) 
     }) {
         val cardShape = RoundedCornerShape(if (UiState.icons) 22.dp else 18.dp)
         // La sombra crece con la aparición de la tarjeta (en la misma capa): al pasar rápido se veían sombras sin tarjeta.
-        Box(Modifier.focusHighlight(cardShape).graphicsLayer {
-            shadowElevation = (if (pressed) 2.dp else 8.dp).toPx() * shown.value * shown.value; shape = cardShape; clip = true
-        }
+        Box(Modifier.focusRequester(focus).focusHighlight(cardShape).softShadow(if (UiState.icons) 22.dp else 18.dp, if (pressed) 2.dp else 8.dp)
+            .clip(cardShape)
             .then(if (selected) Modifier.border(3.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(18.dp)) else Modifier)
             .combinedClickable(interactionSource = press, indication = null,
-                onClick = { if (selecting) toggle() else { Sound.play(Sound.Fx.OPEN); Nav.game = g } }, onLongClick = { toggle() })) {
+                onClick = { if (selecting) toggle() else { Sound.play(Sound.Fx.OPEN); StoreState.returnTo = g.id; Nav.game = g } }, onLongClick = { toggle() })) {
             val overlay: @Composable () -> Unit = {
                 DownloadOverlay(g)
                 Box(Modifier.fillMaxSize().padding(8.dp)) {
@@ -761,13 +781,14 @@ private fun PlatformRow(systems: List<Pair<SystemInfo, Int>>, first: androidx.co
             Text("Plataformas", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
             Muted("Mantén presionada una para elegir su emulador")
         }
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        LazyRow(state = StoreState.row("plataformas"), horizontalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp)) {
             itemsIndexed(systems.filter { it.first.id !in Group.shortcutSystems }, key = { _, it -> it.first.id }) { idx, (sys, n) ->
                 // El fondo es el ícono de la app con que se juega (elegida por el usuario; se cambia manteniendo presionado).
                 val ctx = LocalContext.current
                 val emu = remember(sys.id, EmuChoice.version) { EmuChoice.pkg(ctx, sys.id) }
                 val icon = emu?.let { EmuChoice.icon(ctx, it) }
-                Box(Modifier.size(190.dp, 100.dp).then(if (idx == 0) Modifier.focusRequester(first) else Modifier).focusHighlight().shadow(6.dp, RoundedCornerShape(18.dp)).clip(RoundedCornerShape(18.dp))
+                Box(Modifier.size(190.dp, 100.dp).then(if (idx == 0) Modifier.focusRequester(first) else Modifier).focusHighlight(RoundedCornerShape(18.dp), grow = 1.04f).softShadow(18.dp, 6.dp).clip(RoundedCornerShape(18.dp))
                     .background(Brush.linearGradient(listOf(androidx.compose.ui.graphics.lerp(Color(sys.color), Color.Black, 0.15f),
                         androidx.compose.ui.graphics.lerp(Color(sys.color), Color.Black, 0.55f))))
                     .combinedClickable(onClick = { Sound.play(Sound.Fx.OPEN); StoreState.system = sys.id },

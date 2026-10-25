@@ -228,13 +228,21 @@ fun GameScreen(g: Game, onBack: () -> Unit) {
                     // Un juego que solo está en la tablet se puede dejar guardado en el PC desde aquí mismo.
                     if (w.presence == Presence.TABLET_ONLY && Prefs.configured && g.kind != "shortcut") {
                         val up = PcEdit.uploading[g.id]
-                        if (up != null) Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            LinearProgressIndicator(progress = { up.toFloat() / g.size.coerceAtLeast(1) }, Modifier.fillMaxWidth())
-                            Muted("Copiando al servidor: ${formatSize(up)} de ${formatSize(g.size)}")
+                        if (up != null) {
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                LinearProgressIndicator(progress = { up.toFloat() / g.size.coerceAtLeast(1) }, Modifier.fillMaxWidth())
+                                val sp = PcEdit.uploadSpeed[g.id] ?: 0L
+                                Muted("Copiando al servidor: ${formatSize(up)} de ${formatSize(g.size)}" +
+                                    (if (sp > 0) " · ${formatSpeed(sp)} · ${formatEta(g.size - up, sp)}" else ""))
+                            }
+                            // Cancelar no deja nada a medias en el servidor (se borra lo que alcanzó a subir).
+                            TextButton(onClick = { Sound.play(Sound.Fx.WARN); PcEdit.cancelUpload(g.id) },
+                                modifier = Modifier.focusHighlight(RoundedCornerShape(99.dp))) { Text("Cancelar") }
                         } else FilledTonalButton(modifier = Modifier.focusHighlight(RoundedCornerShape(99.dp)), onClick = {
                             Sound.play(Sound.Fx.MOVE)
                             scope.launch {
-                                val msg = runCatching { PcEdit.uploadFromTablet(g) }.fold({ "${g.title} ya está en el servidor" }, { "No se pudo copiar: ${it.message}" })
+                                val msg = runCatching { PcEdit.uploadFromTablet(g) }.fold({ "${g.title} ya está en el servidor" },
+                                    { if (it is PcEdit.UploadCancelled) "Copia cancelada: no quedó nada a medias en el servidor" else "No se pudo copiar: ${it.message}" })
                                 Toast.makeText(ctx, msg, Toast.LENGTH_LONG).show()
                                 Repo.refresh()
                             }

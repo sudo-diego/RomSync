@@ -272,13 +272,19 @@ object Repo {
      * Clave para juntar versiones del mismo juego: la plataforma y el título que sale del NOMBRE DEL ARCHIVO (no el
      * nombre propio). Así, ponerle "Wind Waker HD Plus" a la versión con mods no la separa de Wind Waker.
      */
-    fun versionKey(g: Game): String = g.system.lowercase() + "|" + Group.versionTitle(g.name)
+    /** Mismo juego = misma plataforma y mismo título; en Switch, mismo código del juego base (el nombre cambia mucho). */
+    fun versionKey(g: Game): String =
+        if (g.kind == "switch" && g.serial.length == 16) "switch|tid:" + g.serial.uppercase()
+        else g.system.lowercase() + "|" + Group.versionTitle(g.name)
+
+    /** Un comprimido (.rar/.7z) no es una versión que se pueda jugar: se ordena con "Juegos por ordenar". */
+    fun isArchive(g: Game) = Group.ext(g.primary) in setOf(".rar", ".7z")
 
     /** Otras versiones del mismo juego (otra región, otro formato, una con mods). */
     fun versions(g: Game): List<Game> {
         if (g.kind == "shortcut") return emptyList()
         val key = versionKey(g)
-        return allGames().filter { it.id != g.id && it.kind != "shortcut" && versionKey(it) == key }
+        return allGames().filter { it.id != g.id && it.kind != "shortcut" && !isArchive(it) && versionKey(it) == key }
     }
 
     /** Ids de juegos que tienen otra versión en la misma plataforma (filtro "Repetidos"). */

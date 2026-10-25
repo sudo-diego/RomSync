@@ -100,7 +100,7 @@ fun DownloadsScreen() {
         items(failed, key = { "f-" + it.id }) { d -> DownloadRow(d) }
         if (done.isNotEmpty()) item {
             SpacedRow(Modifier.fillMaxWidth()) {
-                Text("Terminadas", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+                Text("Recién terminadas", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
                 TextButton(onClick = { DownloadService.clearDone() }) { Text("Quitar terminadas") }
             }
         }

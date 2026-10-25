@@ -1,5 +1,7 @@
 package io.github.sudodiego.romsync
 
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.rounded.DriveFileRenameOutline
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Unarchive
@@ -147,6 +149,7 @@ fun OrganizeScreen() {
         val space: @Composable () -> Unit = {
             Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 StorageCard()
+                BiggestGamesCard()
                 AppsStorageCard()
             }
         }
@@ -236,12 +239,21 @@ private fun TidyDialog(onClose: () -> Unit) {
         onClose = { if (!Tidy.running) onClose() },
         footer = {
             if (Tidy.running) {
-                androidx.compose.material3.LinearProgressIndicator(Modifier.weight(1f))
+                // Como en Descargas: cuánto va, a qué velocidad y cuánto falta.
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(Tidy.progress, fontWeight = FontWeight.Bold, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                    if (Tidy.workTotal > 0) {
+                        androidx.compose.material3.LinearProgressIndicator(progress = { Tidy.workDone.toFloat() / Tidy.workTotal }, Modifier.fillMaxWidth())
+                        Muted("${formatSize(Tidy.workDone)} de ${formatSize(Tidy.workTotal)}" +
+                            listOf(formatSpeed(Tidy.speed), formatEta(Tidy.workTotal - Tidy.workDone, Tidy.speed)).filter { it.isNotBlank() }
+                                .joinToString(" · ", prefix = " · "))
+                    } else androidx.compose.material3.LinearProgressIndicator(Modifier.fillMaxWidth())
+                }
             } else {
                 Column(Modifier.weight(1f)) {
                     Text("${chosen.size} de ${doable.size} cambios", fontWeight = FontWeight.Bold)
                     val freed = chosen.filter { it.kind == Tidy.Kind.DELETE }.sumOf { it.size }
-                    if (freed > 0) Muted("Libera ${formatSize(freed)}")
+                    Muted((if (freed > 0) "Libera ${formatSize(freed)} · " else "") + "Tarda ${Tidy.estimate(chosen)}")
                 }
                 TextButton(onClick = { selected = if (selected.size == doable.size) emptySet() else doable.map { it.id }.toSet() }) {
                     Text(if (selected.size == doable.size) "Desmarcar todo" else "Marcar todo")
@@ -259,7 +271,7 @@ private fun TidyDialog(onClose: () -> Unit) {
     ) {
         if (plan.isEmpty()) item { Muted("Nada que ordenar.") }
         groups.forEach { grp ->
-            val list = plan.filter { it.kind == grp.kind }
+            val list = plan.filter { it.kind == grp.kind }.sortedBy { it.title.lowercase() }
             if (list.isEmpty()) return@forEach
             item(key = "g-${grp.kind}") {
                 SheetCard {
@@ -274,12 +286,14 @@ private fun TidyDialog(onClose: () -> Unit) {
                             { selected = if (it.id in selected) selected - it.id else selected + it.id }) {
                             Column {
                                 val before = it.from.substringAfterLast('/')
-                                if (it.kind == Tidy.Kind.DELETE) Text(before, fontWeight = FontWeight.SemiBold)
+                                if (it.kind == Tidy.Kind.DELETE) Text(before, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                                 else {
-                                    Text(it.title, fontWeight = FontWeight.SemiBold)
-                                    if (before != it.title) Muted("antes: $before")
+                                    Text(it.title, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                                    if (before != it.title) Text("antes: $before", style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                                 }
-                                Muted(it.note + " · " + formatSize(it.size))
+                                Text(it.note + " · " + formatSize(it.size), style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                                 // Los consejos de formato llevan a la app que convierte.
                                 if (it.kind == Tidy.Kind.INFO) when {
                                     "CHDroid" in it.note -> TextButton(onClick = { AppsStorage.openOrFind(ctx, "CHDroid") }) { Text("Abrir CHDroid") }
@@ -288,6 +302,36 @@ private fun TidyDialog(onClose: () -> Unit) {
                                 }
                             }
                         }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Los juegos que más ocupan en el dispositivo, con una barra para comparar; tocar abre su ficha (ahí se borran). */
+@Composable
+private fun BiggestGamesCard() {
+    val top = remember(Repo.localFiles, Repo.library, Repo.tabletOnly) {
+        Repo.allGames().filter { it.kind != "shortcut" }.map { it to Repo.where(it).localSize }.filter { it.second > 0 }
+            .sortedByDescending { it.second }.take(8)
+    }
+    if (top.isEmpty()) return
+    val max = top.first().second.toFloat()
+    Section("Lo que más ocupa") {
+        top.forEach { (g, bytes) ->
+            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { Sound.play(Sound.Fx.OPEN); Nav.game = g }
+                .padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Cover(g, Modifier.width(36.dp), showTitle = false)
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    SpacedRow {
+                        Text(g.title, fontWeight = FontWeight.SemiBold, maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                        Text(formatSize(bytes), fontWeight = FontWeight.Bold)
+                    }
+                    Box(Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(99.dp)).background(MaterialTheme.colorScheme.outline)) {
+                        Box(Modifier.fillMaxWidth(bytes / max).height(6.dp).clip(RoundedCornerShape(99.dp))
+                            .background(androidx.compose.ui.graphics.Color(Repo.system(g.system).color)))
                     }
                 }
             }

@@ -74,7 +74,10 @@ object Art {
             cached(g.id, kind)?.let { return@withLockCompat it }
             val entry = synchronized(index) { index.getOrPut(g.id) { JSONObject() } }
             val checked = entry.optLong("checked_$kind")
-            if (checked > 0 && System.currentTimeMillis() - checked < 7L * 24 * 3600 * 1000) return@withLockCompat null
+            // Un juego de Switch que no se encontró por su nombre de archivo se reintenta una vez con el nombre oficial.
+            val retryOfficial = g.kind == "switch" && g.serial.length == 16 && entry.optInt("sgdbId") == -1 && !entry.optBoolean("officialTried")
+            if (retryOfficial) { entry.put("sgdbId", 0); entry.put("officialTried", true) }
+            else if (checked > 0 && System.currentTimeMillis() - checked < 7L * 24 * 3600 * 1000) return@withLockCompat null
             try {
                 sem.withPermit { fetch(key, g, kind, entry) }
             } catch (e: IOException) {
@@ -103,8 +106,11 @@ object Art {
     private suspend fun fetch(key: String, g: Game, kind: String, entry: JSONObject): File? = withContext(Dispatchers.IO) {
         var sgdbId = entry.optInt("sgdbId")
         if (sgdbId == 0) {
-            val found = search(key, g.title)
-            val want = fileTitle(g)
+            // Switch: se busca por el nombre oficial (sacado del código del juego). Los archivos de algunas páginas
+            // vienen con nombres disfrazados ("Zel Air Mata Kerajaan" = Tears of the Kingdom) y no se encontraba nada.
+            val official = if (g.kind == "switch" && g.serial.length == 16) Tidy.officialNameFor(g.serial.uppercase()) else null
+            val found = search(key, official ?: g.title)
+            val want = official?.let(::norm) ?: fileTitle(g)
             // Antes se tomaba el primero si no había uno idéntico: "Aladdin" daba "Aladdin - Hidden Objects Game".
             val best = found.firstOrNull { norm(it.second) == want } ?: found.firstOrNull { sameGame(it.second, want) }
             sgdbId = best?.first ?: found.firstOrNull()?.first ?: -1

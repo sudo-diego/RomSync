@@ -223,6 +223,10 @@ class DownloadService : Service() {
                         d.status = DlStatus.DONE
                         finished++
                         if (!d.bios) Notice.show(d.id, d.title, "Descarga terminada")
+                        // Las terminadas se van solas de la lista (ya avisó el aviso de arriba).
+                        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                            if (d.status == DlStatus.DONE) { items.remove(d); save() }
+                        }, 6000)
                     }
                 } catch (e: Exception) {
                     if (d.status == DlStatus.RUNNING) {
@@ -276,9 +280,10 @@ class DownloadService : Service() {
                 if (part.length() > f.size) part.delete()
                 val start = part.length()
                 val remote = SftpConn.join(if (d.bios) Prefs.remoteBios else Prefs.remoteRoms, f.path)
-                FileOutputStream(part, start > 0).use { out ->
+                // Escribir de a 4 MB: de a 128 KB el almacenamiento (FUSE) frenaba la descarga a ratos.
+                java.io.BufferedOutputStream(FileOutputStream(part, start > 0), 4 shl 20).use { out ->
                     c.open(remote, start).use { input ->
-                        val buf = ByteArray(1 shl 17)
+                        val buf = ByteArray(1 shl 20)
                         while (true) {
                             if (d.status != DlStatus.RUNNING) return@use
                             val n = input.read(buf)
@@ -288,7 +293,9 @@ class DownloadService : Service() {
                             windowBytes += n
                             val now = System.currentTimeMillis()
                             if (now - windowStart >= 1000) {
-                                d.speed = windowBytes * 1000 / (now - windowStart)
+                                // Promedio suave: la velocidad del WiFi salta mucho de un segundo a otro.
+                                val inst = windowBytes * 1000 / (now - windowStart)
+                                d.speed = if (d.speed == 0L) inst else (d.speed * 0.75 + inst * 0.25).toLong()
                                 windowStart = now
                                 windowBytes = 0
                             }

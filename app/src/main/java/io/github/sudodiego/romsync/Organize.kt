@@ -46,7 +46,7 @@ object Organize {
      * Grupos del mismo juego en la misma plataforma (versiones, regiones, formatos). Los que el usuario marcó "me quedo
      * con todas" no cuentan: tener varias versiones en la colección también está bien.
      */
-    fun duplicateGroups(): List<List<Game>> = Repo.allGames().filter { it.kind != "shortcut" }
+    fun duplicateGroups(): List<List<Game>> = Repo.allGames().filter { it.kind != "shortcut" && !Repo.isArchive(it) }
         .groupBy { Repo.versionKey(it) }.filter { (k, v) -> v.size > 1 && k !in keptVersions }.values
         .sortedBy { it.first().title.lowercase() }
 
@@ -207,7 +207,7 @@ fun DuplicatesDialog(onClose: () -> Unit) {
                 Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
                     Cover(best, Modifier.width(64.dp), showTitle = false)
                     Column(Modifier.weight(1f)) {
-                        Text(Group.cleanTitle(vs.first().name).first, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                        Text(best.title, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                         Muted("${Repo.system(vs.first().system).name} · ${vs.size} versiones")
                         advice?.let { (b, why) -> Text("Recomendada: ${versionName(b)} ($why)", color = Palette.ok, style = MaterialTheme.typography.bodySmall) }
                     }
@@ -224,11 +224,11 @@ fun DuplicatesDialog(onClose: () -> Unit) {
                 vs.forEach { v ->
                     val w = Repo.where(v)
                     CheckRow(v.id in selected, { selected = if (v.id in selected) selected - v.id else selected + v.id }) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Column(Modifier.weight(1f)) {
-                                Text(versionName(v), fontWeight = if (v.id == best.id) FontWeight.Bold else FontWeight.Normal)
-                                Muted(v.name)
-                            }
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(versionName(v), fontWeight = if (v.id == best.id) FontWeight.Bold else FontWeight.Normal)
+                            Text(v.name, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             if (v.id == best.id) Pill("Recomendada", Palette.ok)
                             Pill(when (w.presence) {
                                 Presence.INSTALLED -> "En el dispositivo"
@@ -236,6 +236,7 @@ fun DuplicatesDialog(onClose: () -> Unit) {
                                 Presence.TABLET_ONLY -> "Solo en el dispositivo"
                                 Presence.MISSING -> "En el servidor"
                             }, if (w.presence == Presence.MISSING) Palette.blue else Palette.warn.takeIf { w.presence == Presence.TABLET_ONLY } ?: Palette.ok)
+                            }
                         }
                     }
                 }
@@ -254,7 +255,9 @@ private fun versionName(v: Game) = listOfNotNull(
 @Composable
 fun TabletOnlyDialog(onClose: () -> Unit) {
     val ctx = LocalContext.current
-    val list = remember(Repo.tabletOnly) { Organize.tabletOnly() }
+    val list = remember(Repo.tabletOnly) { Organize.tabletOnly().sortedBy { it.title.lowercase() } }
+    // Columnas según el ancho (carátulas de ~170 dp): con 4 fijas quedaban gigantes en horizontal.
+    val cols = (androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp * 0.88f / 170f).toInt().coerceIn(2, 9)
     var selected by remember(list) { mutableStateOf(list.map { it.id }.toSet()) }
     var copying by remember { mutableStateOf(false) }
     var stopAll by remember { mutableStateOf(false) }
@@ -337,7 +340,7 @@ fun TabletOnlyDialog(onClose: () -> Unit) {
                 color = Palette.warn, fontWeight = FontWeight.SemiBold)
         }
         // De a 4 por fila: carátula, nombre, plataforma y tamaño; tocar marca o desmarca.
-        items(list.chunked(4), key = { it.first().id }) { row ->
+        items(list.chunked(cols), key = { it.first().id }) { row ->
             Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 row.forEach { g ->
                     val on = g.id in selected
@@ -348,7 +351,7 @@ fun TabletOnlyDialog(onClose: () -> Unit) {
                             Cover(g, Modifier.fillMaxWidth().then(if (on) Modifier.border(3.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(14.dp)) else Modifier))
                             Checkbox(on, { selected = if (it) selected + g.id else selected - g.id }, Modifier.align(Alignment.TopEnd))
                         }
-                        Text(g.title, fontWeight = FontWeight.SemiBold, maxLines = 2, modifier = Modifier.padding(top = 6.dp))
+                        Text(g.title, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
                         Muted("${Repo.system(g.system).short} · ${formatSize(g.size)}")
                         if (up != null) {
                             val sp = PcEdit.uploadSpeed[g.id] ?: 0L
@@ -359,7 +362,7 @@ fun TabletOnlyDialog(onClose: () -> Unit) {
                         else if (copying && g in queue) Muted("En espera")
                     }
                 }
-                repeat(4 - row.size) { Box(Modifier.weight(1f)) }
+                repeat(cols - row.size) { Box(Modifier.weight(1f)) }
             }
         }
     }

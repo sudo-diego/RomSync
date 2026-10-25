@@ -110,6 +110,7 @@ private fun PcCard() {
 
     Section("Servidor (tu PC)") {
         if (Prefs.configured) Text("Conectado a ${Prefs.host} · ${Prefs.pcRoms}", color = Palette.ok, fontWeight = FontWeight.SemiBold)
+        if (Prefs.configured) SpeedTestRow()
 
         // Paso 1: activar SFTP en Windows, solo con herramientas de Windows.
         SpacedRow {
@@ -431,4 +432,25 @@ private fun LookControls() {
             }, label = { Text(label) }, shape = RoundedCornerShape(99.dp))
         }
     }
+}
+
+/** Medir la velocidad con el servidor (bajada y subida), sin tocar los juegos. */
+@Composable
+private fun SpeedTestRow() {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    var step by remember { mutableStateOf<String?>(null) }
+    var result by remember { mutableStateOf<String?>(null) }
+    SpacedRow {
+        androidx.compose.material3.FilledTonalButton(enabled = step == null, onClick = {
+            step = "Empezando…"; result = null
+            appScope.launch {
+                result = runCatching { PcEdit.speedTest(ctx.cacheDir) { step = it } }.fold(
+                    { (d, u) -> "Bajada ${formatSpeed(d)} · Subida ${formatSpeed(u)}" }, { "No se pudo medir: ${it.message}" })
+                step = null
+            }
+        }) { Text("Probar velocidad") }
+        if (step != null) { androidx.compose.material3.CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp); Muted(step!!) }
+        else result?.let { Text(it, fontWeight = FontWeight.SemiBold) }
+    }
+    Muted("Baja 512 MB de un juego del servidor y sube 256 MB de prueba; no se guarda nada.")
 }

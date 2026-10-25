@@ -175,25 +175,24 @@ object PcEdit {
             for (f in files) {
                 val remote = SftpConn.join(Prefs.remoteRoms, f.path)
                 if (c.stat(remote)?.size == f.size) { done += f.size; uploading[key] = done; continue }
-                c.upload(remote) { out ->
-                    Local.romFile(f.path).inputStream().use { input ->
-                        val buf = ByteArray(1 shl 16)
-                        while (true) {
-                            val n = input.read(buf)
-                            if (n < 0) break
-                            if (key in cancelled) throw UploadCancelled()
-                            out.write(buf, 0, n)
-                            done += n
+                val before = done
+                try {
+                    Local.romFile(f.path).inputStream().buffered(1 shl 20).use { input ->
+                        c.uploadFrom(remote, input) { sent ->
+                            done = before + sent
                             uploading[key] = done
                             val now = System.nanoTime()
                             if (now - lastAt > 500_000_000L) {
                                 val inst = (done - lastDone) * 1e9 / (now - lastAt)
-                                speed = if (speed == 0.0) inst else speed * 0.7 + inst * 0.3
+                                speed = if (speed == 0.0) inst else speed * 0.8 + inst * 0.2
                                 uploadSpeed[key] = speed.toLong()
                                 lastAt = now; lastDone = done
                             }
+                            key !in cancelled
                         }
                     }
+                } catch (e: java.io.InterruptedIOException) {
+                    throw UploadCancelled()
                 }
             }
         } finally {
@@ -202,6 +201,50 @@ object PcEdit {
             uploadTotal.remove(key)
             cancelled -= key
         }
+    }
+
+    /**
+     * Prueba de velocidad con el servidor (no toca juegos): baja hasta 512 MB del archivo más grande de la biblioteca
+     * y los escribe en la caché, y sube 256 MB a un archivo temporal que después se borra. Devuelve (bajada, subida)
+     * en bytes/s.
+     */
+    suspend fun speedTest(cache: java.io.File, onStep: (String) -> Unit): Pair<Long, Long> = Pc.io { c ->
+        val big = Repo.library?.games.orEmpty().flatMap { it.files }.maxByOrNull { it.size }
+            ?: throw java.io.IOException("No hay juegos en el servidor para probar")
+        val tmp = java.io.File(cache, "prueba-velocidad.bin")
+        onStep("Probando la bajada…")
+        val want = minOf(big.size, 512L shl 20)
+        var got = 0L
+        val t0 = System.nanoTime()
+        try {
+            java.io.BufferedOutputStream(java.io.FileOutputStream(tmp), 4 shl 20).use { out ->
+                c.open(SftpConn.join(Prefs.remoteRoms, big.path)).use { input ->
+                    val buf = ByteArray(1 shl 20)
+                    while (got < want) {
+                        val n = input.read(buf, 0, minOf(buf.size.toLong(), want - got).toInt())
+                        if (n < 0) break
+                        out.write(buf, 0, n); got += n
+                    }
+                }
+            }
+        } finally { tmp.delete() }
+        val down = (got * 1e9 / (System.nanoTime() - t0)).toLong()
+        onStep("Probando la subida…")
+        val upSize = 256L shl 20
+        val remote = SftpConn.join(Prefs.remoteRoms, ".romsync-prueba-velocidad.bin")
+        val zeros = object : java.io.InputStream() {
+            var left = upSize
+            override fun read(): Int = if (left-- > 0) 0 else -1
+            override fun read(b: ByteArray, off: Int, len: Int): Int {
+                if (left <= 0) return -1
+                val n = minOf(len.toLong(), left).toInt()
+                java.util.Arrays.fill(b, off, off + n, 7); left -= n; return n
+            }
+        }
+        val t1 = System.nanoTime()
+        try { c.uploadFrom(remote, zeros) { true } } finally { runCatching { c.ch.rm(remote) } }
+        val up = (upSize * 1e9 / (System.nanoTime() - t1)).toLong()
+        down to up
     }
 
     /**

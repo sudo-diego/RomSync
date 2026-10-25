@@ -42,6 +42,10 @@ class SftpConn private constructor(private val session: Session, val ch: Channel
             s.setConfig("PreferredAuthentications", "password,keyboard-interactive")
             s.setConfig("compression.s2c", "none")
             s.setConfig("compression.c2s", "none")
+            // AES-GCM primero: el procesador lo acelera por hardware (más rápido que chacha20 en la tablet).
+            val ciphers = "aes128-gcm@openssh.com,aes256-gcm@openssh.com,aes128-ctr,aes256-ctr,chacha20-poly1305@openssh.com"
+            s.setConfig("cipher.s2c", ciphers)
+            s.setConfig("cipher.c2s", ciphers)
             try {
                 s.connect(timeoutMs)
             } catch (e: JSchException) {
@@ -55,6 +59,8 @@ class SftpConn private constructor(private val session: Session, val ch: Channel
             val ch = s.openChannel("sftp") as ChannelSftp
             try {
                 ch.connect(timeoutMs)
+                // Más pedidos de lectura en vuelo a la vez: no espera cada respuesta antes de pedir la siguiente.
+                ch.setBulkRequests(128)
             } catch (e: JSchException) {
                 s.disconnect()
                 throw IOException("El servidor no ofrece SFTP: ${e.message}", e)
@@ -208,6 +214,39 @@ class SftpConn private constructor(private val session: Session, val ch: Channel
             throw IOException("No se pudo guardar en el servidor: ${e.message}", e)
         } catch (e: Exception) {
             // Cancelado (o cualquier otro corte): no queda un .part a medias en el servidor.
+            runCatching { ch.rm(tmp) }
+            throw e
+        }
+    }
+
+    /**
+     * Sube [input] a [path] (vía .part). Es mucho más rápido que [upload]: JSch manda varios bloques seguidos sin
+     * esperar la confirmación de cada uno (con el OutputStream esperaba cada 32 KB y la subida quedaba en ~5 MB/s).
+     * [progress] recibe los bytes subidos; si devuelve false se cancela y no queda nada a medias.
+     */
+    fun uploadFrom(path: String, input: InputStream, progress: (Long) -> Boolean) {
+        mkdirs(path.substringBeforeLast('/'))
+        val tmp = "$path.part"
+        var done = 0L
+        var stopped = false
+        val monitor = object : com.jcraft.jsch.SftpProgressMonitor {
+            override fun init(op: Int, src: String?, dest: String?, max: Long) {}
+            override fun count(count: Long): Boolean {
+                done += count
+                if (!progress(done)) { stopped = true; return false }
+                return true
+            }
+            override fun end() {}
+        }
+        try {
+            ch.put(input, tmp, monitor, ChannelSftp.OVERWRITE)
+            if (stopped) throw java.io.InterruptedIOException("Cancelado")
+            if (stat(path) != null) ch.rm(path)
+            ch.rename(tmp, path)
+        } catch (e: SftpException) {
+            runCatching { ch.rm(tmp) }
+            throw IOException("No se pudo guardar en el servidor: ${e.message}", e)
+        } catch (e: Exception) {
             runCatching { ch.rm(tmp) }
             throw e
         }

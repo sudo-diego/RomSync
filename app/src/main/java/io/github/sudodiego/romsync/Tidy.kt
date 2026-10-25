@@ -50,6 +50,45 @@ object Tidy {
         private set
     var progress by mutableStateOf("")
         private set
+    /** Avance de todo lo que hay que leer o copiar (sacar de comprimidos y comprobar copias antes de borrarlas). */
+    var workDone by mutableStateOf(0L)
+        private set
+    var workTotal by mutableStateOf(0L)
+        private set
+    var speed by mutableStateOf(0L)
+        private set
+
+    /** Bytes que hay que leer/escribir para estos cambios (mover o renombrar es instantáneo). */
+    fun workOf(items: List<Item>): Long = items.sumOf {
+        when (it.kind) {
+            Kind.EXTRACT -> it.size
+            Kind.DELETE -> if (it.from.endsWith(".zip", true)) 0L else it.size * 2 // se leen las dos copias enteras
+            else -> 0L
+        }
+    }
+
+    /** Estimación antes de empezar (copiar en el mismo almacenamiento anda por los 150 MB/s en esta tablet). */
+    fun estimate(items: List<Item>): String {
+        val secs = workOf(items) / 150_000_000L + items.count { it.kind == Kind.MOVE || it.kind == Kind.RENAME_SERVER } / 4
+        return when {
+            secs < 60 -> "menos de un minuto"
+            secs < 3600 -> "unos ${(secs + 59) / 60} min"
+            else -> "unas ${secs / 3600} h ${(secs % 3600) / 60} min"
+        }
+    }
+
+    private var base = 0L
+    private var lastAt = 0L
+    private var lastDone = 0L
+    private fun advance(bytesInItem: Long) {
+        workDone = base + bytesInItem
+        val now = System.nanoTime()
+        if (now - lastAt > 500_000_000L) {
+            val inst = ((workDone - lastDone) * 1e9 / (now - lastAt)).toLong()
+            speed = if (speed == 0L) inst else (speed * 0.7 + inst * 0.3).toLong()
+            lastAt = now; lastDone = workDone
+        }
+    }
 
     /** Extensión → carpeta por defecto. Solo formatos que no se confunden entre plataformas (los de disco, como .iso o
      * .chd, sirven para varias y no se mueven de carpeta). */
@@ -76,6 +115,9 @@ object Tidy {
         .replace(Regex("\\s+"), " ").trim()
 
     /** Nombre oficial de un juego de Switch (por el TitleID del juego base), guardado para no preguntar dos veces. */
+    /** Para las imágenes: el nombre oficial de un juego de Switch por su código (null si no hay internet). */
+    fun officialNameFor(baseTid: String): String? = officialName(baseTid)
+
     private fun officialName(baseTid: String): String? {
         Prefs.switchId("name:$baseTid")?.let { return it.ifEmpty { null } }
         val name = runCatching {
@@ -351,6 +393,7 @@ object Tidy {
     /** Ejecuta los elementos elegidos. Devuelve un resumen. */
     suspend fun run(chosen: List<Item>): String = withContext(Dispatchers.IO) {
         running = true
+        workTotal = workOf(chosen); workDone = 0; base = 0; speed = 0; lastAt = System.nanoTime(); lastDone = 0
         var ok = 0
         val errors = ArrayList<String>()
         val doneSources = HashSet<File>()
@@ -365,7 +408,7 @@ object Tidy {
                             val free = Local.space().free
                             if (it.size > free - 1_000_000_000L) error("No hay espacio para ${it.title}")
                             val part = File(dest.path + ".part")
-                            if (it.rar != null) Rar5.extract(it.source!!, it.rar, part) { b -> progress = "${n + 1} de ${chosen.size}: ${it.title} · ${formatSize(b)} de ${formatSize(it.size)}" }
+                            if (it.rar != null) Rar5.extract(it.source!!, it.rar, part) { b -> advance(b); progress = "${n + 1} de ${chosen.size}: ${it.title}" }
                             else ZipFile(it.source!!).use { z ->
                                 z.getInputStream(z.getEntry(it.zipEntry)).use { input -> part.outputStream().use { out -> input.copyTo(out, 1 shl 20) } }
                             }
@@ -398,7 +441,8 @@ object Tidy {
                                 val other = if (it.rar != null) rarReader(f, it.rar) else fileReader(f)
                                 check((it.rar?.size ?: f.length()) == keep.length()) { "No pesa lo mismo que ${keep.name}: no se borró" }
                                 check(fullSame(fileReader(keep), other, keep.length()) { b ->
-                                    progress = "${n + 1} de ${chosen.size}: comprobando ${it.title} · ${formatSize(b)} de ${formatSize(keep.length())}"
+                                    advance(b * 2)
+                                    progress = "${n + 1} de ${chosen.size}: comprobando ${it.title}"
                                 }) { "No es idéntico a ${keep.name}: no se borró" }
                             }
                             check(f.delete()) { "No se pudo borrar" }
@@ -409,6 +453,7 @@ object Tidy {
                     }
                     ok++
                 }.onFailure { e -> errors += "${it.title}: ${e.message}" }
+                base += workOf(listOf(it)); workDone = base
             }
         } finally {
             running = false

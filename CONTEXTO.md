@@ -308,3 +308,17 @@ Descargas, y propone un plan (todo marcado, con "Desmarcar todo"); no cambia nad
   en vez de hasta 8 filas por plataforma.
 - CHD: no se integra chdman (habría que compilar MAME para Android); los consejos abren CHDroid por nombre o su
   búsqueda en Google Play (`AppsStorage.openOrFind`), y Dolphin/Cemu para RVZ/WUA.
+
+## Velocidad y ajustes (25-10-2026, noche)
+
+- SFTP: `setBulkRequests(128)` (probado 64/128/256: 128 es el mejor), cifrado AES-GCM primero. Subida con
+  `SftpConn.uploadFrom` (JSch `put(InputStream)` en tubería; el OutputStream esperaba cada 32 KB). Descarga escribe
+  con buffer de 4 MB y lee de a 1 MB; velocidad mostrada con promedio suave.
+- Medido con Ajustes → "Probar velocidad" (`PcEdit.speedTest`: baja 512 MB a la caché y sube 256 MB temporales, sin
+  dejar nada): antes ~32 MB/s bajada / ~5 MB/s subida → ahora ~55 MB/s / ~20 MB/s (WiFi 5 GHz a ~585 Mbps).
+- Ordenar: estimación antes ("Tarda unos N min") y durante (bytes, velocidad, tiempo restante). Hojas: nombres
+  recortados, etiquetas bajo el nombre, listas alfabéticas, columnas de "Sin copia" según el ancho.
+- Repetidos: Switch se agrupa por TitleID base (`Repo.versionKey`); los .rar/.7z no cuentan como versión.
+- Descargas terminadas se quitan solas a los 6 s. Organizar: "Lo que más ocupa" (8 juegos).
+- Carátulas de Switch: se buscan por el nombre oficial (por TitleID) y se reintenta una vez lo que antes falló.
+- Ficha: copiar al servidor con velocidad, tiempo y Cancelar.

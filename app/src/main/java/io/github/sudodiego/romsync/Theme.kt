@@ -250,7 +250,11 @@ fun AppBackground(modifier: Modifier = Modifier) {
     if (UiState.background != "ninguno") LaunchedEffect(Unit) {
         // Cada cuadro: limitarlo a 30 hacía que la tablet bajara la pantalla a 30 Hz (detecta a cuánto dibuja la app).
         val start = withFrameNanos { it }
-        while (true) withFrameNanos { time.floatValue = (it - start) / 1_000_000_000f }
+        // El fondo se mueve lento: 24 cuadros por segundo bastan (10 mientras se descarga), en vez de 120.
+        while (true) {
+            withFrameNanos { time.floatValue = (it - start) / 1_000_000_000f }
+            kotlinx.coroutines.delay(if (DownloadService.items.any { it.status == DlStatus.RUNNING }) 100 else 41)
+        }
     }
     val top = if (dark) Color(0xFF111827) else Color(0xFFF7F9FC)
     val bottom = if (dark) Color(0xFF0B101A) else mix(Color(0xFFE6EDF5), accent, 0.05f)
@@ -292,7 +296,7 @@ private fun WavesCanvas(modifier: Modifier, time: androidx.compose.runtime.Mutab
     val bgBottom = if (dark) mix(accent, Color.Black, 0.88f) else mix(accent, Color.White, 0.80f)
     val line = Color.White
     // Los trazos se reutilizan (antes se creaban 72 por cuadro).
-    val paths = remember { List(2 * 20) { androidx.compose.ui.graphics.Path() } }
+    val paths = remember { List(2 * 12) { androidx.compose.ui.graphics.Path() } }
     Canvas(modifier.fillMaxSize()) {
         val t = time.floatValue
         val w = size.width; val h = size.height
@@ -306,9 +310,9 @@ private fun WavesCanvas(modifier: Modifier, time: androidx.compose.runtime.Mutab
             val base = h * (0.55f + ribbon * 0.04f)
             val amp = h * (0.10f - ribbon * 0.03f)
             val spread = h * (0.05f + ribbon * 0.02f)
-            for (i in 0 until 20) {
-                val f = i / 19f
-                val path = paths[ribbon * 20 + i].apply { rewind() }
+            for (i in 0 until 12) {
+                val f = i / 11f
+                val path = paths[ribbon * 12 + i].apply { rewind() }
                 var x = 0f
                 while (x <= w + 16f) {
                     val u = x / w
@@ -317,7 +321,7 @@ private fun WavesCanvas(modifier: Modifier, time: androidx.compose.runtime.Mutab
                             (0.55f + 0.45f * kotlin.math.sin(u * 2.3f - t * 0.11f + ribbon)) +
                         spread * (f - 0.5f) * kotlin.math.cos(u * 3.1f + t * 0.17f + ribbon * 1.7f)
                     if (x == 0f) path.moveTo(x, y) else path.lineTo(x, y)
-                    x += 28f
+                    x += 40f
                 }
                 // Más opacas en el centro de la cinta, transparentes en los bordes.
                 val edge = 1f - kotlin.math.abs(f - 0.5f) * 2f
